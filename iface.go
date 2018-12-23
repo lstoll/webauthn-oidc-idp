@@ -28,15 +28,42 @@ type Authenticator interface {
 	Storage() Storage
 }
 
+// SSOMethod indicates the SSO system the user is being authenticated with
+type SSOMethod int
+
+const (
+	// SSOMethodSAML indicates this request is part of a SAML flow
+	SSOMethodSAML SSOMethod = iota
+	// SSOMethodOIDC indicates this request is part of an OpenID Connect flow
+	SSOMethodOIDC
+)
+
+// LoginRequest encapsulates the information passed in for this SSO request.
+type LoginRequest struct {
+	// SSOMethod is the SSO system access is being requested for
+	SSOMethod SSOMethod
+	// AuthID is the unique identifier for this access request. It is assigned
+	// at login request, and is needed to finalize the flow.
+	AuthID string
+	// ClientID is the OAuth2 client for OIDC, or SAML issuer that access is
+	// being requested for
+	ClientID string
+	// Scopes are the Oauth2 Scopes for OIDC requests. SAML has no equivalent.
+	Scopes []string
+}
+
 // Connector is used to actually manage the end user authentication
 type Connector interface {
 	// Initialize will be called at startup, passing in a handle to the
 	// authenticator the connector can interact with.
 	Initialize(auth Authenticator) error
-	// LoginUrl should return the URL to redirect the user to to complete the
-	// login flow. It is passed the ID of this authentication flow, this will
-	// be needed to finalize the login process.
-	LoginUrl(authID string) (url string, err error)
+	// LoginPage should render the login page, and kick off the connectors auth
+	// flow. This method can render whatever it wants and run the user through
+	// any arbitrary intermediate pages. The only requirement is that it threads
+	// the AuthID through these, and at the end of the connector flow it needs
+	// to pass this to the Authenticator's Authenticate method, and redirect the
+	// user to the resulting URL.
+	LoginPage(w http.ResponseWriter, r *http.Request, lr LoginRequest)
 }
 
 // Storage is used for maintaining the persistent state of the provider

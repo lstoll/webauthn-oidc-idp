@@ -25,10 +25,6 @@ func (s *SimpleConnector) Initialize(auth idp.Authenticator) error {
 	return nil
 }
 
-func (s *SimpleConnector) LoginUrl(authID string) (string, error) {
-	return "/login?authid=" + authID, nil
-}
-
 type LoginForm struct {
 	AuthID   string `schema:"authid,required"`
 	Username string `schema:"username,required"`
@@ -36,18 +32,8 @@ type LoginForm struct {
 }
 
 // LoginGet is a handler for GET to /login
-func (s *SimpleConnector) LoginGet(w http.ResponseWriter, r *http.Request) {
-	authids, ok := r.URL.Query()["authid"]
-	if !ok {
-		http.Error(w, "authid parameter required", http.StatusBadRequest)
-		return
-	}
-	if len(authids) != 1 {
-		http.Error(w, "Exactly one authid required", http.StatusBadRequest)
-		return
-	}
-
-	if err := loginPage.Execute(w, map[string]interface{}{"authid": authids[0]}); err != nil {
+func (s *SimpleConnector) LoginPage(w http.ResponseWriter, r *http.Request, lr idp.LoginRequest) {
+	if err := loginPage.Execute(w, map[string]interface{}{"authid": lr.AuthID}); err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		return
 	}
