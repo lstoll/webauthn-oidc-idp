@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+
+	"github.com/golang/protobuf/ptypes"
 	jose "gopkg.in/square/go-jose.v2"
 
 	// "github.com/heroku/deci/internal/connector"
@@ -23,25 +26,11 @@ import (
 
 func (s *Server) handlePublicKeys(w http.ResponseWriter, r *http.Request) {
 	// TODO(ericchiang): Cache this.
-	keys, err := s.storage.GetKeys()
+	jwks, err := s.Signer.PublicKeys()
 	if err != nil {
 		s.logger.Errorf("failed to get keys: %v", err)
 		s.renderError(w, http.StatusInternalServerError, "Internal server error.")
 		return
-	}
-
-	if keys.SigningKeyPub == nil {
-		s.logger.Errorf("No public keys found.")
-		s.renderError(w, http.StatusInternalServerError, "Internal server error.")
-		return
-	}
-
-	jwks := jose.JSONWebKeySet{
-		Keys: make([]jose.JSONWebKey, len(keys.VerificationKeys)+1),
-	}
-	jwks.Keys[0] = *keys.SigningKeyPub
-	for i, verificationKey := range keys.VerificationKeys {
-		jwks.Keys[i+1] = *verificationKey.PublicKey
 	}
 
 	data, err := json.MarshalIndent(jwks, "", "  ")
@@ -50,10 +39,9 @@ func (s *Server) handlePublicKeys(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, http.StatusInternalServerError, "Internal server error.")
 		return
 	}
-	maxAge := keys.NextRotation.Sub(s.now())
-	if maxAge < (time.Minute * 2) {
-		maxAge = time.Minute * 2
-	}
+
+	// TODO calculate max age based on next rotation?
+	maxAge := time.Minute * 2
 
 	w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d, must-revalidate", int(maxAge.Seconds())))
 	w.Header().Set("Content-Type", "application/json")
@@ -135,73 +123,21 @@ func (s *Server) AuthorizationHandler(wrap http.Handler) http.Handler {
 		// screen too long.
 		//
 		// See: https://github.com/heroku/deci/internal/issues/646
-		authReq.Expiry = s.now().Add(24 * time.Hour) // Totally arbitrary value.
-		if err := s.storage.CreateAuthRequest(authReq); err != nil {
+		authReq.Expiry, _ = ptypes.TimestampProto(s.now().Add(24 * time.Hour)) // Totally arbitrary value.
+		reqb, perr := proto.Marshal(authReq)
+		if err != nil {
+			s.logger.Errorf("Failed to marshal authorization request: %v", err)
+			s.renderError(w, http.StatusInternalServerError, "Internal error.")
+			return
+		}
+
+		if err := s.storage.Put("authreq", authReq.ID, reqb); err != nil {
 			s.logger.Errorf("Failed to create authorization request: %v", err)
 			s.renderError(w, http.StatusInternalServerError, "Failed to connect to the database.")
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), contextKeyAuthRequestID, authReq.ID)
-
-		wrap.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// CallbackHandler wraps a handler to manage the oauth2 callback. If the
-// callback is invalid it will return an error, otherwise it will build the
-// correct identiy and store it in the context. The wrapped handler can retrieve
-// it with `Identity`. This wrapper handler is responsible for redirecting the
-// user to the FinalizeLogin path. It should be mounted at the callback path
-// provided to the upstream provider (e.g /callback)
-func (s *Server) CallbackHandler(wrap http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		var authID string
-		switch r.Method {
-		case "GET": // OAuth2 callback
-			if authID = r.URL.Query().Get("state"); authID == "" {
-				s.renderError(w, http.StatusBadRequest, "User session error.")
-				return
-			}
-		default:
-			s.renderError(w, http.StatusBadRequest, "Method not supported")
-			return
-		}
-
-		authReq, err := s.storage.GetAuthRequest(authID)
-		if err != nil {
-			if err == storage.ErrNotFound {
-				s.logger.Errorf("Invalid 'state' parameter provided: %v", err)
-				s.renderError(w, http.StatusInternalServerError, "Requested resource does not exist.")
-				return
-			}
-			s.logger.Errorf("Failed to get auth request: %v", err)
-			s.renderError(w, http.StatusInternalServerError, "Database error.")
-			return
-		}
-
-		var identity idp.Identity
-		switch conn := s.connector.(type) {
-		case connector.CallbackConnector:
-			if r.Method != "GET" {
-				s.logger.Errorf("SAML request mapped to OAuth2 connector")
-				s.renderError(w, http.StatusBadRequest, "Invalid request")
-				return
-			}
-			identity, err = conn.HandleCallback(ParseScopes(authReq.Scopes), r)
-		default:
-			s.renderError(w, http.StatusInternalServerError, "Requested resource does not exist.")
-			return
-		}
-
-		if err != nil {
-			s.logger.Errorf("Failed to authenticate: %v", err)
-			s.renderError(w, http.StatusInternalServerError, "Failed to return user's identity.")
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), contextKeyIdentity, identity)
 
 		wrap.ServeHTTP(w, r.WithContext(ctx))
 	})

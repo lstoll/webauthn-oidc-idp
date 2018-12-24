@@ -1,10 +1,51 @@
 syntax = "proto3";
 package idp;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/lstoll/idp/idppb";
 
 // RefreshToken stores an oauth2 refresh token used by the oidc idp
 message RefreshToken {
     string refresh_id = 1 [json_name="refresh_id"];
     string token = 2 [json_name="token"];
+}
+
+// AuthRequest represents a OAuth2 client authorization request. It holds the state
+// of a single auth flow up to the point that the user authorizes the client.
+message AuthRequest {
+	// ID used to identify the authorization request.
+	string ID = 1;
+
+	// ID of the client requesting authorization from a user.
+	string ClientID = 2;
+
+	// Values parsed from the initial request. These describe the resources the client is
+	// requesting as well as values describing the form of the response.
+	repeated string response_types = 3;
+	repeated string scopes = 4;
+	string redirect_uri = 5;
+	string nonce = 6;
+	string state = 7;
+
+	// The client has indicated that the end user must be shown an approval prompt
+	// on all requests. The server cannot cache their initial action for subsequent
+	// attempts.
+	bool force_approval_prompt = 8;
+
+	google.protobuf.Timestamp expiry = 9;
+
+	// Has the user proved their identity through a backing identity provider?
+	//
+	// If false, the following fields are invalid.
+	bool logged_in = 10;
+
+	// The identity of the end user. Generally nil until the user authenticates
+	// with a backend.
+	// TODO - Claims Claims
+
+	// The connector used to login the user and any data the connector wishes to persists.
+	// Set when the user authenticates.
+	string connector_id = 11;
+	bytes connector_data = 12;
 }

@@ -26,7 +26,7 @@
   version = "v1.0.0"
 
 [[projects]]
-  digest = "1:14053216b10287b4d1a3d9cc7cf9c739de42dec897a519bc8641cde60b2dc340"
+  digest = "1:b00d66edb5f40dbbdcd37292851a61c2644356e37d8fb6517394ffb4b24b1c22"
   name = "github.com/golang/protobuf"
   packages = [
     "proto",
@@ -36,6 +36,10 @@
     "protoc-gen-go/generator/internal/remap",
     "protoc-gen-go/grpc",
     "protoc-gen-go/plugin",
+    "ptypes",
+    "ptypes/any",
+    "ptypes/duration",
+    "ptypes/timestamp",
   ]
   pruneopts = "UT"
   revision = "aa810b61a9c79d51363740d207bb46cf8e620ed5"
@@ -91,11 +95,10 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:d6fdf1b93515139aa4d58a7e6f6a9e0f0b743b538c758e53228852563b4dd2ed"
+  digest = "1:33999f33c06c78e6a71695db5904e576a5a54175a30e17fe2bd84af4d2cbc065"
   name = "github.com/heroku/deci"
   packages = [
     "internal/connector",
-    "internal/serializedpb",
     "internal/storage",
     "internal/storage/memory",
     "internal/webauthn",
@@ -283,12 +286,13 @@
     "github.com/felixge/httpsnoop",
     "github.com/golang/protobuf/proto",
     "github.com/golang/protobuf/protoc-gen-go",
+    "github.com/golang/protobuf/ptypes",
+    "github.com/golang/protobuf/ptypes/timestamp",
     "github.com/gorilla/handlers",
     "github.com/gorilla/mux",
     "github.com/gorilla/schema",
     "github.com/gorilla/sessions",
     "github.com/heroku/deci/internal/connector",
-    "github.com/heroku/deci/internal/serializedpb",
     "github.com/heroku/deci/internal/storage",
     "github.com/heroku/deci/internal/storage/memory",
     "github.com/kylelemons/godebug/pretty",

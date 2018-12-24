@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/lstoll/idp"
+	"github.com/lstoll/idp/idppb"
 
 	jose "gopkg.in/square/go-jose.v2"
 	// "github.com/heroku/deci/internal/connector"
@@ -342,7 +343,7 @@ func (s *Server) newIDToken(clientID string, ident idp.Identity, scopes []string
 }
 
 // parse the initial request from the OAuth2 client.
-func (s *Server) parseAuthorizationRequest(r *http.Request) (req storage.AuthRequest, oauth2Err *authErr) {
+func (s *Server) parseAuthorizationRequest(r *http.Request) (req *idppb.AuthRequest, oauth2Err *authErr) {
 	if err := r.ParseForm(); err != nil {
 		return req, &authErr{"", "", errInvalidRequest, "Failed to parse request body."}
 	}
@@ -464,7 +465,7 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (req storage.AuthReq
 		}
 	}
 
-	return storage.AuthRequest{
+	return idppb.AuthRequest{
 		ID:                  storage.NewID(),
 		ClientID:            client.ID,
 		State:               state,

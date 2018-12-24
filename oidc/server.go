@@ -79,6 +79,9 @@ type Server struct {
 	prometheusRegistry     *prometheus.Registry
 	logger                 logrus.FieldLogger
 
+	// Signer is used for signing and verifying OIDC tokens
+	Signer idp.Signer
+
 	now func() time.Time
 }
 

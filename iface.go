@@ -93,5 +93,5 @@ type Signer interface {
 	SignToken(interface{}) ([]byte, error)
 	// PublicKeys returns a list of currently valid public keys this service
 	// could have signed a token with.
-	PublicKeys() ([]*jose.JSONWebKey, error)
+	PublicKeys() (jose.JSONWebKeySet, error)
 }
