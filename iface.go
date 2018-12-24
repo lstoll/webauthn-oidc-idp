@@ -1,9 +1,11 @@
 package idp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gorilla/sessions"
+	jose "gopkg.in/square/go-jose.v2"
 )
 
 // Identity represents a user that was authenticated.
@@ -66,9 +68,30 @@ type Connector interface {
 	LoginPage(w http.ResponseWriter, r *http.Request, lr LoginRequest)
 }
 
+// RefreshConnector can support "refreshing" the authenticated session without
+// requiring the user to participate in the process (OIDC)
+// TODO -  SAML Passive Authentication?
+type RefreshConnector interface {
+	Connector
+	// Refresh is called when a client attempts to claim a refresh token. The
+	// connector should attempt to update the identity object to reflect any
+	// changes since the token was last refreshed.
+	Refresh(ctx context.Context, scopes []string, identity Identity) (Identity, error)
+}
+
 // Storage is used for maintaining the persistent state of the provider
 type Storage interface {
 	Put(namespace, key string, data []byte) error
 	Get(namespace, key string) ([]byte, error)
 	Delete(namespace, key string) error
+}
+
+// Signer is used for signing JWTs
+type Signer interface {
+	// SignToken will marshal the provided token to JSON, and sign it with the
+	// current signing key.
+	SignToken(interface{}) ([]byte, error)
+	// PublicKeys returns a list of currently valid public keys this service
+	// could have signed a token with.
+	PublicKeys() ([]*jose.JSONWebKey, error)
 }

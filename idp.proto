@@ -1,0 +1,10 @@
+syntax = "proto3";
+package idp;
+
+option go_package = "github.com/lstoll/idp/idppb";
+
+// RefreshToken stores an oauth2 refresh token used by the oidc idp
+message RefreshToken {
+    string refresh_id = 1 [json_name="refresh_id"];
+    string token = 2 [json_name="token"];
+}
