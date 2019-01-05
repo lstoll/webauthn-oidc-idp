@@ -4,15 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gorilla/sessions"
+	"github.com/lstoll/idp/idppb"
 )
-
-// Identity represents a user that was authenticated.
-type Identity struct {
-	// UserID is a unique identifier for this user. It should never change
-	UserID string
-
-	// TODO - what is the standard identity object
-}
 
 // Authenticator can be used by connectors to access metadata about the identity
 // backend, and to mark an authentication flow as successful.
@@ -20,7 +13,7 @@ type Authenticator interface {
 	// Authenticate should be called on a successful authentication flow to set
 	// the desired identity for the flow ID. The user should then be redirected
 	// to returned URL to complete the flow
-	Authenticate(authID string, ident Identity) (returnURL string, err error)
+	Authenticate(authID string, ident idppb.Identity) (returnURL string, err error)
 	// Session store, can be used for connector specific cookie state. Need to
 	// call Save() if modified
 	Session(r *http.Request) sessions.Store
@@ -64,11 +57,21 @@ type Connector interface {
 	// to pass this to the Authenticator's Authenticate method, and redirect the
 	// user to the resulting URL.
 	LoginPage(w http.ResponseWriter, r *http.Request, lr LoginRequest)
+	// OIDCClient is called to find the details for a given OIDC Client ID. If a
+	// client is found, the details should be returned with ok true. If it
+	// doesn't exist, ok should be false.
+	OIDCClient(clientID string) (client *idppb.OIDCClient, ok bool, err error)
 }
 
 // Storage is used for maintaining the persistent state of the provider
 type Storage interface {
 	Put(namespace, key string, data []byte) error
 	Get(namespace, key string) ([]byte, error)
+	// List iterates all items in the namespace, calling batchFunc in batches of
+	// items. if batchFunc returns false, the list is terminated
+	List(namespace string, batchFunc func(map[string][]byte) bool) error
 	Delete(namespace, key string) error
+	// When passed an error, returns true if it occured because the given item
+	// wasn't found, or false if it was for any other reason.
+	ErrIsNotFound(error) bool
 }

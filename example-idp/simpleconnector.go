@@ -2,10 +2,14 @@ package main
 
 import (
 	"html/template"
+	"log"
 	"net/http"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/gorilla/schema"
 	"github.com/lstoll/idp"
+	"github.com/lstoll/idp/idppb"
 )
 
 var _ idp.Connector = (*SimpleConnector)(nil)
@@ -14,6 +18,7 @@ var decoder = schema.NewDecoder()
 
 // SimpleConnector is a basic user/pass connector with in-memory credentials
 type SimpleConnector struct {
+	Logger logrus.FieldLogger
 	// Users maps user -> password
 	Users map[string]string
 	// Authenticator to deal with
@@ -33,7 +38,7 @@ type LoginForm struct {
 
 // LoginGet is a handler for GET to /login
 func (s *SimpleConnector) LoginPage(w http.ResponseWriter, r *http.Request, lr idp.LoginRequest) {
-	if err := loginPage.Execute(w, map[string]interface{}{"authid": lr.AuthID}); err != nil {
+	if err := loginPage.Execute(w, map[string]interface{}{"Authid": lr.AuthID}); err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		return
 	}
@@ -50,6 +55,7 @@ func (s *SimpleConnector) LoginPost(w http.ResponseWriter, r *http.Request) {
 
 	// r.PostForm is a map of our POST form values
 	if err := decoder.Decode(&lf, r.PostForm); err != nil {
+		s.Logger.WithError(err).Error("Failed to decode login form")
 		http.Error(w, "Error decoding login form", http.StatusInternalServerError)
 		return
 	}
@@ -66,14 +72,27 @@ func (s *SimpleConnector) LoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redir, err := s.Authenticator.Authenticate(lf.AuthID, idp.Identity{UserID: lf.Username})
+	redir, err := s.Authenticator.Authenticate(lf.AuthID, idppb.Identity{UserId: lf.Username})
 	if err != nil {
 		http.Error(w, "Error authenticating flow", http.StatusInternalServerError)
 		return
 	}
 
-	http.Redirect(w, r, redir, http.StatusTemporaryRedirect)
+	log.Printf("Redirecting to %q", redir)
 
+	http.Redirect(w, r, redir, http.StatusSeeOther)
+}
+
+func (s *SimpleConnector) OIDCClient(clientID string) (client *idppb.OIDCClient, ok bool, err error) {
+	if clientID == "example-app" {
+		return &idppb.OIDCClient{
+			Id:           "example-app",
+			RedirectUris: []string{"http://127.0.0.1:5555/callback"},
+			Name:         "Example app",
+			Secret:       "ZXhhbXBsZS1hcHAtc2VjcmV0",
+		}, true, nil
+	}
+	return nil, false, nil
 }
 
 var loginPage = template.Must(template.New("login").Parse(`<html>
@@ -82,9 +101,9 @@ var loginPage = template.Must(template.New("login").Parse(`<html>
 <head>
 <body>
 <form action="/login" method="POST">
-<input type="hidden" name="authid" value="{{ authid }}">
+<input type="hidden" name="authid" value="{{ .Authid }}">
 Username: <input type="text" name="username"><br>
-Password: <input type="text" name="password"><br>
+Password: <input type="password" name="password"><br>
 <input type="submit" value="Submit">
 </form>
 </body>

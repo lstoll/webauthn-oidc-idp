@@ -1,11 +1,17 @@
 package main
 
-import "github.com/lstoll/idp"
+import (
+	"errors"
+
+	"github.com/lstoll/idp"
+)
 
 var _ idp.Storage = (*MemStorage)(nil)
 
 // MemStorage is a simple storage implementation
 type MemStorage map[string]map[string][]byte
+
+var errNotFound = errors.New("Not Found")
 
 func (m MemStorage) Put(namespace, key string, data []byte) error {
 	if _, ok := m[namespace]; !ok {
@@ -17,13 +23,18 @@ func (m MemStorage) Put(namespace, key string, data []byte) error {
 
 func (m MemStorage) Get(namespace, key string) ([]byte, error) {
 	if _, ok := m[namespace]; !ok {
-		return nil, nil
+		return nil, errNotFound
 	}
 	val, ok := m[namespace][key]
 	if !ok {
-		return nil, nil
+		return nil, errNotFound
 	}
 	return val, nil
+}
+
+func (m MemStorage) List(namespace string, batchFunc func(map[string][]byte) bool) error {
+	batchFunc(m[namespace])
+	return nil
 }
 
 func (m MemStorage) Delete(namespace, key string) error {
@@ -33,4 +44,8 @@ func (m MemStorage) Delete(namespace, key string) error {
 		}
 	}
 	return nil
+}
+
+func (m MemStorage) ErrIsNotFound(err error) bool {
+	return err == errNotFound
 }
