@@ -24,9 +24,11 @@ func main() {
 
 	stor := &MemStorage{}
 
+	cp := &ClientProvider{}
+
 	// pass this the SimpleConnector. Have it create the dex connector, and call initialize on SimpleConn
 
-	svr, err := oidc.NewServer(l, stor, conn)
+	svr, err := oidc.NewServer(l, stor, conn, cp, "http://127.0.0.1:5556")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,7 +41,7 @@ func main() {
 
 	mux.Post("/login", conn.LoginPost)
 
-	ssvr, err := saml.NewServer(l, stor, conn, "http://127.0.0.1:5556")
+	ssvr, err := saml.NewServer(l, stor, conn, cp, "http://127.0.0.1:5556")
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -20,7 +20,7 @@ type Server struct {
 }
 
 // NewServer returns a http handler suitible for serving an OIDC provider
-func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector) (*Server, error) {
+func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector, cs idp.ClientSource, iss string) (*Server, error) {
 	dc := &DexConnector{
 		Wrapped:  conn,
 		IDPStore: stor,
@@ -46,8 +46,8 @@ func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector) (*Ser
 		Web: server.WebConfig{
 			Dir: "vendor/github.com/dexidp/dex/web",
 		},
-		Issuer:  "http://127.0.0.1:5556",
-		Storage: storage.WithStaticConnectors(&dstorage{Storage: stor, clientLookup: conn.OIDCClient}, conns),
+		Issuer:  iss,
+		Storage: storage.WithStaticConnectors(&dstorage{Storage: stor, clientLookup: cs.OIDCClient}, conns),
 	}
 	dc.DexStore = cfg.Storage
 
