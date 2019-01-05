@@ -26,11 +26,24 @@
   version = "v2.0.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:4af8e84c55a07f3031b04ea1032fb9810ca0f43aa4909981190e4568999a6ab9"
+  name = "github.com/crewjam/saml"
+  packages = [
+    ".",
+    "logger",
+    "samlidp",
+    "samlsp",
+    "xmlenc",
+  ]
+  pruneopts = "UT"
+  revision = "ebc5f787b786ee76ee69bf49184fade38d2238af"
+
+[[projects]]
   digest = "1:faaeb5352b96ae6b8994686ea1ef5415593cd1b7a09c2a5e1754180f7066a5ad"
   name = "github.com/dexidp/dex"
   packages = [
     "api",
-    "cmd/example-app",
     "connector",
     "connector/authproxy",
     "connector/bitbucketcloud",
@@ -50,6 +63,14 @@
   pruneopts = "T"
   revision = "57b1031352a11789b9f87e95f58f60a46bc611de"
   version = "v2.13.0"
+
+[[projects]]
+  digest = "1:76dc72490af7174349349838f2fe118996381b31ea83243812a97e5a0fd5ed55"
+  name = "github.com/dgrijalva/jwt-go"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "06ea1031745cb8b3dab3f6a236daf2b0aa468b7e"
+  version = "v3.2.0"
 
 [[projects]]
   digest = "1:296cda2c4a6a7a54964d7b3b0815e2aed215da75217b72033060ffb1c4e4b6ae"
@@ -270,8 +291,16 @@
   version = "v1.0.3"
 
 [[projects]]
+  digest = "1:1576755a08c841066b74a72b69fe5836a4421ca7a823f36aeef68663ad4775f2"
+  name = "github.com/zenazn/goji"
+  packages = ["web"]
+  pruneopts = "UT"
+  revision = "64eb34159fe53473206c2b3e70fe396a639452f2"
+  version = "v1.0"
+
+[[projects]]
   branch = "master"
-  digest = "1:b2b02ea0a4eca1f377e71add3b232c8a914074d5e1571f6168e2e5deabc7f821"
+  digest = "1:458f9e3ac7f03d19f3f9aeec7c9db818cba34448850be4cef7d05b0ad9e8e5f6"
   name = "golang.org/x/crypto"
   packages = [
     "bcrypt",
@@ -279,6 +308,7 @@
     "ed25519",
     "ed25519/internal/edwards25519",
     "pbkdf2",
+    "ripemd160",
     "ssh/terminal",
   ]
   pruneopts = "UT"
@@ -444,7 +474,10 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/dexidp/dex/cmd/example-app",
+    "github.com/coreos/go-oidc",
+    "github.com/crewjam/saml",
+    "github.com/crewjam/saml/samlidp",
+    "github.com/crewjam/saml/samlsp",
     "github.com/dexidp/dex/connector",
     "github.com/dexidp/dex/server",
     "github.com/dexidp/dex/storage",
@@ -459,6 +492,8 @@
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/sirupsen/logrus",
+    "github.com/spf13/cobra",
+    "golang.org/x/oauth2",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
