@@ -19,6 +19,16 @@ message OIDCAuthorization {
     google.protobuf.Timestamp expires = 2;
 }
 
+// OIDCAuthorization represents a successfully authenticated request
+message SAMLAuthorization {
+    Identity identity = 1;
+    bool authorized = 2;
+    bytes saml_request = 3;
+    string relay_state = 4;
+    google.protobuf.Timestamp expires = 5;
+}
+
+
 // OIDCClient represents an oauth2 client we can oidc flow against
 message OIDCClient {
     // Client ID and secret used to identify the client.

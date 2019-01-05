@@ -3,6 +3,7 @@ package idp
 import (
 	"net/http"
 
+	"github.com/crewjam/saml"
 	"github.com/gorilla/sessions"
 	"github.com/lstoll/idp/idppb"
 )
@@ -61,6 +62,9 @@ type Connector interface {
 	// client is found, the details should be returned with ok true. If it
 	// doesn't exist, ok should be false.
 	OIDCClient(clientID string) (client *idppb.OIDCClient, ok bool, err error)
+	// SAMLServiceProvider is called to get information about the given SAML
+	// provider ID
+	SAMLServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error)
 }
 
 // Storage is used for maintaining the persistent state of the provider

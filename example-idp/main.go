@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi"
 
 	"github.com/lstoll/idp/oidc"
+	"github.com/lstoll/idp/saml"
 	"github.com/sirupsen/logrus"
 )
 
@@ -37,6 +38,12 @@ func main() {
 	svr.MountRoutes(mux)
 
 	mux.Post("/login", conn.LoginPost)
+
+	ssvr, err := saml.NewServer(l, stor, conn, "http://127.0.0.1:5556")
+	if err != nil {
+		log.Fatal(err)
+	}
+	ssvr.MountRoutes(mux)
 
 	log.Fatal(http.ListenAndServe("127.0.0.1:5556", mux))
 }
