@@ -1,0 +1,45 @@
+syntax = "proto3";
+package idp;
+
+ import "google/protobuf/timestamp.proto";
+
+ option go_package = "github.com/lstoll/idp/idppb";
+
+// Identity represents a user that was authenticated.
+message Identity {
+	// user_id is a unique identifier for this user. It should never change.
+	string user_id = 1;
+
+	// TODO - what is the standard identity object
+}
+
+// OIDCAuthorization represents a successfully authenticated request
+message OIDCAuthorization {
+    Identity identity = 1;
+    google.protobuf.Timestamp expires = 2;
+}
+
+// OIDCClient represents an oauth2 client we can oidc flow against
+message OIDCClient {
+    // Client ID and secret used to identify the client.
+    string id = 1;
+    string secret = 2;
+
+    // A registered set of redirect URIs. When redirecting from dex to the client, the URI
+    // requested to redirect to MUST match one of these values, unless the client is "public".
+    repeated string redirect_uris = 3;
+
+    // TrustedPeers are a list of peers which can issue tokens on this client's behalf using
+    // the dynamic "oauth2:server:client_id:(client_id)" scope. If a peer makes such a request,
+    // this client's ID will appear as the ID Token's audience.
+    //
+    // Clients inherently trust themselves.
+    repeated string trusted_peers = 4;
+
+    // Public clients must use either use a redirectURL 127.0.0.1:X or "urn:ietf:wg:oauth:2.0:oob"
+    bool public = 5;
+
+    // Name and LogoURL used when displaying this client to the end user.
+    string name = 6;
+    string logo_url = 7;
+}
