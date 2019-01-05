@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/crewjam/saml"
-	"github.com/gorilla/sessions"
 	"github.com/lstoll/idp/idppb"
 )
 
@@ -15,11 +14,6 @@ type Authenticator interface {
 	// the desired identity for the flow ID. The user should then be redirected
 	// to returned URL to complete the flow
 	Authenticate(authID string, ident idppb.Identity) (returnURL string, err error)
-	// Session store, can be used for connector specific cookie state. Need to
-	// call Save() if modified
-	Session(r *http.Request) sessions.Store
-	// Storage can be used for persistent state
-	Storage() Storage
 }
 
 // SSOMethod indicates the SSO system the user is being authenticated with
@@ -58,6 +52,10 @@ type Connector interface {
 	// to pass this to the Authenticator's Authenticate method, and redirect the
 	// user to the resulting URL.
 	LoginPage(w http.ResponseWriter, r *http.Request, lr LoginRequest)
+}
+
+// ClientSource is used to look up services who can SSO against this IDP
+type ClientSource interface {
 	// OIDCClient is called to find the details for a given OIDC Client ID. If a
 	// client is found, the details should be returned with ok true. If it
 	// doesn't exist, ok should be false.

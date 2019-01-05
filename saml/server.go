@@ -23,7 +23,7 @@ type Server struct {
 	Connector *Connector
 }
 
-func NewServer(l logrus.FieldLogger, storage idp.Storage, conn idp.Connector, baseURL string) (*Server, error) {
+func NewServer(l logrus.FieldLogger, storage idp.Storage, conn idp.Connector, cs idp.ClientSource, baseURL string) (*Server, error) {
 	bu, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to parse baseURL %s", baseURL)
@@ -45,7 +45,7 @@ func NewServer(l logrus.FieldLogger, storage idp.Storage, conn idp.Connector, ba
 		Wrapped:  conn,
 	}
 
-	idpServer.IDP.ServiceProviderProvider = &serviceProviderProvider{conn: conn}
+	idpServer.IDP.ServiceProviderProvider = &serviceProviderProvider{cs: cs}
 	idpServer.IDP.SessionProvider = sconn
 
 	// call initialize on the connector to set our connector interface on it
@@ -72,7 +72,7 @@ func (s *Server) MountRoutes(mux *chi.Mux) {
 }
 
 type serviceProviderProvider struct {
-	conn idp.Connector
+	cs idp.ClientSource
 }
 
 // GetServiceProvider returns the Service Provider metadata for the
@@ -80,7 +80,7 @@ type serviceProviderProvider struct {
 // metadata URL. If an appropriate service provider cannot be found then
 // the returned error must be os.ErrNotExist.
 func (s *serviceProviderProvider) GetServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error) {
-	return s.conn.SAMLServiceProvider(r, serviceProviderID)
+	return s.cs.SAMLServiceProvider(r, serviceProviderID)
 }
 
 // TODO - replace this
