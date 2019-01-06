@@ -21,24 +21,31 @@ type SimpleConnector struct {
 	Logger logrus.FieldLogger
 	// Users maps user -> password
 	Users map[string]string
-	// Authenticator to deal with
-	Authenticator idp.Authenticator
+	// Authenticators to deal with
+	Authenticators map[idp.SSOMethod]idp.Authenticator
 }
 
-func (s *SimpleConnector) Initialize(auth idp.Authenticator) error {
-	s.Authenticator = auth
+func (s *SimpleConnector) Initialize(method idp.SSOMethod, auth idp.Authenticator) error {
+	if s.Authenticators == nil {
+		s.Authenticators = map[idp.SSOMethod]idp.Authenticator{}
+	}
+	s.Authenticators[method] = auth
 	return nil
 }
 
 type LoginForm struct {
-	AuthID   string `schema:"authid,required"`
-	Username string `schema:"username,required"`
-	Password string `schema:"password,required"`
+	AuthID    string        `schema:"authid,required"`
+	SSOMethod idp.SSOMethod `schema:"ssoMethod,required"`
+	Username  string        `schema:"username,required"`
+	Password  string        `schema:"password,required"`
 }
 
 // LoginGet is a handler for GET to /login
 func (s *SimpleConnector) LoginPage(w http.ResponseWriter, r *http.Request, lr idp.LoginRequest) {
-	if err := loginPage.Execute(w, map[string]interface{}{"Authid": lr.AuthID}); err != nil {
+	if err := loginPage.Execute(w, map[string]interface{}{
+		"Authid":    lr.AuthID,
+		"SSOMethod": lr.SSOMethod,
+	}); err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		return
 	}
@@ -72,7 +79,13 @@ func (s *SimpleConnector) LoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redir, err := s.Authenticator.Authenticate(lf.AuthID, idppb.Identity{UserId: lf.Username})
+	at, ok := s.Authenticators[lf.SSOMethod]
+	if !ok {
+		http.Error(w, "Invalid SSO method", http.StatusBadRequest)
+		return
+	}
+
+	redir, err := at.Authenticate(lf.AuthID, idppb.Identity{UserId: lf.Username})
 	if err != nil {
 		http.Error(w, "Error authenticating flow", http.StatusInternalServerError)
 		return
@@ -90,6 +103,7 @@ var loginPage = template.Must(template.New("login").Parse(`<html>
 <body>
 <form action="/login" method="POST">
 <input type="hidden" name="authid" value="{{ .Authid }}">
+<input type="hidden" name="ssoMethod" value="{{ .SSOMethod }}">
 Username: <input type="text" name="username"><br>
 Password: <input type="password" name="password"><br>
 <input type="submit" value="Submit">

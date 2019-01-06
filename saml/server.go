@@ -49,7 +49,7 @@ func NewServer(l logrus.FieldLogger, storage idp.Storage, conn idp.Connector, cs
 	idpServer.IDP.SessionProvider = sconn
 
 	// call initialize on the connector to set our connector interface on it
-	if err := conn.Initialize(sconn); err != nil {
+	if err := conn.Initialize(idp.SSOMethodSAML, sconn); err != nil {
 		return nil, errors.Wrap(err, "Error initializing connector")
 	}
 

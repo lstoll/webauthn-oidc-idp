@@ -26,7 +26,7 @@ func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector, cs id
 		IDPStore: stor,
 	}
 
-	if err := conn.Initialize(dc); err != nil {
+	if err := conn.Initialize(idp.SSOMethodOIDC, dc); err != nil {
 		log.Fatal(err)
 	}
 
