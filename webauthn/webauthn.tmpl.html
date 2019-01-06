@@ -25,6 +25,7 @@
                 <div class="mui-col-md-4 mui-col-md-offset-4">
                     <div class="mui-panel mui--text-center">
                         <p>Login with your existing authenticator</p>
+                        <p class="hide lead" id="loginLoading">Login started, please tap your authenticator.</p>
                         <form id="loginForm">
                             <input type="text" name="username" id="loginUsername" class="form-control" placeholder="Username"
                                 value="{{ .Username }}" />
@@ -69,7 +70,15 @@
             registerPending = true;
             document.getElementById("registerLoading").classList.remove("hide");
             w.register({ "username": document.getElementById('registerLogin').value, "password": document.getElementById('registerPassword').value })
-                .then(res => alert('This authenticator has been registered'))
+                .then(res => {
+                    registerPending = false;
+                    document.getElementById("registerLoading").classList.add("hide");
+                    // Trigger login process
+                    document.getElementById("loginUsername").value = document.getElementById("registerLogin").value
+                    document.getElementById("logincard").classList.add("hide");
+                    document.getElementById("registercard").classList.remove("hide");
+                    attemptAuthentication();
+                })
                 .catch(err => {
                     console.error(err)
                     alert('Failed to register: ' + err);
@@ -89,7 +98,7 @@
         function attemptAuthentication() {
             if (loginPending) return;
             loginPending = true;
-            // document.getElementById("loginLoading").classList.remove("hide");
+            document.getElementById("loginLoading").classList.remove("hide");
             w.login({ "username": document.getElementById("loginUsername").value })
                 .then(res => res.json())
                 .then(res => window.location.href = res.redirect_to)
@@ -99,9 +108,8 @@
                 })
                 .then(() => {
                     loginPending = false;
-                    // document.getElementById("loginLoading").classList.add("hide");
+                    document.getElementById("loginLoading").classList.add("hide");
                 });
-            // TODO the final step for this needs to be redirecting to the returned URL.
         }
 
         document.getElementById("loginForm").onsubmit = function (e) {

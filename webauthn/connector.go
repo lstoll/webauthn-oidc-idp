@@ -212,6 +212,7 @@ func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session.FromContext(r.Context()).Values[userIDKey] = lu.Id
+	session.FromContext(r.Context()).Values[usernameKey] = rb.Username
 
 	options, err := c.WebAuthn.GetRegistrationOptions(&user{WebauthnUser: lu}, sess)
 	if err != nil {
@@ -260,8 +261,6 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to finish registration", http.StatusInternalServerError)
 		return
 	}
-
-	// TODO - Save the username for future use.
 
 	// Caller page should re-prompt for login at this point.
 	w.WriteHeader(http.StatusCreated)
