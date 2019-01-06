@@ -81,6 +81,17 @@
   version = "v1.0.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:b16db30b5311fb0946093d7afdc8352c6528280d8b2e77926229e60dd47672d5"
+  name = "github.com/go-bindata/go-bindata"
+  packages = [
+    ".",
+    "go-bindata",
+  ]
+  pruneopts = "UT"
+  revision = "41975c0ccc30077fd791b15b383818e805d0a57e"
+
+[[projects]]
   digest = "1:a9fe0f8ff72c388d0128e88ce5f3c27d37dcd0950acd7cdb8323555f12463396"
   name = "github.com/go-chi/chi"
   packages = [
@@ -174,6 +185,18 @@
   pruneopts = "UT"
   revision = "2eee05ed794112d45db504eb05aa693efd2b8b09"
   version = "v0.1.0"
+
+[[projects]]
+  digest = "1:ac196ae1693c0a33ed10d2f922c12b60a65c0a4052dcbd387c1fb5fb224ab382"
+  name = "github.com/koesie10/webauthn"
+  packages = [
+    "cose",
+    "protocol",
+    "webauthn",
+  ]
+  pruneopts = "T"
+  revision = "0adb1b7812648619232faf65a693d93f2d5a9d7d"
+  version = "v0.3.4"
 
 [[projects]]
   digest = "1:0a69a1c0db3591fcefb47f115b224592c8dfa4368b7ba9fae509d5e16cdc95c8"
@@ -289,6 +312,14 @@
   pruneopts = "UT"
   revision = "298182f68c66c05229eb03ac171abe6e309ee79a"
   version = "v1.0.3"
+
+[[projects]]
+  digest = "1:03aa6e485e528acb119fb32901cf99582c380225fc7d5a02758e08b180cb56c3"
+  name = "github.com/ugorji/go"
+  packages = ["codec"]
+  pruneopts = "UT"
+  revision = "b4c50a2b199d93b13dc15e78929cfb23bfdf21ab"
+  version = "v1.1.1"
 
 [[projects]]
   digest = "1:1576755a08c841066b74a72b69fe5836a4421ca7a823f36aeef68663ad4775f2"
@@ -481,6 +512,7 @@
     "github.com/dexidp/dex/connector",
     "github.com/dexidp/dex/server",
     "github.com/dexidp/dex/storage",
+    "github.com/go-bindata/go-bindata/go-bindata",
     "github.com/go-chi/chi",
     "github.com/go-chi/chi/middleware",
     "github.com/golang/protobuf/proto",
@@ -489,10 +521,12 @@
     "github.com/golang/protobuf/ptypes/timestamp",
     "github.com/gorilla/schema",
     "github.com/gorilla/sessions",
+    "github.com/koesie10/webauthn/webauthn",
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/sirupsen/logrus",
     "github.com/spf13/cobra",
+    "golang.org/x/crypto/bcrypt",
     "golang.org/x/oauth2",
   ]
   solver-name = "gps-cdcl"

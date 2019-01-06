@@ -1,6 +1,7 @@
 package idp
 
 import (
+	"encoding/gob"
 	"net/http"
 
 	"github.com/crewjam/saml"
@@ -17,13 +18,18 @@ type Authenticator interface {
 }
 
 // SSOMethod indicates the SSO system the user is being authenticated with
-type SSOMethod int
+type SSOMethod string
+
+func init() {
+	// So we can store it in the session
+	gob.Register(SSOMethod(""))
+}
 
 const (
 	// SSOMethodSAML indicates this request is part of a SAML flow
-	SSOMethodSAML SSOMethod = iota
+	SSOMethodSAML SSOMethod = "SAML"
 	// SSOMethodOIDC indicates this request is part of an OpenID Connect flow
-	SSOMethodOIDC
+	SSOMethodOIDC SSOMethod = "OIDC"
 )
 
 // LoginRequest encapsulates the information passed in for this SSO request.
@@ -42,9 +48,11 @@ type LoginRequest struct {
 
 // Connector is used to actually manage the end user authentication
 type Connector interface {
-	// Initialize will be called at startup, passing in a handle to the
-	// authenticator the connector can interact with.
-	Initialize(auth Authenticator) error
+	// Initialize will be called at startup by each potential SSO method,
+	// passing an authenticator for the given method. It is the connectors
+	// responsibility to call the correct authenticator for the LoginRequest's
+	// SSOMethod
+	Initialize(method SSOMethod, auth Authenticator) error
 	// LoginPage should render the login page, and kick off the connectors auth
 	// flow. This method can render whatever it wants and run the user through
 	// any arbitrary intermediate pages. The only requirement is that it threads

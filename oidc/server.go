@@ -26,7 +26,7 @@ func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector, cs id
 		IDPStore: stor,
 	}
 
-	if err := conn.Initialize(dc); err != nil {
+	if err := conn.Initialize(idp.SSOMethodOIDC, dc); err != nil {
 		log.Fatal(err)
 	}
 
@@ -46,8 +46,9 @@ func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector, cs id
 		Web: server.WebConfig{
 			Dir: "vendor/github.com/dexidp/dex/web",
 		},
-		Issuer:  iss,
-		Storage: storage.WithStaticConnectors(&dstorage{Storage: stor, clientLookup: cs.OIDCClient}, conns),
+		Issuer:             iss,
+		Storage:            storage.WithStaticConnectors(&dstorage{Storage: stor, clientLookup: cs.OIDCClient}, conns),
+		SkipApprovalScreen: true, // logging in implies consent to starting the oauth2 session
 	}
 	dc.DexStore = cfg.Storage
 

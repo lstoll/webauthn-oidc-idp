@@ -8,6 +8,7 @@ import (
 
 	"github.com/lstoll/idp/oidc"
 	"github.com/lstoll/idp/saml"
+	"github.com/lstoll/idp/storage/memory"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,13 +23,13 @@ func main() {
 		},
 	}
 
-	stor := &MemStorage{}
+	stor := &memory.MemStorage{}
 
 	cp := &ClientProvider{}
 
 	// pass this the SimpleConnector. Have it create the dex connector, and call initialize on SimpleConn
 
-	svr, err := oidc.NewServer(l, stor, conn, cp, "http://127.0.0.1:5556")
+	svr, err := oidc.NewServer(l, stor, conn, cp, "http://localhost:5556")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,11 +42,11 @@ func main() {
 
 	mux.Post("/login", conn.LoginPost)
 
-	ssvr, err := saml.NewServer(l, stor, conn, cp, "http://127.0.0.1:5556")
+	ssvr, err := saml.NewServer(l, stor, conn, cp, "http://localhost:5556")
 	if err != nil {
 		log.Fatal(err)
 	}
 	ssvr.MountRoutes(mux)
 
-	log.Fatal(http.ListenAndServe("127.0.0.1:5556", mux))
+	log.Fatal(http.ListenAndServe("localhost:5556", mux))
 }
