@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
+	"github.com/pkg/errors"
 )
 
 type contextKey string
@@ -49,6 +50,7 @@ func FromContext(ctx context.Context) *sessions.Session {
 	return s
 }
 
+// hookRW wraps a ResponseWriter and allows us to automatically save the session
 type hookRW struct {
 	http.ResponseWriter
 	req       *http.Request
@@ -56,9 +58,24 @@ type hookRW struct {
 	sessSaved bool
 }
 
+func (h *hookRW) WriteHeader(statusCode int) {
+	if !h.sessSaved {
+		if err := h.sess.Save(h.req, h.ResponseWriter); err != nil {
+			http.Error(h.ResponseWriter, "Failed to save session", http.StatusInternalServerError)
+			return
+		}
+	}
+	h.sessSaved = true
+	h.ResponseWriter.WriteHeader(statusCode)
+}
+
 func (h *hookRW) Write(b []byte) (int, error) {
 	if !h.sessSaved {
-		h.sess.Save(h.req, h.ResponseWriter)
+		if err := h.sess.Save(h.req, h.ResponseWriter); err != nil {
+			http.Error(h.ResponseWriter, "Failed to save session", http.StatusInternalServerError)
+			return 0, errors.Wrap(err, "Error saving session in hooked writer")
+		}
 	}
+	h.sessSaved = true
 	return h.ResponseWriter.Write(b)
 }

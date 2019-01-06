@@ -34,7 +34,7 @@ func (c *ClientProvider) SAMLServiceProvider(r *http.Request, serviceProviderID 
 
 // 	curl localhost:5555/saml/metadata
 const samlMetadata = `
-<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" validUntil="2019-01-07T06:12:51.936Z" entityID="http://127.0.0.1:5555/saml/metadata">
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" validUntil="2019-01-07T06:12:51.936Z" entityID="http://localhost:5555/saml/metadata">
   <SPSSODescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" validUntil="2019-01-07T06:12:51.935795Z" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol" AuthnRequestsSigned="false" WantAssertionsSigned="true">
     <KeyDescriptor use="signing">
       <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
@@ -54,6 +54,6 @@ const samlMetadata = `
       <EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes256-cbc"></EncryptionMethod>
       <EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"></EncryptionMethod>
     </KeyDescriptor>
-    <AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="http://127.0.0.1:5555/saml/acs" index="1"></AssertionConsumerService>
+    <AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="http://localhost:5555/saml/acs" index="1"></AssertionConsumerService>
   </SPSSODescriptor>
 </EntityDescriptor>`

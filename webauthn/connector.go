@@ -20,9 +20,10 @@ import (
 var _ idp.Connector = (*Connector)(nil)
 
 const (
-	userIDKey   = "user-id"
-	authIDKey   = "authID"
-	usernameKey = "username"
+	userIDKey     = "user-id"
+	authMethodKey = "sso-method"
+	authIDKey     = "authID"
+	usernameKey   = "username"
 )
 
 // Connector is a basic user/pass connector with in-memory credentials
@@ -31,7 +32,7 @@ type Connector struct {
 	// Users maps user -> password
 	Users map[string]string
 	// Authenticator to deal with
-	Authenticator idp.Authenticator
+	Authenticators map[idp.SSOMethod]idp.Authenticator
 	// WebAuthn helper
 	WebAuthn *webauthn.WebAuthn
 	// How we manage users
@@ -55,8 +56,11 @@ func NewConnector(l logrus.FieldLogger, ua UserAuthenticator) (*Connector, error
 	}, nil
 }
 
-func (c *Connector) Initialize(auth idp.Authenticator) error {
-	c.Authenticator = auth
+func (c *Connector) Initialize(method idp.SSOMethod, auth idp.Authenticator) error {
+	if c.Authenticators == nil {
+		c.Authenticators = map[idp.SSOMethod]idp.Authenticator{}
+	}
+	c.Authenticators[method] = auth
 	return nil
 }
 
@@ -66,17 +70,11 @@ var indexTemplate = template.Must(template.New("index.html").Parse(string(MustAs
 func (c *Connector) LoginPage(w http.ResponseWriter, r *http.Request, lr idp.LoginRequest) {
 	sess := session.FromContext(r.Context())
 	sess.Values[authIDKey] = lr.AuthID
+	sess.Values[authMethodKey] = lr.SSOMethod
 	var sessUser string
 	if su, ok := sess.Values[usernameKey]; ok {
 		sessUser = su.(string)
 	}
-
-	// TODO - store the ID in session, not the login name.
-	// send this to a hidden field on the form
-	// trigged the auto login based on the hidden field
-	// make the login finish look for this hidden field, and if it
-	// does log this user in based on the session value (don't trust user submitted).
-	// if not, look for username and look the user up by that.
 
 	if err := indexTemplate.Execute(w, struct {
 		Username string
@@ -104,10 +102,23 @@ func (c *Connector) LoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up user.
+	lu, err := c.UserAuthenticator.GetUserByUsername(lb.Username)
+	if err != nil {
+		// TODO - differentiate no user vs. error
+		c.Logger.WithError(err).Error("Error finding user by username")
+		http.Error(w, "Error finding user by username", http.StatusForbidden)
+		return
+	}
 
-	//sessUser, _ := sess.Values[usernameKey]
+	// Reset the userID in use
+	delete(session.FromContext(r.Context()).Values, userIDKey)
+	session.FromContext(r.Context()).Values[userIDKey] = lu.Id
 
-	options, err := c.WebAuthn.GetLoginOptions(nil, sess)
+	// Stash username in session for future use.
+	// TODO - what is the expiry on this? Would we be just better with a long-lived cookie?
+	session.FromContext(r.Context()).Values[usernameKey] = lb.Username
+
+	options, err := c.WebAuthn.GetLoginOptions(&user{WebauthnUser: lu}, sess)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get login options")
 		http.Error(w, "Failed to setup login options", http.StatusInternalServerError)
@@ -130,32 +141,35 @@ type loginResponse struct {
 func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
-	auth := c.WebAuthn.FinishLogin(r, w, nil, sess)
-	if auth == nil {
-		// the finish handler deals with the http stuff, so bail
-		return
-	}
-
-	dbauth, err := c.UserAuthenticator.GetAuthenticator(auth.WebAuthID())
-	if err != nil {
-		c.Logger.WithError(err).Error("Error fetching authenticator")
-		http.Error(w, "Error fetching authenticator", http.StatusInternalServerError)
-		return
-	}
-
-	dbuser, err := c.UserAuthenticator.GetUser(dbauth.UserId)
+	userID := session.FromContext(r.Context()).Values[userIDKey]
+	dbuser, err := c.UserAuthenticator.GetUser(userID.(string))
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
 		http.Error(w, "Error fetching user", http.StatusInternalServerError)
 		return
 	}
+	delete(session.FromContext(r.Context()).Values, userIDKey)
 
-	// At this point we're left with the authenticator details. Look up the user
-	// information from the key to work out who we are. Call the authenticate
-	// method, then marshal the response URL into the response JSON. The client
-	// can then send the user there and we're done.
+	// This will make sure the user we expect owns this authenticator. If we get past this point, we know
+	// dbuser is correct.
+	auth := c.WebAuthn.FinishLogin(r, w, &user{WebauthnUser: dbuser}, sess)
+	if auth == nil {
+		// the finish handler deals with the http stuff, so bail
+		return
+	}
 
-	redir, err := c.Authenticator.Authenticate(session.FromContext(r.Context()).Values[authIDKey].(string), idppb.Identity{UserId: dbuser.Id})
+	//  Call the authenticate method, then marshal the response URL into the
+	//  response JSON. The client can then send the user there and we're done.
+
+	ssom := session.FromContext(r.Context()).Values[authMethodKey]
+	ssoauth, ok := c.Authenticators[ssom.(idp.SSOMethod)]
+	if !ok {
+		c.Logger.WithError(err).Error("Invalid SSO method")
+		http.Error(w, "Invalid SSO method", http.StatusBadRequest)
+		return
+	}
+
+	redir, err := ssoauth.Authenticate(session.FromContext(r.Context()).Values[authIDKey].(string), idppb.Identity{UserId: dbuser.Id})
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
 		http.Error(w, "Error fetching user", http.StatusInternalServerError)
@@ -221,6 +235,7 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in session", http.StatusBadRequest)
 		return
 	}
+	delete(session.FromContext(r.Context()).Values, userIDKey)
 
 	lu, err := c.UserAuthenticator.GetUser(userID.(string))
 	if err != nil {
@@ -245,6 +260,8 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to finish registration", http.StatusInternalServerError)
 		return
 	}
+
+	// TODO - Save the username for future use.
 
 	// Caller page should re-prompt for login at this point.
 	w.WriteHeader(http.StatusCreated)

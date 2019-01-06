@@ -25,7 +25,7 @@
                 <div class="mui-col-md-4 mui-col-md-offset-4">
                     <div class="mui-panel mui--text-center">
                         <p>Login with your existing authenticator</p>
-                        <form id="registerForm">
+                        <form id="loginForm">
                             <input type="text" name="username" id="loginUsername" class="form-control" placeholder="Username"
                                 value="{{ .Username }}" />
                             <button type="submit" class="btn btn-success mt-3">Login</button>
@@ -92,24 +92,27 @@
             // document.getElementById("loginLoading").classList.remove("hide");
             w.login({ "username": document.getElementById("loginUsername").value })
                 .then(res => res.json())
-                .then(res => alert('You have been logged in to ' + res.name))
+                .then(res => window.location.href = res.redirect_to)
                 .catch(err => {
                     console.error(err)
                     alert('Failed to login: ' + err);
                 })
                 .then(() => {
                     loginPending = false;
-                    document.getElementById("loginLoading").classList.add("hide");
-                })
-                .then(res => alert("Would redirect to " + res.redirect_to));
+                    // document.getElementById("loginLoading").classList.add("hide");
+                });
             // TODO the final step for this needs to be redirecting to the returned URL.
         }
 
+        document.getElementById("loginForm").onsubmit = function (e) {
+            e.preventDefault();
+            attemptAuthentication();
+        }
+
         // If we have a preseeded username, auth immediately
-        //if (document.getElementById("loginUsername").value != "") {
-        //    attemptAuthentication();
-        //}
-        attemptAuthentication();
+        if (document.getElementById("loginUsername").value != "") {
+           attemptAuthentication();
+        }
     </script>
 </body>
 

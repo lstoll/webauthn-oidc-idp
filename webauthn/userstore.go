@@ -60,6 +60,18 @@ func (u *UserStore) GetUser(id string) (*idppb.WebauthnUser, error) {
 	return &au, nil
 }
 
+func (u *UserStore) GetUserByUsername(username string) (*idppb.WebauthnUser, error) {
+	ub, err := u.Storage.Get(userCredsNS, username)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error looking up user by login")
+	}
+	su := storeUser{}
+	if err := json.Unmarshal(ub, &su); err != nil {
+		return nil, errors.Wrap(err, "Error unmarshaling user")
+	}
+	return u.GetUser(su.UserID)
+}
+
 // AddAuthenticatorToUser should associate the given user with the given
 // authenticator
 func (u *UserStore) AddAuthenticatorToUser(userID string, authenticator *idppb.WebauthnAuthenticator) error {

@@ -1,6 +1,7 @@
 package idp
 
 import (
+	"encoding/gob"
 	"net/http"
 
 	"github.com/crewjam/saml"
@@ -18,6 +19,11 @@ type Authenticator interface {
 
 // SSOMethod indicates the SSO system the user is being authenticated with
 type SSOMethod string
+
+func init() {
+	// So we can store it in the session
+	gob.Register(SSOMethod(""))
+}
 
 const (
 	// SSOMethodSAML indicates this request is part of a SAML flow

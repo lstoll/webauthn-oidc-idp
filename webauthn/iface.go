@@ -10,6 +10,8 @@ type UserAuthenticator interface {
 	LoginUser(username, password string) (*idppb.WebauthnUser, error)
 	// GetUser returns the user for the given ID
 	GetUser(id string) (*idppb.WebauthnUser, error)
+	// Look up a user by their username
+	GetUserByUsername(username string) (*idppb.WebauthnUser, error)
 	// AddAuthenticatorToUser should associate the given user with the given
 	// authenticator
 	AddAuthenticatorToUser(userID string, authenticator *idppb.WebauthnAuthenticator) error
