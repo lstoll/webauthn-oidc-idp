@@ -26,6 +26,7 @@
 
 required = [
   "github.com/golang/protobuf/protoc-gen-go",
+  "github.com/go-bindata/go-bindata/go-bindata",
 ]
 
 [[constraint]]
@@ -44,10 +45,22 @@ required = [
   name = "github.com/crewjam/saml"
   branch = "master"
 
+[[constraint]]
+  name = "github.com/koesie10/webauthn"
+  version = "^0.3.4"
+
+[[constraint]]
+  name = "github.com/go-bindata/go-bindata"
+  branch = "master"
+
 [prune]
   go-tests = true
   unused-packages = true
 
   [[prune.project]]
     name = "github.com/dexidp/dex"
+    unused-packages = false
+
+  [[prune.project]]
+    name = "github.com/koesie10/webauthn"
     unused-packages = false

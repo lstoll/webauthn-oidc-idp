@@ -15,7 +15,7 @@ func (c *ClientProvider) OIDCClient(clientID string) (client *idppb.OIDCClient, 
 	if clientID == "example-app" {
 		return &idppb.OIDCClient{
 			Id:           "example-app",
-			RedirectUris: []string{"http://127.0.0.1:5555/callback"},
+			RedirectUris: []string{"http://localhost:5555/callback"},
 			Name:         "Example app",
 			Secret:       "ZXhhbXBsZS1hcHAtc2VjcmV0",
 		}, true, nil

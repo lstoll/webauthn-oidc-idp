@@ -53,3 +53,27 @@ message OIDCClient {
     string name = 6;
     string logo_url = 7;
 }
+
+message WebauthnUser {
+    // a unique identifier for this user
+    string id = 1;
+    // Display name
+    string name = 2;
+    string email = 3;
+    repeated string groups = 4;
+    // AllowBootstrapEnroll indicates if we should allow users with no
+	// authenticators to enroll their first with no external involvement
+    bool allow_bootstrap_enrol = 5;
+}
+
+// WebauthnAuthenticator represents an authenticator device
+message WebauthnAuthenticator {
+    // user_id that this authenticator belongs to
+    string user_id = 1;
+    /* webauthn data */
+    bytes id = 2;
+	bytes credential_id = 3;
+	bytes public_key = 4;
+	bytes aaguid = 5;
+	uint32 sign_count = 6;
+}
