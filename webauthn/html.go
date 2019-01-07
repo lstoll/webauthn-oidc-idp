@@ -82,7 +82,7 @@ func webauthnWebauthnJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "webauthn/webauthn.js", size: 3306, mode: os.FileMode(420), modTime: time.Unix(1546748549, 0)}
+	info := bindataFileInfo{name: "webauthn/webauthn.js", size: 3306, mode: os.FileMode(420), modTime: time.Unix(1546797832, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -102,7 +102,7 @@ func webauthnWebauthnTmplHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "webauthn/webauthn.tmpl.html", size: 5301, mode: os.FileMode(420), modTime: time.Unix(1546797630, 0)}
+	info := bindataFileInfo{name: "webauthn/webauthn.tmpl.html", size: 5301, mode: os.FileMode(420), modTime: time.Unix(1546797832, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }

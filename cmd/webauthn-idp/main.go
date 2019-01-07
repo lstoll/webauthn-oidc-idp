@@ -5,10 +5,13 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/lstoll/idp/storage/storagepb"
+
 	"github.com/go-chi/chi"
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 
+	"github.com/lstoll/grpce/inproc"
 	"github.com/lstoll/idp/oidc"
 	"github.com/lstoll/idp/saml"
 	"github.com/lstoll/idp/session"
@@ -30,13 +33,27 @@ func main() {
 	// TODO
 
 	stor := &memory.MemStorage{}
-	us := &webauthn.UserStore{Storage: stor}
 
-	if err := us.CreateUser("abcdef", "user", "password"); err != nil {
-		log.Fatal(err)
+	us := memory.NewUserStore()
+	us.Users["user"] = &memory.User{
+		Password: "password",
+		User: &storagepb.WebauthnUser{
+			Id: "users-unique-id",
+		},
 	}
 
-	conn, err := webauthn.NewConnector(l, us)
+	ips := inproc.New()
+
+	storagepb.RegisterWebAuthnUserServiceServer(ips.Server, us)
+
+	if err := ips.Start(); err != nil {
+		log.Fatal(err)
+	}
+	defer ips.Close()
+
+	wus := storagepb.NewWebAuthnUserServiceClient(ips.ClientConn)
+
+	conn, err := webauthn.NewConnector(l, wus)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,0 +1,87 @@
+syntax = "proto3";
+package idp;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+
+option go_package = "github.com/lstoll/idp/storage/storagepb";
+
+// WebAuthnUserService is used by the WebAuthn connector to retrieve and manage
+// user information
+service WebAuthnUserService {
+	// LoginUser should return a User object if username and password are
+	// correct
+	rpc LoginUser(LoginRequest) returns (LoginResponse);
+	// GetUser returns the user
+	rpc GetUser(GetUserRequest) returns (GetUserResponse);
+	// AddAuthenticatorToUser should associate the given user with the given
+	// authenticator
+	rpc AddAuthenticatorToUser(AddAuthenticatorRequest) returns (google.protobuf.Empty);
+	// UserAuthenticators should return all the authenticators registered to the
+	// given user
+	rpc UserAuthenticators(GetUserRequest) returns (GetAuthenticatorsResponse);
+	// GetAuthenticator returns the authenticator matching the provided ID
+	rpc GetAuthenticator(GetAuthenticatorRequest) returns (GetAuthenticatorResponse);
+}
+
+message LoginRequest {
+    string username = 1;
+    string password = 2;
+}
+
+message LoginResponse {
+    WebauthnUser user = 1;
+}
+
+message GetUserRequest {
+    oneof lookup {
+        string user_id = 1;
+        string username = 2;
+    }
+}
+
+message GetUserResponse {
+    WebauthnUser user = 1;
+}
+
+message AddAuthenticatorRequest {
+    string user_id = 1;
+    WebauthnAuthenticator authenticator = 2;
+}
+
+message GetAuthenticatorsResponse {
+    repeated WebauthnAuthenticator authenticators = 1;
+}
+
+message GetAuthenticatorRequest {
+    bytes authenticator_id = 1;
+}
+
+message GetAuthenticatorResponse {
+    WebauthnAuthenticator authenticator = 1;
+}
+
+message WebauthnUser {
+    // a unique identifier for this user
+    string id = 1;
+    // Display name
+    string name = 2;
+    string email = 3;
+    repeated string groups = 4;
+    // AllowBootstrapEnroll indicates if we should allow users with no
+	// authenticators to enroll their first with no external involvement
+    bool allow_bootstrap_enrol = 5;
+}
+
+// WebauthnAuthenticator represents an authenticator device
+message WebauthnAuthenticator {
+    // user_id that this authenticator belongs to
+    string user_id = 1;
+    /* webauthn data */
+    bytes id = 2;
+	bytes credential_id = 3;
+	bytes public_key = 4;
+	bytes aaguid = 5;
+	uint32 sign_count = 6;
+}
