@@ -5,6 +5,9 @@ import (
 	"html/template"
 	"net/http"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/koesie10/webauthn/protocol"
 
 	"github.com/go-chi/chi"
@@ -15,6 +18,7 @@ import (
 	"github.com/lstoll/idp"
 	"github.com/lstoll/idp/idppb"
 	"github.com/lstoll/idp/session"
+	"github.com/lstoll/idp/storage/storagepb"
 )
 
 var _ idp.Connector = (*Connector)(nil)
@@ -36,10 +40,10 @@ type Connector struct {
 	// WebAuthn helper
 	WebAuthn *webauthn.WebAuthn
 	// How we manage users
-	UserAuthenticator UserAuthenticator
+	UserAuthenticator storagepb.WebAuthnUserServiceClient
 }
 
-func NewConnector(l logrus.FieldLogger, ua UserAuthenticator) (*Connector, error) {
+func NewConnector(l logrus.FieldLogger, ua storagepb.WebAuthnUserServiceClient) (*Connector, error) {
 	w, err := webauthn.New(&webauthn.Config{
 		AuthenticatorStore: &storage{ua: ua},
 		RelyingPartyName:   "idp",
@@ -102,23 +106,28 @@ func (c *Connector) LoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up user.
-	lu, err := c.UserAuthenticator.GetUserByUsername(lb.Username)
+	ureq := &storagepb.GetUserRequest{Lookup: &storagepb.GetUserRequest_Username{Username: lb.Username}}
+	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			http.Error(w, "Invalid user", http.StatusForbidden)
+			return
+		}
 		// TODO - differentiate no user vs. error
-		c.Logger.WithError(err).Error("Error finding user by username")
-		http.Error(w, "Error finding user by username", http.StatusForbidden)
+		c.Logger.WithError(err).Error("Failed to look up user")
+		http.Error(w, "Error looking up user", http.StatusInternalServerError)
 		return
 	}
 
 	// Reset the userID in use
 	delete(session.FromContext(r.Context()).Values, userIDKey)
-	session.FromContext(r.Context()).Values[userIDKey] = lu.Id
+	session.FromContext(r.Context()).Values[userIDKey] = uresp.User.Id
 
 	// Stash username in session for future use.
 	// TODO - what is the expiry on this? Would we be just better with a long-lived cookie?
 	session.FromContext(r.Context()).Values[usernameKey] = lb.Username
 
-	options, err := c.WebAuthn.GetLoginOptions(&user{WebauthnUser: lu}, sess)
+	options, err := c.WebAuthn.GetLoginOptions(&user{WebauthnUser: uresp.User}, sess)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get login options")
 		http.Error(w, "Failed to setup login options", http.StatusInternalServerError)
@@ -142,7 +151,8 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
 	userID := session.FromContext(r.Context()).Values[userIDKey]
-	dbuser, err := c.UserAuthenticator.GetUser(userID.(string))
+	ureq := &storagepb.GetUserRequest{Lookup: &storagepb.GetUserRequest_UserId{UserId: userID.(string)}}
+	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
 		http.Error(w, "Error fetching user", http.StatusInternalServerError)
@@ -152,7 +162,7 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 
 	// This will make sure the user we expect owns this authenticator. If we get past this point, we know
 	// dbuser is correct.
-	auth := c.WebAuthn.FinishLogin(r, w, &user{WebauthnUser: dbuser}, sess)
+	auth := c.WebAuthn.FinishLogin(r, w, &user{WebauthnUser: uresp.User}, sess)
 	if auth == nil {
 		// the finish handler deals with the http stuff, so bail
 		return
@@ -169,7 +179,7 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redir, err := ssoauth.Authenticate(session.FromContext(r.Context()).Values[authIDKey].(string), idppb.Identity{UserId: dbuser.Id})
+	redir, err := ssoauth.Authenticate(session.FromContext(r.Context()).Values[authIDKey].(string), idppb.Identity{UserId: uresp.User.Id})
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
 		http.Error(w, "Error fetching user", http.StatusInternalServerError)
@@ -203,18 +213,25 @@ func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lu, err := c.UserAuthenticator.LoginUser(rb.Username, rb.Password)
+	lreq := &storagepb.LoginRequest{
+		Username: rb.Username,
+		Password: rb.Password,
+	}
+	lresp, err := c.UserAuthenticator.LoginUser(r.Context(), lreq)
 	if err != nil {
+		if status.Code(err) == codes.Unauthenticated {
+			http.Error(w, "Failed to parse registration start body", http.StatusForbidden)
+			return
+		}
 		c.Logger.WithError(err).Error("Error logging user in")
-		// Assume access denied for now, we don't differ error vs. not allowed
-		http.Error(w, "Failed to parse registration start body", http.StatusForbidden)
+		http.Error(w, "Failed to log user in", http.StatusInternalServerError)
 		return
 	}
 
-	session.FromContext(r.Context()).Values[userIDKey] = lu.Id
+	session.FromContext(r.Context()).Values[userIDKey] = lresp.User.Id
 	session.FromContext(r.Context()).Values[usernameKey] = rb.Username
 
-	options, err := c.WebAuthn.GetRegistrationOptions(&user{WebauthnUser: lu}, sess)
+	options, err := c.WebAuthn.GetRegistrationOptions(&user{WebauthnUser: lresp.User}, sess)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get registration options")
 		http.Error(w, "Failed to setup registration options", http.StatusInternalServerError)
@@ -238,7 +255,8 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(session.FromContext(r.Context()).Values, userIDKey)
 
-	lu, err := c.UserAuthenticator.GetUser(userID.(string))
+	ureq := &storagepb.GetUserRequest{Lookup: &storagepb.GetUserRequest_UserId{UserId: userID.(string)}}
+	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get user")
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -255,7 +273,7 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// This will also associate the user to the authenticator in the store.
-	_, err = c.WebAuthn.ParseAndFinishRegistration(attestationResponse, &user{WebauthnUser: lu}, sess)
+	_, err = c.WebAuthn.ParseAndFinishRegistration(attestationResponse, &user{WebauthnUser: uresp.User}, sess)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to finish registration")
 		http.Error(w, "Failed to finish registration", http.StatusInternalServerError)

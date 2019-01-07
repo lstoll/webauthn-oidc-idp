@@ -103,7 +103,7 @@
   version = "v3.3.3"
 
 [[projects]]
-  digest = "1:b00d66edb5f40dbbdcd37292851a61c2644356e37d8fb6517394ffb4b24b1c22"
+  digest = "1:54a9254d3845e3a80d4957975abfc5e771a49d08379509ec4f9c99c1ccbe13a9"
   name = "github.com/golang/protobuf"
   packages = [
     "proto",
@@ -116,6 +116,7 @@
     "ptypes",
     "ptypes/any",
     "ptypes/duration",
+    "ptypes/empty",
     "ptypes/timestamp",
   ]
   pruneopts = "UT"
@@ -171,6 +172,14 @@
   version = "v1.1.3"
 
 [[projects]]
+  branch = "master"
+  digest = "1:2ad75332b892d3a21d35fc24aba8e635f75ed461c61d9b4ca6c1e33a5788c083"
+  name = "github.com/hydrogen18/memlistener"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "54553eb933fb8c2d6103afed4c7173d807d26c0a"
+
+[[projects]]
   digest = "1:870d441fe217b8e689d7949fef6e43efbc787e50f200cb1e70dbca9204a1d6be"
   name = "github.com/inconshreveable/mousetrap"
   packages = ["."]
@@ -205,6 +214,14 @@
   pruneopts = "UT"
   revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
   version = "v1.0.1"
+
+[[projects]]
+  digest = "1:98d86d2cf3e91942612d637f855c5110ef0388b9a4af3afcc71d407f2fa654cf"
+  name = "github.com/lstoll/grpce"
+  packages = ["inproc"]
+  pruneopts = "UT"
+  revision = "8fafc79f98e2d89eac69e6c694b329414ccb67dc"
+  version = "v1.5.1"
 
 [[projects]]
   digest = "1:ff5ebae34cfbf047d505ee150de27e60570e8c394b3b8fdbb720ff6ac71985fc"
@@ -518,16 +535,23 @@
     "github.com/golang/protobuf/proto",
     "github.com/golang/protobuf/protoc-gen-go",
     "github.com/golang/protobuf/ptypes",
+    "github.com/golang/protobuf/ptypes/empty",
     "github.com/golang/protobuf/ptypes/timestamp",
     "github.com/gorilla/schema",
+    "github.com/gorilla/securecookie",
     "github.com/gorilla/sessions",
+    "github.com/koesie10/webauthn/protocol",
     "github.com/koesie10/webauthn/webauthn",
+    "github.com/lstoll/grpce/inproc",
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/sirupsen/logrus",
     "github.com/spf13/cobra",
-    "golang.org/x/crypto/bcrypt",
+    "golang.org/x/net/context",
     "golang.org/x/oauth2",
+    "google.golang.org/grpc",
+    "google.golang.org/grpc/codes",
+    "google.golang.org/grpc/status",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
