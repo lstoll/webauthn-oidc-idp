@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/lstoll/idp/storage/storagepb"
+	"github.com/lstoll/idp/webauthn/webauthnpb"
 )
 
 const (
@@ -17,12 +17,12 @@ const (
 	authenticatorNS = "authenticator"
 )
 
-var _ storagepb.WebAuthnUserServiceServer = (*UserStore)(nil)
+var _ webauthnpb.WebAuthnUserServiceServer = (*UserStore)(nil)
 
 type User struct {
 	Password       string
-	User           *storagepb.WebauthnUser
-	Authenticators []*storagepb.WebauthnAuthenticator
+	User           *webauthnpb.WebauthnUser
+	Authenticators []*webauthnpb.WebauthnAuthenticator
 }
 
 // UserStore is a simple UserAuthenticator implementation backing onto the IDP
@@ -43,7 +43,7 @@ type storeUser struct {
 
 // LoginUser should return a User object if username and password are
 // correct
-func (u *UserStore) LoginUser(_ context.Context, req *storagepb.LoginRequest) (*storagepb.LoginResponse, error) {
+func (u *UserStore) LoginUser(_ context.Context, req *webauthnpb.LoginRequest) (*webauthnpb.LoginResponse, error) {
 	usr, ok := u.Users[req.Username]
 	if !ok {
 		return nil, status.Error(codes.NotFound, "User not found")
@@ -51,16 +51,16 @@ func (u *UserStore) LoginUser(_ context.Context, req *storagepb.LoginRequest) (*
 	if usr.Password != req.Password {
 		return nil, status.Error(codes.Unauthenticated, "Invalid password")
 	}
-	return &storagepb.LoginResponse{
+	return &webauthnpb.LoginResponse{
 		User: usr.User,
 	}, nil
 }
 
 // GetUser returns the user for the given ID
-func (u *UserStore) GetUser(_ context.Context, req *storagepb.GetUserRequest) (*storagepb.GetUserResponse, error) {
-	resp := &storagepb.GetUserResponse{}
+func (u *UserStore) GetUser(_ context.Context, req *webauthnpb.GetUserRequest) (*webauthnpb.GetUserResponse, error) {
+	resp := &webauthnpb.GetUserResponse{}
 	switch l := req.Lookup.(type) {
-	case *storagepb.GetUserRequest_UserId:
+	case *webauthnpb.GetUserRequest_UserId:
 		for _, usr := range u.Users {
 			if usr.User.Id == l.UserId {
 				resp.User = usr.User
@@ -70,7 +70,7 @@ func (u *UserStore) GetUser(_ context.Context, req *storagepb.GetUserRequest) (*
 		if resp.User == nil {
 			return nil, status.Error(codes.NotFound, "User not found")
 		}
-	case *storagepb.GetUserRequest_Username:
+	case *webauthnpb.GetUserRequest_Username:
 		usr, ok := u.Users[l.Username]
 		if !ok {
 			return nil, status.Error(codes.NotFound, "User not found")
@@ -84,7 +84,7 @@ func (u *UserStore) GetUser(_ context.Context, req *storagepb.GetUserRequest) (*
 
 // AddAuthenticatorToUser should associate the given user with the given
 // authenticator
-func (u *UserStore) AddAuthenticatorToUser(_ context.Context, req *storagepb.AddAuthenticatorRequest) (*empty.Empty, error) {
+func (u *UserStore) AddAuthenticatorToUser(_ context.Context, req *webauthnpb.AddAuthenticatorRequest) (*empty.Empty, error) {
 	var user *User
 	for _, usr := range u.Users {
 		if usr.User.Id == req.UserId {
@@ -101,10 +101,10 @@ func (u *UserStore) AddAuthenticatorToUser(_ context.Context, req *storagepb.Add
 
 // UserAuthenticators should return all the authenticators registered to the
 // given user
-func (u *UserStore) UserAuthenticators(_ context.Context, req *storagepb.GetUserRequest) (*storagepb.GetAuthenticatorsResponse, error) {
+func (u *UserStore) UserAuthenticators(_ context.Context, req *webauthnpb.GetUserRequest) (*webauthnpb.GetAuthenticatorsResponse, error) {
 	var user *User
 	switch l := req.Lookup.(type) {
-	case *storagepb.GetUserRequest_UserId:
+	case *webauthnpb.GetUserRequest_UserId:
 		for _, usr := range u.Users {
 			if usr.User.Id == l.UserId {
 				user = usr
@@ -114,7 +114,7 @@ func (u *UserStore) UserAuthenticators(_ context.Context, req *storagepb.GetUser
 		if user == nil {
 			return nil, status.Error(codes.NotFound, "User not found")
 		}
-	case *storagepb.GetUserRequest_Username:
+	case *webauthnpb.GetUserRequest_Username:
 		usr, ok := u.Users[l.Username]
 		if !ok {
 			return nil, status.Error(codes.NotFound, "User not found")
@@ -124,14 +124,14 @@ func (u *UserStore) UserAuthenticators(_ context.Context, req *storagepb.GetUser
 		return nil, status.Error(codes.InvalidArgument, "Bad lookup query")
 	}
 
-	return &storagepb.GetAuthenticatorsResponse{
+	return &webauthnpb.GetAuthenticatorsResponse{
 		Authenticators: user.Authenticators,
 	}, nil
 }
 
 // GetAuthenticator returns the authenticator matching the provided ID
-func (u *UserStore) GetAuthenticator(_ context.Context, req *storagepb.GetAuthenticatorRequest) (*storagepb.GetAuthenticatorResponse, error) {
-	var auth *storagepb.WebauthnAuthenticator
+func (u *UserStore) GetAuthenticator(_ context.Context, req *webauthnpb.GetAuthenticatorRequest) (*webauthnpb.GetAuthenticatorResponse, error) {
+	var auth *webauthnpb.WebauthnAuthenticator
 	for _, v := range u.Users {
 		for _, a := range v.Authenticators {
 			if bytes.Equal(a.Id, req.AuthenticatorId) {
@@ -143,7 +143,7 @@ func (u *UserStore) GetAuthenticator(_ context.Context, req *storagepb.GetAuthen
 		return nil, status.Error(codes.NotFound, "Authenticator not found")
 	}
 
-	return &storagepb.GetAuthenticatorResponse{
+	return &webauthnpb.GetAuthenticatorResponse{
 		Authenticator: auth,
 	}, nil
 }

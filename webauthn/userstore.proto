@@ -1,11 +1,11 @@
 syntax = "proto3";
-package idp;
+package lstoll.idp.webauthn;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 
 
-option go_package = "github.com/lstoll/idp/storage/storagepb";
+option go_package = "github.com/lstoll/idp/webauthn/webauthnpb";
 
 // WebAuthnUserService is used by the WebAuthn connector to retrieve and manage
 // user information

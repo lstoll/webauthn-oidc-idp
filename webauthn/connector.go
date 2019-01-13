@@ -18,7 +18,7 @@ import (
 	"github.com/lstoll/idp"
 	"github.com/lstoll/idp/idppb"
 	"github.com/lstoll/idp/session"
-	"github.com/lstoll/idp/storage/storagepb"
+	"github.com/lstoll/idp/webauthn/webauthnpb"
 )
 
 var _ idp.Connector = (*Connector)(nil)
@@ -40,10 +40,10 @@ type Connector struct {
 	// WebAuthn helper
 	WebAuthn *webauthn.WebAuthn
 	// How we manage users
-	UserAuthenticator storagepb.WebAuthnUserServiceClient
+	UserAuthenticator webauthnpb.WebAuthnUserServiceClient
 }
 
-func NewConnector(l logrus.FieldLogger, ua storagepb.WebAuthnUserServiceClient) (*Connector, error) {
+func NewConnector(l logrus.FieldLogger, ua webauthnpb.WebAuthnUserServiceClient) (*Connector, error) {
 	w, err := webauthn.New(&webauthn.Config{
 		AuthenticatorStore: &storage{ua: ua},
 		RelyingPartyName:   "idp",
@@ -106,7 +106,7 @@ func (c *Connector) LoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up user.
-	ureq := &storagepb.GetUserRequest{Lookup: &storagepb.GetUserRequest_Username{Username: lb.Username}}
+	ureq := &webauthnpb.GetUserRequest{Lookup: &webauthnpb.GetUserRequest_Username{Username: lb.Username}}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -151,7 +151,7 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
 	userID := session.FromContext(r.Context()).Values[userIDKey]
-	ureq := &storagepb.GetUserRequest{Lookup: &storagepb.GetUserRequest_UserId{UserId: userID.(string)}}
+	ureq := &webauthnpb.GetUserRequest{Lookup: &webauthnpb.GetUserRequest_UserId{UserId: userID.(string)}}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
@@ -213,7 +213,7 @@ func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lreq := &storagepb.LoginRequest{
+	lreq := &webauthnpb.LoginRequest{
 		Username: rb.Username,
 		Password: rb.Password,
 	}
@@ -255,7 +255,7 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(session.FromContext(r.Context()).Values, userIDKey)
 
-	ureq := &storagepb.GetUserRequest{Lookup: &storagepb.GetUserRequest_UserId{UserId: userID.(string)}}
+	ureq := &webauthnpb.GetUserRequest{Lookup: &webauthnpb.GetUserRequest_UserId{UserId: userID.(string)}}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get user")

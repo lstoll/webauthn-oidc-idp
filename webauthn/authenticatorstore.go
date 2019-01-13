@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/koesie10/webauthn/webauthn"
-	"github.com/lstoll/idp/storage/storagepb"
+	"github.com/lstoll/idp/webauthn/webauthnpb"
 	"github.com/pkg/errors"
 )
 
@@ -13,16 +13,16 @@ var _ webauthn.AuthenticatorStore = (*storage)(nil)
 // storage implements the storage interface the webauthn library expects. This
 // is done by wrapping our storage interface.
 type storage struct {
-	ua storagepb.WebAuthnUserServiceClient
+	ua webauthnpb.WebAuthnUserServiceClient
 }
 
 // AddAuthenticator should add the given authenticator to a user. The authenticator's type should not be depended
 // on; it is constructed by this package. All information should be stored in a way such that it is retrievable
 // in the future using GetAuthenticator and GetAuthenticators.
 func (s *storage) AddAuthenticator(user webauthn.User, authenticator webauthn.Authenticator) error {
-	req := &storagepb.AddAuthenticatorRequest{
+	req := &webauthnpb.AddAuthenticatorRequest{
 		UserId: string(user.WebAuthID()),
-		Authenticator: &storagepb.WebauthnAuthenticator{
+		Authenticator: &webauthnpb.WebauthnAuthenticator{
 			UserId:       string(user.WebAuthID()),
 			Id:           authenticator.WebAuthID(),
 			CredentialId: authenticator.WebAuthCredentialID(),
@@ -39,7 +39,7 @@ func (s *storage) AddAuthenticator(user webauthn.User, authenticator webauthn.Au
 
 // GetAuthenticator gets a single Authenticator by the given id, as returned by Authenticator.WebAuthID.
 func (s *storage) GetAuthenticator(id []byte) (webauthn.Authenticator, error) {
-	req := &storagepb.GetAuthenticatorRequest{
+	req := &webauthnpb.GetAuthenticatorRequest{
 		AuthenticatorId: id,
 	}
 	resp, err := s.ua.GetAuthenticator(context.Background(), req)
@@ -53,8 +53,8 @@ func (s *storage) GetAuthenticator(id []byte) (webauthn.Authenticator, error) {
 // has been constructed by this package and the only non-empty value is the WebAuthID. In this case, the store
 // should still return the authenticators as specified by the ID.
 func (s *storage) GetAuthenticators(user webauthn.User) ([]webauthn.Authenticator, error) {
-	req := &storagepb.GetUserRequest{
-		Lookup: &storagepb.GetUserRequest_UserId{UserId: string(user.WebAuthID())},
+	req := &webauthnpb.GetUserRequest{
+		Lookup: &webauthnpb.GetUserRequest_UserId{UserId: string(user.WebAuthID())},
 	}
 	resp, err := s.ua.UserAuthenticators(context.Background(), req)
 	if err != nil {
@@ -75,11 +75,11 @@ var (
 )
 
 type user struct {
-	*storagepb.WebauthnUser
+	*webauthnpb.WebauthnUser
 }
 
 type authenticator struct {
-	*storagepb.WebauthnAuthenticator
+	*webauthnpb.WebauthnAuthenticator
 }
 
 func (u *user) WebAuthID() []byte {

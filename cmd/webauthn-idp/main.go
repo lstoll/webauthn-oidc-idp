@@ -5,8 +5,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/lstoll/idp/storage/storagepb"
-
 	"github.com/go-chi/chi"
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
@@ -17,6 +15,7 @@ import (
 	"github.com/lstoll/idp/session"
 	"github.com/lstoll/idp/storage/memory"
 	"github.com/lstoll/idp/webauthn"
+	"github.com/lstoll/idp/webauthn/webauthnpb"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,28 +29,27 @@ func main() {
 	flag.Parse()
 
 	l := logrus.New()
-	// TODO
 
 	stor := &memory.MemStorage{}
 
 	us := memory.NewUserStore()
 	us.Users["user"] = &memory.User{
 		Password: "password",
-		User: &storagepb.WebauthnUser{
+		User: &webauthnpb.WebauthnUser{
 			Id: "users-unique-id",
 		},
 	}
 
 	ips := inproc.New()
 
-	storagepb.RegisterWebAuthnUserServiceServer(ips.Server, us)
+	webauthnpb.RegisterWebAuthnUserServiceServer(ips.Server, us)
 
 	if err := ips.Start(); err != nil {
 		log.Fatal(err)
 	}
 	defer ips.Close()
 
-	wus := storagepb.NewWebAuthnUserServiceClient(ips.ClientConn)
+	wus := webauthnpb.NewWebAuthnUserServiceClient(ips.ClientConn)
 
 	conn, err := webauthn.NewConnector(l, wus)
 	if err != nil {
