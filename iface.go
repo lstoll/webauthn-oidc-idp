@@ -72,16 +72,3 @@ type ClientSource interface {
 	// provider ID
 	SAMLServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error)
 }
-
-// Storage is used for maintaining the persistent state of the provider
-type Storage interface {
-	Put(namespace, key string, data []byte) error
-	Get(namespace, key string) ([]byte, error)
-	// List iterates all items in the namespace, calling batchFunc in batches of
-	// items. if batchFunc returns false, the list is terminated
-	List(namespace string, batchFunc func(map[string][]byte) bool) error
-	Delete(namespace, key string) error
-	// When passed an error, returns true if it occured because the given item
-	// wasn't found, or false if it was for any other reason.
-	ErrIsNotFound(error) bool
-}

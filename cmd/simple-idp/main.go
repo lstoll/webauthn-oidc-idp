@@ -6,9 +6,11 @@ import (
 
 	"github.com/go-chi/chi"
 
+	"github.com/lstoll/grpce/inproc"
 	"github.com/lstoll/idp/oidc"
 	"github.com/lstoll/idp/saml"
 	"github.com/lstoll/idp/storage/memory"
+	"github.com/lstoll/idp/storage/storagepb"
 	"github.com/sirupsen/logrus"
 )
 
@@ -25,11 +27,22 @@ func main() {
 
 	stor := &memory.MemStorage{}
 
+	ips := inproc.New()
+
+	storagepb.RegisterStorageServer(ips.Server, stor)
+
+	if err := ips.Start(); err != nil {
+		log.Fatal(err)
+	}
+	defer ips.Close()
+
+	storclient := storagepb.NewStorageClient(ips.ClientConn)
+
 	cp := &ClientProvider{}
 
 	// pass this the SimpleConnector. Have it create the dex connector, and call initialize on SimpleConn
 
-	svr, err := oidc.NewServer(l, stor, conn, cp, "http://localhost:5556")
+	svr, err := oidc.NewServer(l, storclient, conn, cp, "http://localhost:5556")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -42,7 +55,7 @@ func main() {
 
 	mux.Post("/login", conn.LoginPost)
 
-	ssvr, err := saml.NewServer(l, stor, conn, cp, "http://localhost:5556")
+	ssvr, err := saml.NewServer(l, storclient, conn, cp, "http://localhost:5556")
 	if err != nil {
 		log.Fatal(err)
 	}

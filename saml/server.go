@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/lstoll/idp/storage/storagepb"
+
 	"github.com/lstoll/idp"
 
 	"github.com/sirupsen/logrus"
@@ -23,7 +25,7 @@ type Server struct {
 	Connector *Connector
 }
 
-func NewServer(l logrus.FieldLogger, storage idp.Storage, conn idp.Connector, cs idp.ClientSource, baseURL string) (*Server, error) {
+func NewServer(l logrus.FieldLogger, storage storagepb.StorageClient, conn idp.Connector, cs idp.ClientSource, baseURL string) (*Server, error) {
 	bu, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to parse baseURL %s", baseURL)
@@ -41,8 +43,8 @@ func NewServer(l logrus.FieldLogger, storage idp.Storage, conn idp.Connector, cs
 	}
 
 	sconn := &Connector{
-		IDPStore: storage,
-		Wrapped:  conn,
+		Storage: storage,
+		Wrapped: conn,
 	}
 
 	idpServer.IDP.ServiceProviderProvider = &serviceProviderProvider{cs: cs}

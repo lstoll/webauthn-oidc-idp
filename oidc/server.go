@@ -10,6 +10,7 @@ import (
 	"github.com/dexidp/dex/storage"
 	"github.com/go-chi/chi"
 	"github.com/lstoll/idp"
+	"github.com/lstoll/idp/storage/storagepb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -20,7 +21,7 @@ type Server struct {
 }
 
 // NewServer returns a http handler suitible for serving an OIDC provider
-func NewServer(l logrus.FieldLogger, stor idp.Storage, conn idp.Connector, cs idp.ClientSource, iss string) (*Server, error) {
+func NewServer(l logrus.FieldLogger, stor storagepb.StorageClient, conn idp.Connector, cs idp.ClientSource, iss string) (*Server, error) {
 	dc := &DexConnector{
 		Wrapped:  conn,
 		IDPStore: stor,
