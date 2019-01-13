@@ -1,12 +1,20 @@
 package oidc
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"time"
 
+	"github.com/golang/protobuf/ptypes"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	istorage "github.com/lstoll/idp/storage"
+	"github.com/lstoll/idp/storage/storagepb"
+
 	"github.com/dexidp/dex/storage"
-	"github.com/lstoll/idp"
 	"github.com/lstoll/idp/idppb"
 	"github.com/pkg/errors"
 )
@@ -24,45 +32,54 @@ const (
 var _ storage.Storage = (*dstorage)(nil)
 
 type dstorage struct {
-	Storage      idp.Storage
+	Storage      storagepb.StorageClient
 	clientLookup func(clientID string) (client *idppb.OIDCClient, ok bool, err error)
 }
 
 func (d *dstorage) Close() error { return nil }
 
 func (d *dstorage) GarbageCollect(now time.Time) (result storage.GCResult, err error) {
-	// TODO - implement
+	// TODO - do we care about this, or should we just be smart about setting expires keys?
 	return result, nil
 }
 
-func (d *dstorage) createInIS(namespace, itemID string, item interface{}) error {
-	_, err := d.Storage.Get(namespace, itemID)
+func (d *dstorage) createInNS(namespace, itemID string, item interface{}, expiry *time.Time) error {
+	_, err := d.Storage.Get(context.TODO(), &storagepb.GetRequest{Keyspace: namespace, Keys: []string{itemID}})
 	if err == nil { // got the item successfully, dupe!
 		return storage.ErrAlreadyExists
-	} else if err != nil && !d.Storage.ErrIsNotFound(err) { // we have an actual error
+	} else if err != nil && status.Code(err) != codes.NotFound { // we have an actual error
 		return errors.Wrapf(err, "Error checking for existence of item %q in namespace %q", itemID, namespace)
 	}
+
 	ib, err := json.Marshal(item)
 	if err != nil {
 		return errors.Wrapf(err, "Error marshaling item %q in namespace %q", itemID, namespace)
 	}
-	if err := d.Storage.Put(namespace, itemID, ib); err != nil {
+	im := &storagepb.Bytes{Data: ib}
+	mreq, err := istorage.PutMutation(namespace, itemID, im, expiry)
+	if err != nil {
+		return errors.Wrap(err, "Error building mutation")
+	}
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
 		return errors.Wrapf(err, "Error storing item %q in namespace %q", itemID, namespace)
-
 	}
 	return nil
 }
 
 func (d *dstorage) getFromNS(namespace, itemID string, into interface{}) error {
-	ib, err := d.Storage.Get(namespace, itemID)
+	gresp, err := d.Storage.Get(context.TODO(), &storagepb.GetRequest{Keyspace: namespace, Keys: []string{itemID}})
 	if err != nil {
-		if d.Storage.ErrIsNotFound(err) {
+		if status.Code(err) == codes.NotFound {
 			return storage.ErrNotFound
 		}
 		return errors.Wrapf(err, "Error getting item %q from namespace %q", itemID, namespace)
 	}
-	if err := json.Unmarshal(ib, into); err != nil {
-		return errors.Wrapf(err, "Error unmarshaling item %q from namespace %q", itemID, namespace)
+	bm := &storagepb.Bytes{}
+	if err := ptypes.UnmarshalAny(gresp.Items[0].Object, bm); err != nil {
+		return errors.Wrap(err, "Error unmarshaling any")
+	}
+	if err := json.Unmarshal(bm.Data, into); err != nil {
+		return errors.Wrapf(err, "Error json unmarshaling item %q from namespace %q", itemID, namespace)
 	}
 	return nil
 }
@@ -72,15 +89,15 @@ func (d *dstorage) CreateClient(c storage.Client) error {
 }
 
 func (d *dstorage) CreateAuthCode(a storage.AuthCode) (err error) {
-	return d.createInIS(authCodeNS, a.ID, &a)
+	return d.createInNS(authCodeNS, a.ID, &a, &a.Expiry)
 }
 
 func (d *dstorage) CreateRefresh(r storage.RefreshToken) (err error) {
-	return d.createInIS(refreshTokenNS, r.ID, &r)
+	return d.createInNS(refreshTokenNS, r.ID, &r, nil) // TODO - some kind of expiry?
 }
 
 func (d *dstorage) CreateAuthRequest(a storage.AuthRequest) (err error) {
-	return d.createInIS(authRequestNS, a.ID, &a)
+	return d.createInNS(authRequestNS, a.ID, &a, &a.Expiry)
 }
 
 func (d *dstorage) CreatePassword(p storage.Password) (err error) {
@@ -88,7 +105,7 @@ func (d *dstorage) CreatePassword(p storage.Password) (err error) {
 }
 
 func (d *dstorage) CreateOfflineSessions(o storage.OfflineSessions) (err error) {
-	return d.createInIS(authRequestNS, o.ConnID+"-"+o.UserID, &o)
+	return d.createInNS(authRequestNS, o.ConnID+"-"+o.UserID, &o, nil)
 }
 
 func (d *dstorage) CreateConnector(connector storage.Connector) (err error) {
@@ -166,22 +183,26 @@ func (d *dstorage) ListClients() (clients []storage.Client, err error) {
 }
 
 func (d *dstorage) ListRefreshTokens() (tokens []storage.RefreshToken, err error) {
-	var innerErr error
-	err = d.Storage.List(refreshTokenNS, func(items map[string][]byte) bool {
-		for _, v := range items {
-			rt := storage.RefreshToken{}
-			if err := json.Unmarshal(v, &rt); err != nil {
-				innerErr = errors.Wrap(err, "Error unmarshing")
-				return false
-			}
-			tokens = append(tokens, rt)
-		}
-		return true
-	})
-	if innerErr != nil {
-		return nil, innerErr
+	lresp, err := d.Storage.ListKeys(context.TODO(), &storagepb.ListRequest{Keyspace: refreshTokenNS})
+	if err != nil {
+		return nil, errors.Wrap(err, "Error listing refresh token keys")
 	}
-	return tokens, err
+	gresp, err := d.Storage.Get(context.TODO(), &storagepb.GetRequest{Keyspace: refreshTokenNS, Keys: lresp.Keys})
+	if err != nil {
+		return nil, errors.Wrap(err, "Error fetching all current refresh tokens")
+	}
+	for _, ri := range gresp.Items {
+		bm := storagepb.Bytes{}
+		if err := ptypes.UnmarshalAny(ri.Object, &bm); err != nil {
+			return nil, errors.Wrap(err, "Error unmarshaling any")
+		}
+		rt := storage.RefreshToken{}
+		if err := json.Unmarshal(bm.Data, &rt); err != nil {
+			return nil, errors.Wrap(err, "Error unmarshaling json")
+		}
+		tokens = append(tokens, rt)
+	}
+	return tokens, nil
 }
 
 func (d *dstorage) ListPasswords() (passwords []storage.Password, err error) {
@@ -202,29 +223,33 @@ func (d *dstorage) DeleteClient(id string) (err error) {
 }
 
 func (d *dstorage) DeleteRefresh(id string) (err error) {
-	if err := d.Storage.Delete(refreshTokenNS, id); err != nil {
+	mreq := istorage.DeleteMutation(refreshTokenNS, id)
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
 		return errors.Wrapf(err, "Error deleting item %q from namespace %q", id, refreshTokenNS)
 	}
 	return nil
 }
 
 func (d *dstorage) DeleteAuthCode(id string) (err error) {
-	if err := d.Storage.Delete(authCodeNS, id); err != nil {
-		return errors.Wrapf(err, "Error deleting item %q from namespace %q", id, refreshTokenNS)
+	mreq := istorage.DeleteMutation(authCodeNS, id)
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
+		return errors.Wrapf(err, "Error deleting item %q from namespace %q", id, authCodeNS)
 	}
 	return nil
 }
 
 func (d *dstorage) DeleteAuthRequest(id string) (err error) {
-	if err := d.Storage.Delete(authRequestNS, id); err != nil {
-		return errors.Wrapf(err, "Error deleting item %q from namespace %q", id, refreshTokenNS)
+	mreq := istorage.DeleteMutation(authRequestNS, id)
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
+		return errors.Wrapf(err, "Error deleting item %q from namespace %q", id, authRequestNS)
 	}
 	return nil
 }
 
 func (d *dstorage) DeleteOfflineSessions(userID string, connID string) (err error) {
-	if err := d.Storage.Delete(offlineSessionNS, connID+"-"+userID); err != nil {
-		return errors.Wrapf(err, "Error deleting item %q from namespace %q", connID+"-"+userID, refreshTokenNS)
+	mreq := istorage.DeleteMutation(offlineSessionNS, connID+"-"+userID)
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
+		return errors.Wrapf(err, "Error deleting item %q from namespace %q", connID+"-"+userID, offlineSessionNS)
 	}
 	return nil
 }
@@ -250,7 +275,12 @@ func (d *dstorage) UpdateKeys(updater func(old storage.Keys) (storage.Keys, erro
 	if err != nil {
 		return errors.Wrap(err, "Error marshaling keys")
 	}
-	if err := d.Storage.Put(keysNS, keysKey, kb); err != nil {
+	bm := storagepb.Bytes{Data: kb}
+	mreq, err := istorage.PutMutation(keysNS, keysKey, &bm, nil)
+	if err != nil {
+		return errors.Wrap(err, "Error building put mutation")
+	}
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
 		return errors.Wrap(err, "Error putting updated keys")
 	}
 	return nil
@@ -269,8 +299,13 @@ func (d *dstorage) UpdateAuthRequest(id string, updater func(old storage.AuthReq
 	if err != nil {
 		return errors.Wrap(err, "Error marshaling auth request")
 	}
-	if err := d.Storage.Put(authRequestNS, id, ab); err != nil {
-		return errors.Wrap(err, "Error putting updated auth request")
+	bm := storagepb.Bytes{Data: ab}
+	mreq, err := istorage.PutMutation(authRequestNS, id, &bm, nil)
+	if err != nil {
+		return errors.Wrap(err, "Error building put mutation")
+	}
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
+		return errors.Wrap(err, "Error putting updated keys")
 	}
 	return nil
 }
@@ -292,8 +327,13 @@ func (d *dstorage) UpdateRefreshToken(id string, updater func(p storage.RefreshT
 	if err != nil {
 		return errors.Wrap(err, "Error marshaling refresh token request")
 	}
-	if err := d.Storage.Put(refreshTokenNS, id, rb); err != nil {
-		return errors.Wrap(err, "Error putting updated refresh token request")
+	bm := storagepb.Bytes{Data: rb}
+	mreq, err := istorage.PutMutation(refreshTokenNS, id, &bm, nil)
+	if err != nil {
+		return errors.Wrap(err, "Error building put mutation")
+	}
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
+		return errors.Wrap(err, "Error putting updated keys")
 	}
 	return nil
 }
@@ -311,8 +351,13 @@ func (d *dstorage) UpdateOfflineSessions(userID string, connID string, updater f
 	if err != nil {
 		return errors.Wrap(err, "Error marshaling offline session token request")
 	}
-	if err := d.Storage.Put(offlineSessionNS, connID+"-"+userID, ob); err != nil {
-		return errors.Wrap(err, "Error putting updated offline session token request")
+	bm := storagepb.Bytes{Data: ob}
+	mreq, err := istorage.PutMutation(offlineSessionNS, connID+"-"+userID, &bm, nil)
+	if err != nil {
+		return errors.Wrap(err, "Error building put mutation")
+	}
+	if _, err := d.Storage.Mutate(context.TODO(), mreq); err != nil {
+		return errors.Wrap(err, "Error putting updated keys")
 	}
 	return nil
 

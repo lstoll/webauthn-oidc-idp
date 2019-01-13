@@ -1,0 +1,63 @@
+syntax = "proto3";
+package lstoll.idp.storage;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/lstoll/idp/storage/storagepb";
+
+service Storage {
+    rpc Get(GetRequest) returns (GetResponse);
+    // Mutate is used to write to storage. If multiple items are specified and the
+    // backend supports it, all actions will happen in one transaction.
+	rpc Mutate(MutateRequest) returns (google.protobuf.Empty);
+	rpc ListKeys(ListRequest) returns (ListResponse);
+}
+
+message Item {
+    string keyspace = 1;
+    string key = 2;
+    google.protobuf.Any object = 3;
+    google.protobuf.Timestamp expires = 4;
+}
+
+message GetRequest {
+    string keyspace = 1;
+    repeated string keys = 2;
+}
+
+message GetResponse {
+    repeated Item items = 1;
+}
+
+message Mutation {
+    oneof mutation {
+        Item put_item = 1;
+        DeleteItem delete_item = 2;
+    }
+}
+
+message DeleteItem {
+    string keyspace = 1;
+    string key = 2;
+}
+
+message MutateRequest {
+    repeated Mutation mutations = 1;
+}
+
+message ListRequest {
+    string keyspace = 1;
+    string prefix = 2;
+}
+
+message ListResponse {
+    repeated string keys = 1;
+}
+
+// Bytes is a helper message for consumers that just want to persist data,
+// rather than a proto message.
+message Bytes {
+    bytes data = 1;
+}

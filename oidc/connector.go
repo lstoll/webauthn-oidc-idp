@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,13 +12,13 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/dexidp/dex/storage"
-	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
 
 	"github.com/dexidp/dex/connector"
-	"github.com/gorilla/sessions"
 	"github.com/lstoll/idp"
 	"github.com/lstoll/idp/idppb"
+	istorage "github.com/lstoll/idp/storage"
+	"github.com/lstoll/idp/storage/storagepb"
 )
 
 // ConnectorID is what this connector should be named in dex.
@@ -31,7 +32,7 @@ type DexConnector struct {
 	// DexStore gives us access to dex's state
 	DexStore storage.Storage
 	// IDPStore give us access to our storage interface
-	IDPStore idp.Storage
+	IDPStore storagepb.StorageClient
 }
 
 /************
@@ -53,23 +54,22 @@ func (d *DexConnector) LoginURL(s connector.Scopes, callbackURL, state string) (
 // HandleCallback parses the request and returns the user's identity
 func (d *DexConnector) HandleCallback(s connector.Scopes, r *http.Request) (connector.Identity, error) {
 	log.Print("Starting handle callback")
-	authIDs := r.URL.Query()["state"]
-	if len(authIDs) != 1 {
+	authID := r.URL.Query().Get("state")
+	if authID == "" {
 		return connector.Identity{}, errors.New("state param not provided")
 	}
 
 	// for the given state parameter on the callback, look up the identity
 	// in the storage, and then return it.
 
-	ab, err := d.IDPStore.Get("oidc-authed-identity", authIDs[0])
+	gresp, err := d.IDPStore.Get(r.Context(), &storagepb.GetRequest{Keyspace: "oidc-authed-identity", Keys: []string{authID}})
 	if err != nil {
-		return connector.Identity{}, errors.Wrap(err, "Error storing state")
+		return connector.Identity{}, errors.Wrap(err, "Error getting request state")
 	}
-
 	// unmarshal
 	oa := idppb.OIDCAuthorization{}
-	if err := proto.Unmarshal(ab, &oa); err != nil {
-		return connector.Identity{}, errors.Wrap(err, "Error unmarshaling login request")
+	if err := ptypes.UnmarshalAny(gresp.Items[0].Object, &oa); err != nil {
+		return connector.Identity{}, errors.Wrap(err, "Error unpacking any")
 	}
 
 	log.Print("Handle callback about to return identity")
@@ -115,7 +115,8 @@ func (d *DexConnector) loginHandler(w http.ResponseWriter, r *http.Request) {
 func (d *DexConnector) Authenticate(authID string, ident idppb.Identity) (returnURL string, err error) {
 	// authID == state
 
-	exp, _ := ptypes.TimestampProto(time.Now().Add(1 * time.Hour))
+	etime := time.Now().Add(1 * time.Hour)
+	exp, err := ptypes.TimestampProto(etime)
 	if err != nil {
 		panic(err)
 	}
@@ -124,12 +125,11 @@ func (d *DexConnector) Authenticate(authID string, ident idppb.Identity) (return
 		Identity: &ident,
 		Expires:  exp,
 	}
-	ab, err := proto.Marshal(auth)
+	mreq, err := istorage.PutMutation("oidc-authed-identity", authID, auth, &etime)
 	if err != nil {
-		return "", errors.Wrap(err, "Error marshaling identity")
+		return "", errors.Wrap(err, "Error building put mutation")
 	}
-
-	if err := d.IDPStore.Put("oidc-authed-identity", authID, ab); err != nil {
+	if _, err := d.IDPStore.Mutate(context.TODO(), mreq); err != nil {
 		return "", errors.Wrap(err, "Error storing state")
 	}
 
@@ -137,15 +137,4 @@ func (d *DexConnector) Authenticate(authID string, ident idppb.Identity) (return
 	// ref: https://github.com/dexidp/dex/blob/master/Documentation/connectors/authproxy.md
 
 	return "/callback/" + ConnectorID + "?state=" + authID, nil
-}
-
-// Session store, can be used for connector specific cookie state. Need to
-// call Save() if modified
-func (d *DexConnector) Session(r *http.Request) sessions.Store {
-	return nil // TODO - look up on dex
-}
-
-// Storage can be used for persistent state
-func (d *DexConnector) Storage() idp.Storage {
-	panic("todo - need to bolt storage onto this somehow")
 }

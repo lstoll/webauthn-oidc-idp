@@ -3,27 +3,36 @@ package saml
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/lstoll/idp/storage"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/lstoll/idp/storage/storagepb"
+
 	"github.com/crewjam/saml"
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/gorilla/sessions"
 	"github.com/lstoll/idp"
 	"github.com/lstoll/idp/idppb"
 	"github.com/pkg/errors"
 )
 
-const sessionMaxAge = 24 * time.Hour
+const (
+	sessionMaxAge = 24 * time.Hour
+	samlFlowNS    = "saml-authed-identity"
+)
 
 type Connector struct {
-	// IDPStore give us access to our storage interface
-	IDPStore idp.Storage
-	Wrapped  idp.Connector
+	// Cache give us access to our transient storage
+	Storage storagepb.StorageClient
+	Wrapped idp.Connector
 }
 
 /************
@@ -34,9 +43,10 @@ func (d *Connector) GetSession(w http.ResponseWriter, r *http.Request, req *saml
 	// check params for ?authid=authid. If so, check the auth is valid and create the session
 
 	if r.URL.Query().Get("authid") != "" {
-		ab, err := d.IDPStore.Get("saml-authed-identity", r.URL.Query().Get("authid"))
+		aidReq := &storagepb.GetRequest{Keyspace: samlFlowNS, Keys: []string{r.URL.Query().Get("authid")}}
+		aidResp, err := d.Storage.Get(r.Context(), aidReq)
 		if err != nil {
-			if d.IDPStore.ErrIsNotFound(err) {
+			if status.Code(err) == codes.NotFound {
 				http.Error(w, "Unauthorized Session", http.StatusForbidden)
 				return nil
 			}
@@ -46,7 +56,7 @@ func (d *Connector) GetSession(w http.ResponseWriter, r *http.Request, req *saml
 
 		// unmarshal
 		oa := idppb.SAMLAuthorization{}
-		if err := proto.Unmarshal(ab, &oa); err != nil {
+		if err := ptypes.UnmarshalAny(aidResp.Items[0].Object, &oa); err != nil {
 			http.Error(w, "Error unmarshaling auth", http.StatusInternalServerError)
 			return nil
 		}
@@ -78,18 +88,17 @@ func (d *Connector) GetSession(w http.ResponseWriter, r *http.Request, req *saml
 	// create the login record, prep it to store for validation
 	authID := base64.StdEncoding.EncodeToString(randomBytes(32))
 
-	exp, _ := ptypes.TimestampProto(time.Now().Add(1 * time.Hour))
 	sa := &idppb.SAMLAuthorization{
-		Expires:     exp,
 		SamlRequest: req.RequestBuffer,
 		RelayState:  req.RelayState,
 	}
-	sab, err := proto.Marshal(sa)
+	exp := time.Now().Add(15 * time.Minute)
+	mreq, err := storage.PutMutation(samlFlowNS, authID, sa, &exp)
 	if err != nil {
-		http.Error(w, "Error marshaling auth", http.StatusInternalServerError)
+		http.Error(w, "Error building mutation", http.StatusInternalServerError)
 		return nil
 	}
-	if err := d.IDPStore.Put("saml-authed-identity", authID, sab); err != nil {
+	if _, err := d.Storage.Mutate(r.Context(), mreq); err != nil {
 		http.Error(w, "Error storing state", http.StatusInternalServerError)
 		return nil
 	}
@@ -113,25 +122,25 @@ func (d *Connector) Authenticate(authID string, ident idppb.Identity) (returnURL
 	// the session is good or not. could do this by the mark in the DB?
 	// NOTE - this finalize page could just be "/sso" / GetSession
 
-	sab, err := d.IDPStore.Get("saml-authed-identity", authID)
+	sab, err := d.Storage.Get(context.TODO(), &storagepb.GetRequest{Keyspace: "saml-authed-identity", Keys: []string{authID}})
 	if err != nil {
 		return "", errors.Wrap(err, "Error getting identity to authenticate")
 	}
-
 	sa := &idppb.SAMLAuthorization{}
-	if err := proto.Unmarshal(sab, sa); err != nil {
+	if err := ptypes.UnmarshalAny(sab.Items[0].Object, sa); err != nil {
 		return "", errors.Wrapf(err, "Error unmarshaling authID %q", authID)
 	}
 
 	sa.Identity = &ident
 	sa.Authorized = true
 
-	sab, err = proto.Marshal(sa)
+	et, _ := ptypes.Timestamp(sab.Items[0].Expires)
+	sm, err := storage.PutMutation(samlFlowNS, authID, sa, &et)
 	if err != nil {
 		return "", errors.Wrap(err, "Error marshaling identity")
 	}
 
-	if err := d.IDPStore.Put("saml-authed-identity", authID, sab); err != nil {
+	if _, err := d.Storage.Mutate(context.TODO(), sm); err != nil {
 		return "", errors.Wrap(err, "Error storing state")
 	}
 
@@ -172,17 +181,6 @@ func (d *Connector) Authenticate(authID string, ident idppb.Identity) (returnURL
 
 // 	// redirect to that very upstream page. It should fall to the "check cookie" case and finalize the session
 // }
-
-// Session store, can be used for connector specific cookie state. Need to
-// call Save() if modified
-func (d *Connector) Session(r *http.Request) sessions.Store {
-	return nil // TODO - look up on dex
-}
-
-// Storage can be used for persistent state
-func (d *Connector) Storage() idp.Storage {
-	panic("todo - need to bolt storage onto this somehow")
-}
 
 func randomBytes(n int) []byte {
 	rv := make([]byte, n)

@@ -14,6 +14,7 @@ import (
 	"github.com/lstoll/idp/saml"
 	"github.com/lstoll/idp/session"
 	"github.com/lstoll/idp/storage/memory"
+	"github.com/lstoll/idp/storage/storagepb"
 	"github.com/lstoll/idp/webauthn"
 	"github.com/lstoll/idp/webauthn/webauthnpb"
 	"github.com/sirupsen/logrus"
@@ -43,6 +44,7 @@ func main() {
 	ips := inproc.New()
 
 	webauthnpb.RegisterWebAuthnUserServiceServer(ips.Server, us)
+	storagepb.RegisterStorageServer(ips.Server, stor)
 
 	if err := ips.Start(); err != nil {
 		log.Fatal(err)
@@ -50,6 +52,7 @@ func main() {
 	defer ips.Close()
 
 	wus := webauthnpb.NewWebAuthnUserServiceClient(ips.ClientConn)
+	storclient := storagepb.NewStorageClient(ips.ClientConn)
 
 	conn, err := webauthn.NewConnector(l, wus)
 	if err != nil {
@@ -58,7 +61,7 @@ func main() {
 
 	cp := &ClientProvider{}
 
-	svr, err := oidc.NewServer(l, stor, conn, cp, "http://localhost:5556")
+	svr, err := oidc.NewServer(l, storclient, conn, cp, "http://localhost:5556")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +75,7 @@ func main() {
 	svr.MountRoutes(mux)
 	conn.MountRoutes(mux)
 
-	ssvr, err := saml.NewServer(l, stor, conn, cp, "http://localhost:5556")
+	ssvr, err := saml.NewServer(l, storclient, conn, cp, "http://localhost:5556")
 	if err != nil {
 		log.Fatal(err)
 	}
