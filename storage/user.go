@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/pkg/errors"
@@ -55,6 +56,9 @@ func (u *UserStore) AddAuthenticatorToUser(ctx context.Context, req *webauthnpb.
 		return nil, err
 	}
 
+	ur.User.AuthenticatorIds = append(ur.User.AuthenticatorIds, req.Authenticator.Id)
+	req.Authenticator.Username = ur.User.Username
+
 	ua, err := ptypes.MarshalAny(ur.User)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "Failed to marshal user")
@@ -80,7 +84,7 @@ func (u *UserStore) AddAuthenticatorToUser(ctx context.Context, req *webauthnpb.
 				Mutation: &storagepb.Mutation_PutItem{
 					PutItem: &storagepb.Item{
 						Keyspace: authenticatorNS,
-						Key:      string(req.Authenticator.Id),
+						Key:      base64.StdEncoding.EncodeToString(req.Authenticator.Id),
 						Object:   aa,
 					},
 				},
@@ -118,7 +122,7 @@ func (u *UserStore) UserAuthenticators(ctx context.Context, req *webauthnpb.GetU
 
 // GetAuthenticator returns the authenticator matching the provided ID
 func (u *UserStore) GetAuthenticator(ctx context.Context, req *webauthnpb.GetAuthenticatorRequest) (*webauthnpb.GetAuthenticatorResponse, error) {
-	aresp, err := u.Storage.Get(ctx, &storagepb.GetRequest{Keyspace: authenticatorNS, Keys: []string{string(req.AuthenticatorId)}})
+	aresp, err := u.Storage.Get(ctx, &storagepb.GetRequest{Keyspace: authenticatorNS, Keys: []string{base64.StdEncoding.EncodeToString(req.AuthenticatorId)}})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, err
@@ -169,7 +173,7 @@ func (u *UserStore) DeleteAuthenticator(ctx context.Context, req *webauthnpb.Del
 				Mutation: &storagepb.Mutation_DeleteItem{
 					DeleteItem: &storagepb.DeleteItem{
 						Keyspace: authenticatorNS,
-						Key:      string(req.AuthenticatorId),
+						Key:      base64.StdEncoding.EncodeToString(req.AuthenticatorId),
 					},
 				},
 			},
@@ -181,4 +185,50 @@ func (u *UserStore) DeleteAuthenticator(ctx context.Context, req *webauthnpb.Del
 	}
 
 	return &empty.Empty{}, nil
+}
+
+// Update an authenticator
+func (u *UserStore) UpdateAuthenticator(ctx context.Context, req *webauthnpb.UpdateAuthenticatorRequest) (*empty.Empty, error) {
+	mreq, err := PutMutation(authenticatorNS, base64.StdEncoding.EncodeToString(req.Authenticator.Id), req.Authenticator, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := u.Storage.Mutate(ctx, mreq); err != nil {
+		return nil, status.Error(codes.Internal, "Error upserting user record")
+	}
+
+	return &empty.Empty{}, nil
+}
+
+/********
+ * Not part of the service API, but used internally
+ *******/
+
+func (u *UserStore) UpsertUser(ctx context.Context, username, name, email string, groups []string) error {
+	ur, err := u.GetUser(ctx, &webauthnpb.GetUserRequest{Username: username})
+	if err != nil && status.Code(err) != codes.NotFound {
+		return err
+	}
+
+	var usr webauthnpb.WebauthnUser
+	if ur != nil && ur.User != nil {
+		usr = *ur.User
+	}
+
+	usr.Username = username
+	usr.Name = name
+	usr.Email = email
+	usr.Groups = groups
+
+	mreq, err := PutMutation(userNS, username, &usr, nil)
+	if err != nil {
+		return err
+	}
+
+	if _, err := u.Storage.Mutate(ctx, mreq); err != nil {
+		return errors.Wrap(err, "Error upserting user record")
+	}
+
+	return nil
 }

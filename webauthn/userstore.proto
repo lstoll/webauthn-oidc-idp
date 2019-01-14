@@ -21,7 +21,9 @@ service WebAuthnUserService {
 	// GetAuthenticator returns the authenticator matching the provided ID
     rpc GetAuthenticator(GetAuthenticatorRequest) returns (GetAuthenticatorResponse);
     // DeleteAuthenticator removes the authenticator from the system
-	rpc DeleteAuthenticator(DeleteAuthenticatorRequest) returns (google.protobuf.Empty);
+    rpc DeleteAuthenticator(DeleteAuthenticatorRequest) returns (google.protobuf.Empty);
+    // Update an authenticator
+    rpc UpdateAuthenticator(UpdateAuthenticatorRequest) returns (google.protobuf.Empty);
 }
 
 message GetUserRequest {
@@ -51,6 +53,10 @@ message GetAuthenticatorResponse {
 
 message DeleteAuthenticatorRequest {
     bytes authenticator_id = 1;
+}
+
+message UpdateAuthenticatorRequest {
+    WebauthnAuthenticator authenticator = 1;
 }
 
 message WebauthnUser {

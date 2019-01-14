@@ -356,6 +356,14 @@
   version = "v1.0.3"
 
 [[projects]]
+  branch = "master"
+  digest = "1:388e6ac102135e0a2848cd51b9b8a1b924e4c3ef8c71bf17f1fd1bba77fa06de"
+  name = "github.com/tjarratt/babble"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2cf06e8d98b0df1f36b4851bc6bbf199316d9c28"
+
+[[projects]]
   digest = "1:03aa6e485e528acb119fb32901cf99582c380225fc7d5a02758e08b180cb56c3"
   name = "github.com/ugorji/go"
   packages = ["codec"]
@@ -577,6 +585,7 @@
     "github.com/prometheus/client_golang/prometheus",
     "github.com/sirupsen/logrus",
     "github.com/spf13/cobra",
+    "github.com/tjarratt/babble",
     "golang.org/x/net/context",
     "golang.org/x/oauth2",
     "google.golang.org/grpc",

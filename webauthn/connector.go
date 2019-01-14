@@ -3,6 +3,7 @@ package webauthn
 import (
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
 
 	"google.golang.org/grpc/codes"
@@ -19,12 +20,12 @@ import (
 	"github.com/lstoll/idp/idppb"
 	"github.com/lstoll/idp/session"
 	"github.com/lstoll/idp/webauthn/webauthnpb"
+	"github.com/tjarratt/babble"
 )
 
 var _ idp.Connector = (*Connector)(nil)
 
 const (
-	userIDKey     = "user-id"
 	authMethodKey = "sso-method"
 	authIDKey     = "authID"
 	usernameKey   = "username"
@@ -41,6 +42,8 @@ type Connector struct {
 	WebAuthn *webauthn.WebAuthn
 	// How we manage users
 	UserAuthenticator webauthnpb.WebAuthnUserServiceClient
+
+	words babble.Babbler
 }
 
 func NewConnector(l logrus.FieldLogger, ua webauthnpb.WebAuthnUserServiceClient) (*Connector, error) {
@@ -53,10 +56,15 @@ func NewConnector(l logrus.FieldLogger, ua webauthnpb.WebAuthnUserServiceClient)
 		return nil, errors.Wrap(err, "Error initializing webauthn helper")
 	}
 
+	b := babble.NewBabbler()
+	b.Count = 4
+	b.Separator = " "
+
 	return &Connector{
 		Logger:            l,
 		WebAuthn:          w,
 		UserAuthenticator: ua,
+		words:             b,
 	}, nil
 }
 
@@ -113,20 +121,15 @@ func (c *Connector) LoginStart(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid user", http.StatusForbidden)
 			return
 		}
-		// TODO - differentiate no user vs. error
 		c.Logger.WithError(err).Error("Failed to look up user")
 		http.Error(w, "Error looking up user", http.StatusInternalServerError)
 		return
 	}
 
 	// Reset the userID in use
-	delete(session.FromContext(r.Context()).Values, userIDKey)
-	session.FromContext(r.Context()).Values[userIDKey] = uresp.User.Username
-
-	// Stash username in session for future use.
-	// TODO - what is the expiry on this? Would we be just better with a long-lived cookie?
-	session.FromContext(r.Context()).Values[usernameKey] = lb.Username
-
+	delete(session.FromContext(r.Context()).Values, usernameKey)
+	session.FromContext(r.Context()).Values[usernameKey] = uresp.User.Username
+	log.Printf("++ user %#v", uresp.User)
 	options, err := c.WebAuthn.GetLoginOptions(&user{WebauthnUser: uresp.User}, sess)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get login options")
@@ -150,21 +153,33 @@ type loginResponse struct {
 func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
-	userID := session.FromContext(r.Context()).Values[userIDKey]
+	userID := session.FromContext(r.Context()).Values[usernameKey]
 	ureq := &webauthnpb.GetUserRequest{Username: userID.(string)}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
+		delete(session.FromContext(r.Context()).Values, usernameKey)
 		c.Logger.WithError(err).Error("Error fetching user")
 		http.Error(w, "Error fetching user", http.StatusInternalServerError)
 		return
 	}
-	delete(session.FromContext(r.Context()).Values, userIDKey)
 
 	// This will make sure the user we expect owns this authenticator. If we get past this point, we know
 	// dbuser is correct.
 	auth := c.WebAuthn.FinishLogin(r, w, &user{WebauthnUser: uresp.User}, sess)
 	if auth == nil {
 		// the finish handler deals with the http stuff, so bail
+		return
+	}
+
+	uauth, err := c.UserAuthenticator.GetAuthenticator(r.Context(), &webauthnpb.GetAuthenticatorRequest{AuthenticatorId: auth.WebAuthID()})
+	if err != nil {
+		c.Logger.WithError(err).Error("Error re-fetching authenticator")
+		http.Error(w, "Error finishing login", http.StatusInternalServerError)
+		return
+	}
+
+	if !uauth.Authenticator.Active {
+		http.Error(w, "Authenticator not active", http.StatusForbidden)
 		return
 	}
 
@@ -197,14 +212,13 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 
 type registrationBody struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
 }
 
 func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
-	//sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
+	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
 	// Clear the UserID Tracking
-	delete(session.FromContext(r.Context()).Values, userIDKey)
+	delete(session.FromContext(r.Context()).Values, usernameKey)
 
 	rb := registrationBody{}
 	if err := json.NewDecoder(r.Body).Decode(&rb); err != nil {
@@ -212,56 +226,43 @@ func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to parse registration start body", http.StatusInternalServerError)
 		return
 	}
+	if rb.Username == "" {
+		http.Error(w, "Username not present", http.StatusBadRequest)
+		return
+	}
 
-	panic("re-implement registration flow")
-	// TODO - rather than logging in, associate the key with the user, but mark it as not valid.
-	// Generate a challenge and store it on this key, and present it to the user.
+	session.FromContext(r.Context()).Values[usernameKey] = rb.Username
 
-	// lreq := &webauthnpb.LoginRequest{
-	// 	Username: rb.Username,
-	// 	Password: rb.Password,
-	// }
-	// lresp, err := c.UserAuthenticator.LoginUser(r.Context(), lreq)
-	// if err != nil {
-	// 	if status.Code(err) == codes.Unauthenticated {
-	// 		http.Error(w, "Failed to parse registration start body", http.StatusForbidden)
-	// 		return
-	// 	}
-	// 	c.Logger.WithError(err).Error("Error logging user in")
-	// 	http.Error(w, "Failed to log user in", http.StatusInternalServerError)
-	// 	return
-	// }
+	// TODO - better user object for this? This is a hack to have enough to
+	// satify the form, but it'd be nicer to make that more explicit
+	regUsr := &user{WebauthnUser: &webauthnpb.WebauthnUser{Username: rb.Username}}
+	options, err := c.WebAuthn.GetRegistrationOptions(regUsr, sess)
+	if err != nil {
+		c.Logger.WithError(err).Error("Failed to get registration options")
+		http.Error(w, "Failed to setup registration options", http.StatusInternalServerError)
+		return
+	}
 
-	// session.FromContext(r.Context()).Values[userIDKey] = lresp.User.Id
-	// session.FromContext(r.Context()).Values[usernameKey] = rb.Username
-
-	// options, err := c.WebAuthn.GetRegistrationOptions(&user{WebauthnUser: lresp.User}, sess)
-	// if err != nil {
-	// 	c.Logger.WithError(err).Error("Failed to get registration options")
-	// 	http.Error(w, "Failed to setup registration options", http.StatusInternalServerError)
-	// 	return
-	// }
-
-	// if err := json.NewEncoder(w).Encode(options); err != nil {
-	// 	c.Logger.WithError(err).Error("Failed to marshal options")
-	// 	http.Error(w, "Failed to marshal options", http.StatusInternalServerError)
-	// 	return
-	// }
+	if err := json.NewEncoder(w).Encode(options); err != nil {
+		c.Logger.WithError(err).Error("Failed to marshal options")
+		http.Error(w, "Failed to marshal options", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
-	userID, ok := session.FromContext(r.Context()).Values[userIDKey]
+	userID, ok := session.FromContext(r.Context()).Values[usernameKey]
 	if !ok {
 		http.Error(w, "User ID not found in session", http.StatusBadRequest)
 		return
 	}
-	delete(session.FromContext(r.Context()).Values, userIDKey)
+	delete(session.FromContext(r.Context()).Values, usernameKey)
 
 	ureq := &webauthnpb.GetUserRequest{Username: userID.(string)}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
-	if err != nil {
+	if err != nil && status.Code(err) != codes.NotFound {
 		c.Logger.WithError(err).Error("Failed to get user")
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
@@ -276,16 +277,54 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This will also associate the user to the authenticator in the store.
-	_, err = c.WebAuthn.ParseAndFinishRegistration(attestationResponse, &user{WebauthnUser: uresp.User}, sess)
-	if err != nil {
-		c.Logger.WithError(err).Error("Failed to finish registration")
-		http.Error(w, "Failed to finish registration", http.StatusInternalServerError)
-		return
+	// Generate challenge
+	challenge := c.words.Babble()
+
+	// Check if the user exists. If they do, parse and finish registration, and
+	// attach the challenge to the authenticator. If not, skip it so we don't
+	// leak usernames
+
+	if uresp != nil && uresp.User != nil {
+		// This will also associate the user to the authenticator in the store.
+		auth, err := c.WebAuthn.ParseAndFinishRegistration(attestationResponse, &user{WebauthnUser: uresp.User}, sess)
+		if err != nil {
+			if err, ok := err.(*protocol.Error); ok {
+				c.Logger.WithError(err).Errorf("Failed to finish registration: %s", err.Debug)
+			} else {
+				c.Logger.WithError(err).Error("Failed to finish registration")
+			}
+			http.Error(w, "Failed to finish registration", http.StatusInternalServerError)
+			return
+		}
+
+		sauth, err := c.UserAuthenticator.GetAuthenticator(r.Context(), &webauthnpb.GetAuthenticatorRequest{AuthenticatorId: auth.WebAuthID()})
+		if err != nil {
+			c.Logger.WithError(err).Error("Failed to re-fetch authenticator")
+			http.Error(w, "Failed to finish registration", http.StatusInternalServerError)
+			return
+		}
+
+		sauth.Authenticator.ActivationChallenge = challenge
+
+		if _, err := c.UserAuthenticator.UpdateAuthenticator(r.Context(), &webauthnpb.UpdateAuthenticatorRequest{Authenticator: sauth.Authenticator}); err != nil {
+			c.Logger.WithError(err).Error("Failed to update authenticator")
+			http.Error(w, "Failed to finish registration", http.StatusInternalServerError)
+			return
+
+		}
 	}
 
-	// Caller page should re-prompt for login at this point.
-	w.WriteHeader(http.StatusCreated)
+	resp := struct {
+		Challenge string `json:"challenge"`
+	}{
+		Challenge: challenge,
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		c.Logger.WithError(err).Error("Failed to marshal response")
+		http.Error(w, "Failed to marshal options", http.StatusInternalServerError)
+		return
+	}
 }
 
 // MountRoutes mounts the dex and connector HTTP routes on the given chi mux
