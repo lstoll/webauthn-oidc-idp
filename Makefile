@@ -1,7 +1,8 @@
 PATH  := $(PWD)/bin:$(PATH)
 SHELL := env PATH=$(PATH) /bin/bash
 
-all: idppb/idp.pb.go webauthn/webauthnpb/userstore.pb.go storage/storagepb/storage.pb.go webauthn/html.go
+all: idppb/idp.pb.go webauthn/webauthnpb/userstore.pb.go storage/storagepb/storage.pb.go webauthn/html.go \
+	storage/sqlstore/migrations/migrations.go
 
 idppb/idp.pb.go: idp.proto bin/protoc-gen-go
 	protoc -I=. --go_out=paths=source_relative:idppb idp.proto
@@ -14,6 +15,9 @@ storage/storagepb/storage.pb.go: storage/storage.proto bin/protoc-gen-go
 
 webauthn/html.go: bin/go-bindata webauthn/webauthn.js webauthn/webauthn.tmpl.html
 	go-bindata -pkg webauthn -o webauthn/html.go webauthn/webauthn.js webauthn/webauthn.tmpl.html
+
+storage/sqlstore/migrations/migrations.go: bin/go-bindata storage/sqlstore/migrations/*.sql
+	cd storage/sqlstore/migrations && go-bindata -pkg migrations -o migrations.go *.sql
 
 bin/protoc-gen-go: vendor/github.com/golang/protobuf/protoc-gen-go
 	go build -o bin/protoc-gen-go ./vendor/github.com/golang/protobuf/protoc-gen-go
