@@ -25,105 +25,18 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
-type LoginRequest struct {
+type GetUserRequest struct {
 	Username             string   `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
-	Password             string   `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *LoginRequest) Reset()         { *m = LoginRequest{} }
-func (m *LoginRequest) String() string { return proto.CompactTextString(m) }
-func (*LoginRequest) ProtoMessage()    {}
-func (*LoginRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{0}
-}
-func (m *LoginRequest) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_LoginRequest.Unmarshal(m, b)
-}
-func (m *LoginRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_LoginRequest.Marshal(b, m, deterministic)
-}
-func (dst *LoginRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LoginRequest.Merge(dst, src)
-}
-func (m *LoginRequest) XXX_Size() int {
-	return xxx_messageInfo_LoginRequest.Size(m)
-}
-func (m *LoginRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_LoginRequest.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_LoginRequest proto.InternalMessageInfo
-
-func (m *LoginRequest) GetUsername() string {
-	if m != nil {
-		return m.Username
-	}
-	return ""
-}
-
-func (m *LoginRequest) GetPassword() string {
-	if m != nil {
-		return m.Password
-	}
-	return ""
-}
-
-type LoginResponse struct {
-	User                 *WebauthnUser `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
-	XXX_unrecognized     []byte        `json:"-"`
-	XXX_sizecache        int32         `json:"-"`
-}
-
-func (m *LoginResponse) Reset()         { *m = LoginResponse{} }
-func (m *LoginResponse) String() string { return proto.CompactTextString(m) }
-func (*LoginResponse) ProtoMessage()    {}
-func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{1}
-}
-func (m *LoginResponse) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_LoginResponse.Unmarshal(m, b)
-}
-func (m *LoginResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_LoginResponse.Marshal(b, m, deterministic)
-}
-func (dst *LoginResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LoginResponse.Merge(dst, src)
-}
-func (m *LoginResponse) XXX_Size() int {
-	return xxx_messageInfo_LoginResponse.Size(m)
-}
-func (m *LoginResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_LoginResponse.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_LoginResponse proto.InternalMessageInfo
-
-func (m *LoginResponse) GetUser() *WebauthnUser {
-	if m != nil {
-		return m.User
-	}
-	return nil
-}
-
-type GetUserRequest struct {
-	// Types that are valid to be assigned to Lookup:
-	//	*GetUserRequest_UserId
-	//	*GetUserRequest_Username
-	Lookup               isGetUserRequest_Lookup `protobuf_oneof:"lookup"`
-	XXX_NoUnkeyedLiteral struct{}                `json:"-"`
-	XXX_unrecognized     []byte                  `json:"-"`
-	XXX_sizecache        int32                   `json:"-"`
 }
 
 func (m *GetUserRequest) Reset()         { *m = GetUserRequest{} }
 func (m *GetUserRequest) String() string { return proto.CompactTextString(m) }
 func (*GetUserRequest) ProtoMessage()    {}
 func (*GetUserRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{2}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{0}
 }
 func (m *GetUserRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GetUserRequest.Unmarshal(m, b)
@@ -143,107 +56,11 @@ func (m *GetUserRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_GetUserRequest proto.InternalMessageInfo
 
-type isGetUserRequest_Lookup interface {
-	isGetUserRequest_Lookup()
-}
-
-type GetUserRequest_UserId struct {
-	UserId string `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3,oneof"`
-}
-
-type GetUserRequest_Username struct {
-	Username string `protobuf:"bytes,2,opt,name=username,proto3,oneof"`
-}
-
-func (*GetUserRequest_UserId) isGetUserRequest_Lookup() {}
-
-func (*GetUserRequest_Username) isGetUserRequest_Lookup() {}
-
-func (m *GetUserRequest) GetLookup() isGetUserRequest_Lookup {
-	if m != nil {
-		return m.Lookup
-	}
-	return nil
-}
-
-func (m *GetUserRequest) GetUserId() string {
-	if x, ok := m.GetLookup().(*GetUserRequest_UserId); ok {
-		return x.UserId
-	}
-	return ""
-}
-
 func (m *GetUserRequest) GetUsername() string {
-	if x, ok := m.GetLookup().(*GetUserRequest_Username); ok {
-		return x.Username
+	if m != nil {
+		return m.Username
 	}
 	return ""
-}
-
-// XXX_OneofFuncs is for the internal use of the proto package.
-func (*GetUserRequest) XXX_OneofFuncs() (func(msg proto.Message, b *proto.Buffer) error, func(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error), func(msg proto.Message) (n int), []interface{}) {
-	return _GetUserRequest_OneofMarshaler, _GetUserRequest_OneofUnmarshaler, _GetUserRequest_OneofSizer, []interface{}{
-		(*GetUserRequest_UserId)(nil),
-		(*GetUserRequest_Username)(nil),
-	}
-}
-
-func _GetUserRequest_OneofMarshaler(msg proto.Message, b *proto.Buffer) error {
-	m := msg.(*GetUserRequest)
-	// lookup
-	switch x := m.Lookup.(type) {
-	case *GetUserRequest_UserId:
-		b.EncodeVarint(1<<3 | proto.WireBytes)
-		b.EncodeStringBytes(x.UserId)
-	case *GetUserRequest_Username:
-		b.EncodeVarint(2<<3 | proto.WireBytes)
-		b.EncodeStringBytes(x.Username)
-	case nil:
-	default:
-		return fmt.Errorf("GetUserRequest.Lookup has unexpected type %T", x)
-	}
-	return nil
-}
-
-func _GetUserRequest_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error) {
-	m := msg.(*GetUserRequest)
-	switch tag {
-	case 1: // lookup.user_id
-		if wire != proto.WireBytes {
-			return true, proto.ErrInternalBadWireType
-		}
-		x, err := b.DecodeStringBytes()
-		m.Lookup = &GetUserRequest_UserId{x}
-		return true, err
-	case 2: // lookup.username
-		if wire != proto.WireBytes {
-			return true, proto.ErrInternalBadWireType
-		}
-		x, err := b.DecodeStringBytes()
-		m.Lookup = &GetUserRequest_Username{x}
-		return true, err
-	default:
-		return false, nil
-	}
-}
-
-func _GetUserRequest_OneofSizer(msg proto.Message) (n int) {
-	m := msg.(*GetUserRequest)
-	// lookup
-	switch x := m.Lookup.(type) {
-	case *GetUserRequest_UserId:
-		n += 1 // tag and wire
-		n += proto.SizeVarint(uint64(len(x.UserId)))
-		n += len(x.UserId)
-	case *GetUserRequest_Username:
-		n += 1 // tag and wire
-		n += proto.SizeVarint(uint64(len(x.Username)))
-		n += len(x.Username)
-	case nil:
-	default:
-		panic(fmt.Sprintf("proto: unexpected type %T in oneof", x))
-	}
-	return n
 }
 
 type GetUserResponse struct {
@@ -257,7 +74,7 @@ func (m *GetUserResponse) Reset()         { *m = GetUserResponse{} }
 func (m *GetUserResponse) String() string { return proto.CompactTextString(m) }
 func (*GetUserResponse) ProtoMessage()    {}
 func (*GetUserResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{3}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{1}
 }
 func (m *GetUserResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GetUserResponse.Unmarshal(m, b)
@@ -285,7 +102,7 @@ func (m *GetUserResponse) GetUser() *WebauthnUser {
 }
 
 type AddAuthenticatorRequest struct {
-	UserId               string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Username             string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
 	Authenticator        *WebauthnAuthenticator `protobuf:"bytes,2,opt,name=authenticator,proto3" json:"authenticator,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}               `json:"-"`
 	XXX_unrecognized     []byte                 `json:"-"`
@@ -296,7 +113,7 @@ func (m *AddAuthenticatorRequest) Reset()         { *m = AddAuthenticatorRequest
 func (m *AddAuthenticatorRequest) String() string { return proto.CompactTextString(m) }
 func (*AddAuthenticatorRequest) ProtoMessage()    {}
 func (*AddAuthenticatorRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{4}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{2}
 }
 func (m *AddAuthenticatorRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_AddAuthenticatorRequest.Unmarshal(m, b)
@@ -316,9 +133,9 @@ func (m *AddAuthenticatorRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_AddAuthenticatorRequest proto.InternalMessageInfo
 
-func (m *AddAuthenticatorRequest) GetUserId() string {
+func (m *AddAuthenticatorRequest) GetUsername() string {
 	if m != nil {
-		return m.UserId
+		return m.Username
 	}
 	return ""
 }
@@ -341,7 +158,7 @@ func (m *GetAuthenticatorsResponse) Reset()         { *m = GetAuthenticatorsResp
 func (m *GetAuthenticatorsResponse) String() string { return proto.CompactTextString(m) }
 func (*GetAuthenticatorsResponse) ProtoMessage()    {}
 func (*GetAuthenticatorsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{5}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{3}
 }
 func (m *GetAuthenticatorsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GetAuthenticatorsResponse.Unmarshal(m, b)
@@ -379,7 +196,7 @@ func (m *GetAuthenticatorRequest) Reset()         { *m = GetAuthenticatorRequest
 func (m *GetAuthenticatorRequest) String() string { return proto.CompactTextString(m) }
 func (*GetAuthenticatorRequest) ProtoMessage()    {}
 func (*GetAuthenticatorRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{6}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{4}
 }
 func (m *GetAuthenticatorRequest) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GetAuthenticatorRequest.Unmarshal(m, b)
@@ -417,7 +234,7 @@ func (m *GetAuthenticatorResponse) Reset()         { *m = GetAuthenticatorRespon
 func (m *GetAuthenticatorResponse) String() string { return proto.CompactTextString(m) }
 func (*GetAuthenticatorResponse) ProtoMessage()    {}
 func (*GetAuthenticatorResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{7}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{5}
 }
 func (m *GetAuthenticatorResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GetAuthenticatorResponse.Unmarshal(m, b)
@@ -444,16 +261,52 @@ func (m *GetAuthenticatorResponse) GetAuthenticator() *WebauthnAuthenticator {
 	return nil
 }
 
+type DeleteAuthenticatorRequest struct {
+	AuthenticatorId      []byte   `protobuf:"bytes,1,opt,name=authenticator_id,json=authenticatorId,proto3" json:"authenticator_id,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *DeleteAuthenticatorRequest) Reset()         { *m = DeleteAuthenticatorRequest{} }
+func (m *DeleteAuthenticatorRequest) String() string { return proto.CompactTextString(m) }
+func (*DeleteAuthenticatorRequest) ProtoMessage()    {}
+func (*DeleteAuthenticatorRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_userstore_242c0364dffa1572, []int{6}
+}
+func (m *DeleteAuthenticatorRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_DeleteAuthenticatorRequest.Unmarshal(m, b)
+}
+func (m *DeleteAuthenticatorRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_DeleteAuthenticatorRequest.Marshal(b, m, deterministic)
+}
+func (dst *DeleteAuthenticatorRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DeleteAuthenticatorRequest.Merge(dst, src)
+}
+func (m *DeleteAuthenticatorRequest) XXX_Size() int {
+	return xxx_messageInfo_DeleteAuthenticatorRequest.Size(m)
+}
+func (m *DeleteAuthenticatorRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_DeleteAuthenticatorRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DeleteAuthenticatorRequest proto.InternalMessageInfo
+
+func (m *DeleteAuthenticatorRequest) GetAuthenticatorId() []byte {
+	if m != nil {
+		return m.AuthenticatorId
+	}
+	return nil
+}
+
 type WebauthnUser struct {
 	// a unique identifier for this user
-	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
 	// Display name
-	Name   string   `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Email  string   `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
-	Groups []string `protobuf:"bytes,4,rep,name=groups,proto3" json:"groups,omitempty"`
-	// AllowBootstrapEnroll indicates if we should allow users with no
-	// authenticators to enroll their first with no external involvement
-	AllowBootstrapEnrol  bool     `protobuf:"varint,5,opt,name=allow_bootstrap_enrol,json=allowBootstrapEnrol,proto3" json:"allow_bootstrap_enrol,omitempty"`
+	Name                 string   `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Email                string   `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	Groups               []string `protobuf:"bytes,4,rep,name=groups,proto3" json:"groups,omitempty"`
+	AuthenticatorIds     [][]byte `protobuf:"bytes,5,rep,name=authenticator_ids,json=authenticatorIds,proto3" json:"authenticator_ids,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -463,7 +316,7 @@ func (m *WebauthnUser) Reset()         { *m = WebauthnUser{} }
 func (m *WebauthnUser) String() string { return proto.CompactTextString(m) }
 func (*WebauthnUser) ProtoMessage()    {}
 func (*WebauthnUser) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{8}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{7}
 }
 func (m *WebauthnUser) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_WebauthnUser.Unmarshal(m, b)
@@ -483,9 +336,9 @@ func (m *WebauthnUser) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_WebauthnUser proto.InternalMessageInfo
 
-func (m *WebauthnUser) GetId() string {
+func (m *WebauthnUser) GetUsername() string {
 	if m != nil {
-		return m.Id
+		return m.Username
 	}
 	return ""
 }
@@ -511,23 +364,29 @@ func (m *WebauthnUser) GetGroups() []string {
 	return nil
 }
 
-func (m *WebauthnUser) GetAllowBootstrapEnrol() bool {
+func (m *WebauthnUser) GetAuthenticatorIds() [][]byte {
 	if m != nil {
-		return m.AllowBootstrapEnrol
+		return m.AuthenticatorIds
 	}
-	return false
+	return nil
 }
 
 // WebauthnAuthenticator represents an authenticator device
 type WebauthnAuthenticator struct {
 	// user_id that this authenticator belongs to
-	UserId string `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	// How to reference this authenticator
+	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// if this is a usable, activated authenticator
+	Active bool `protobuf:"varint,3,opt,name=active,proto3" json:"active,omitempty"`
+	// A code word to confirm the authenticatators activation request
+	ActivationChallenge string `protobuf:"bytes,4,opt,name=activation_challenge,json=activationChallenge,proto3" json:"activation_challenge,omitempty"`
 	// webauthn data
-	Id                   []byte   `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	CredentialId         []byte   `protobuf:"bytes,3,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`
-	PublicKey            []byte   `protobuf:"bytes,4,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
-	Aaguid               []byte   `protobuf:"bytes,5,opt,name=aaguid,proto3" json:"aaguid,omitempty"`
-	SignCount            uint32   `protobuf:"varint,6,opt,name=sign_count,json=signCount,proto3" json:"sign_count,omitempty"`
+	Id                   []byte   `protobuf:"bytes,5,opt,name=id,proto3" json:"id,omitempty"`
+	CredentialId         []byte   `protobuf:"bytes,6,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`
+	PublicKey            []byte   `protobuf:"bytes,7,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	Aaguid               []byte   `protobuf:"bytes,8,opt,name=aaguid,proto3" json:"aaguid,omitempty"`
+	SignCount            uint32   `protobuf:"varint,9,opt,name=sign_count,json=signCount,proto3" json:"sign_count,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -537,7 +396,7 @@ func (m *WebauthnAuthenticator) Reset()         { *m = WebauthnAuthenticator{} }
 func (m *WebauthnAuthenticator) String() string { return proto.CompactTextString(m) }
 func (*WebauthnAuthenticator) ProtoMessage()    {}
 func (*WebauthnAuthenticator) Descriptor() ([]byte, []int) {
-	return fileDescriptor_userstore_c18a6b20de032d74, []int{9}
+	return fileDescriptor_userstore_242c0364dffa1572, []int{8}
 }
 func (m *WebauthnAuthenticator) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_WebauthnAuthenticator.Unmarshal(m, b)
@@ -557,9 +416,30 @@ func (m *WebauthnAuthenticator) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_WebauthnAuthenticator proto.InternalMessageInfo
 
-func (m *WebauthnAuthenticator) GetUserId() string {
+func (m *WebauthnAuthenticator) GetUsername() string {
 	if m != nil {
-		return m.UserId
+		return m.Username
+	}
+	return ""
+}
+
+func (m *WebauthnAuthenticator) GetDisplayName() string {
+	if m != nil {
+		return m.DisplayName
+	}
+	return ""
+}
+
+func (m *WebauthnAuthenticator) GetActive() bool {
+	if m != nil {
+		return m.Active
+	}
+	return false
+}
+
+func (m *WebauthnAuthenticator) GetActivationChallenge() string {
+	if m != nil {
+		return m.ActivationChallenge
 	}
 	return ""
 }
@@ -600,14 +480,13 @@ func (m *WebauthnAuthenticator) GetSignCount() uint32 {
 }
 
 func init() {
-	proto.RegisterType((*LoginRequest)(nil), "lstoll.idp.webauthn.LoginRequest")
-	proto.RegisterType((*LoginResponse)(nil), "lstoll.idp.webauthn.LoginResponse")
 	proto.RegisterType((*GetUserRequest)(nil), "lstoll.idp.webauthn.GetUserRequest")
 	proto.RegisterType((*GetUserResponse)(nil), "lstoll.idp.webauthn.GetUserResponse")
 	proto.RegisterType((*AddAuthenticatorRequest)(nil), "lstoll.idp.webauthn.AddAuthenticatorRequest")
 	proto.RegisterType((*GetAuthenticatorsResponse)(nil), "lstoll.idp.webauthn.GetAuthenticatorsResponse")
 	proto.RegisterType((*GetAuthenticatorRequest)(nil), "lstoll.idp.webauthn.GetAuthenticatorRequest")
 	proto.RegisterType((*GetAuthenticatorResponse)(nil), "lstoll.idp.webauthn.GetAuthenticatorResponse")
+	proto.RegisterType((*DeleteAuthenticatorRequest)(nil), "lstoll.idp.webauthn.DeleteAuthenticatorRequest")
 	proto.RegisterType((*WebauthnUser)(nil), "lstoll.idp.webauthn.WebauthnUser")
 	proto.RegisterType((*WebauthnAuthenticator)(nil), "lstoll.idp.webauthn.WebauthnAuthenticator")
 }
@@ -624,9 +503,6 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type WebAuthnUserServiceClient interface {
-	// LoginUser should return a User object if username and password are
-	// correct
-	LoginUser(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
 	// GetUser returns the user
 	GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetUserResponse, error)
 	// AddAuthenticatorToUser should associate the given user with the given
@@ -637,6 +513,8 @@ type WebAuthnUserServiceClient interface {
 	UserAuthenticators(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetAuthenticatorsResponse, error)
 	// GetAuthenticator returns the authenticator matching the provided ID
 	GetAuthenticator(ctx context.Context, in *GetAuthenticatorRequest, opts ...grpc.CallOption) (*GetAuthenticatorResponse, error)
+	// DeleteAuthenticator removes the authenticator from the system
+	DeleteAuthenticator(ctx context.Context, in *DeleteAuthenticatorRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 }
 
 type webAuthnUserServiceClient struct {
@@ -645,15 +523,6 @@ type webAuthnUserServiceClient struct {
 
 func NewWebAuthnUserServiceClient(cc *grpc.ClientConn) WebAuthnUserServiceClient {
 	return &webAuthnUserServiceClient{cc}
-}
-
-func (c *webAuthnUserServiceClient) LoginUser(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error) {
-	out := new(LoginResponse)
-	err := c.cc.Invoke(ctx, "/lstoll.idp.webauthn.WebAuthnUserService/LoginUser", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *webAuthnUserServiceClient) GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetUserResponse, error) {
@@ -692,11 +561,17 @@ func (c *webAuthnUserServiceClient) GetAuthenticator(ctx context.Context, in *Ge
 	return out, nil
 }
 
+func (c *webAuthnUserServiceClient) DeleteAuthenticator(ctx context.Context, in *DeleteAuthenticatorRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/lstoll.idp.webauthn.WebAuthnUserService/DeleteAuthenticator", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WebAuthnUserServiceServer is the server API for WebAuthnUserService service.
 type WebAuthnUserServiceServer interface {
-	// LoginUser should return a User object if username and password are
-	// correct
-	LoginUser(context.Context, *LoginRequest) (*LoginResponse, error)
 	// GetUser returns the user
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
 	// AddAuthenticatorToUser should associate the given user with the given
@@ -707,28 +582,12 @@ type WebAuthnUserServiceServer interface {
 	UserAuthenticators(context.Context, *GetUserRequest) (*GetAuthenticatorsResponse, error)
 	// GetAuthenticator returns the authenticator matching the provided ID
 	GetAuthenticator(context.Context, *GetAuthenticatorRequest) (*GetAuthenticatorResponse, error)
+	// DeleteAuthenticator removes the authenticator from the system
+	DeleteAuthenticator(context.Context, *DeleteAuthenticatorRequest) (*empty.Empty, error)
 }
 
 func RegisterWebAuthnUserServiceServer(s *grpc.Server, srv WebAuthnUserServiceServer) {
 	s.RegisterService(&_WebAuthnUserService_serviceDesc, srv)
-}
-
-func _WebAuthnUserService_LoginUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LoginRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WebAuthnUserServiceServer).LoginUser(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/lstoll.idp.webauthn.WebAuthnUserService/LoginUser",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WebAuthnUserServiceServer).LoginUser(ctx, req.(*LoginRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _WebAuthnUserService_GetUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -803,14 +662,28 @@ func _WebAuthnUserService_GetAuthenticator_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WebAuthnUserService_DeleteAuthenticator_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAuthenticatorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebAuthnUserServiceServer).DeleteAuthenticator(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/lstoll.idp.webauthn.WebAuthnUserService/DeleteAuthenticator",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebAuthnUserServiceServer).DeleteAuthenticator(ctx, req.(*DeleteAuthenticatorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _WebAuthnUserService_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "lstoll.idp.webauthn.WebAuthnUserService",
 	HandlerType: (*WebAuthnUserServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "LoginUser",
-			Handler:    _WebAuthnUserService_LoginUser_Handler,
-		},
 		{
 			MethodName: "GetUser",
 			Handler:    _WebAuthnUserService_GetUser_Handler,
@@ -827,54 +700,57 @@ var _WebAuthnUserService_serviceDesc = grpc.ServiceDesc{
 			MethodName: "GetAuthenticator",
 			Handler:    _WebAuthnUserService_GetAuthenticator_Handler,
 		},
+		{
+			MethodName: "DeleteAuthenticator",
+			Handler:    _WebAuthnUserService_DeleteAuthenticator_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "userstore.proto",
 }
 
-func init() { proto.RegisterFile("userstore.proto", fileDescriptor_userstore_c18a6b20de032d74) }
+func init() { proto.RegisterFile("userstore.proto", fileDescriptor_userstore_242c0364dffa1572) }
 
-var fileDescriptor_userstore_c18a6b20de032d74 = []byte{
-	// 653 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x54, 0xdb, 0x4e, 0x1b, 0x3d,
-	0x10, 0xfe, 0x37, 0x09, 0x81, 0x0c, 0x09, 0x20, 0xf3, 0x03, 0xcb, 0xb6, 0x55, 0xd3, 0xa5, 0x17,
-	0xd0, 0xc3, 0x46, 0x4a, 0xd5, 0x07, 0x80, 0x96, 0x93, 0xda, 0x8b, 0x6a, 0xa1, 0x42, 0xea, 0x45,
-	0xa3, 0xdd, 0xd8, 0x5d, 0x2c, 0x9c, 0xb5, 0xbb, 0xf6, 0x16, 0x71, 0xdf, 0x47, 0xe8, 0xdb, 0xf4,
-	0xd1, 0x7a, 0x53, 0xd9, 0x7b, 0x20, 0x1b, 0x92, 0x88, 0x8a, 0x3b, 0x7b, 0xbe, 0x6f, 0x66, 0xbe,
-	0x19, 0x7b, 0x06, 0x56, 0x53, 0x49, 0x12, 0xa9, 0x78, 0x42, 0x3c, 0x91, 0x70, 0xc5, 0xd1, 0x3a,
-	0x93, 0x8a, 0x33, 0xe6, 0x51, 0x2c, 0xbc, 0x6b, 0x12, 0x06, 0xa9, 0xba, 0x8c, 0x9d, 0xa7, 0x11,
-	0xe7, 0x11, 0x23, 0x3d, 0x43, 0x09, 0xd3, 0x6f, 0x3d, 0x45, 0x47, 0x44, 0xaa, 0x60, 0x24, 0x32,
-	0x2f, 0xe7, 0xd1, 0x24, 0x81, 0x8c, 0x84, 0xba, 0xc9, 0x40, 0xf7, 0x08, 0xda, 0x1f, 0x79, 0x44,
-	0x63, 0x9f, 0x7c, 0x4f, 0x89, 0x54, 0xc8, 0x81, 0x25, 0x9d, 0x35, 0x0e, 0x46, 0xc4, 0xb6, 0xba,
-	0xd6, 0x6e, 0xcb, 0x2f, 0xef, 0x1a, 0x13, 0x81, 0x94, 0xd7, 0x3c, 0xc1, 0x76, 0x2d, 0xc3, 0x8a,
-	0xbb, 0x7b, 0x04, 0x9d, 0x3c, 0x8e, 0x14, 0x3c, 0x96, 0x04, 0xbd, 0x85, 0x86, 0x76, 0x34, 0x41,
-	0x96, 0xfb, 0xcf, 0xbc, 0x29, 0xd2, 0xbd, 0x8b, 0xfc, 0xf0, 0x59, 0x92, 0xc4, 0x37, 0x74, 0xf7,
-	0x0c, 0x56, 0x8e, 0x89, 0x32, 0x86, 0x5c, 0xd1, 0x36, 0x2c, 0x6a, 0x64, 0x40, 0x71, 0x26, 0xe8,
-	0xe4, 0x3f, 0xbf, 0xa9, 0x0d, 0xa7, 0x18, 0x3d, 0x1e, 0x13, 0x5b, 0xcb, 0xb1, 0xd2, 0x72, 0xb0,
-	0x04, 0x4d, 0xc6, 0xf9, 0x55, 0x2a, 0xdc, 0x13, 0x58, 0x2d, 0x83, 0x3e, 0x4c, 0xde, 0x4f, 0x0b,
-	0xb6, 0xf6, 0x31, 0xde, 0x4f, 0xd5, 0x25, 0x89, 0x15, 0x1d, 0x06, 0x8a, 0x97, 0x42, 0xb7, 0x26,
-	0x84, 0x96, 0x32, 0x3f, 0x41, 0x27, 0x18, 0x77, 0x30, 0x5a, 0x97, 0xfb, 0x2f, 0xe6, 0x26, 0xad,
-	0xa6, 0xa8, 0x06, 0x70, 0x39, 0x6c, 0x1f, 0x13, 0x55, 0xa1, 0xc8, 0xb2, 0x34, 0x1f, 0x56, 0x2a,
-	0x6c, 0x69, 0x5b, 0xdd, 0xfa, 0x3f, 0xe6, 0x9b, 0x88, 0xe0, 0xbe, 0x87, 0xad, 0xc9, 0x84, 0x45,
-	0xd9, 0x7b, 0xb0, 0x56, 0x21, 0x17, 0xf5, 0xb7, 0xfd, 0xd5, 0x8a, 0xfd, 0x14, 0xbb, 0x0c, 0xec,
-	0xbb, 0x51, 0x72, 0xd5, 0x77, 0x9a, 0x64, 0x3d, 0xb4, 0x49, 0xbf, 0x2c, 0x68, 0x8f, 0x3f, 0x21,
-	0x5a, 0x81, 0x5a, 0xf9, 0x36, 0x35, 0x8a, 0x11, 0x82, 0xc6, 0xed, 0xd7, 0xf1, 0xcd, 0x19, 0xfd,
-	0x0f, 0x0b, 0x64, 0x14, 0x50, 0x66, 0xd7, 0x8d, 0x31, 0xbb, 0xa0, 0x4d, 0x68, 0x46, 0x09, 0x4f,
-	0x85, 0xb4, 0x1b, 0xdd, 0xba, 0x7e, 0xd9, 0xec, 0x86, 0xfa, 0xb0, 0x11, 0x30, 0xc6, 0xaf, 0x07,
-	0x21, 0xe7, 0x4a, 0xaa, 0x24, 0x10, 0x03, 0x12, 0x27, 0x9c, 0xd9, 0x0b, 0x5d, 0x6b, 0x77, 0xc9,
-	0x5f, 0x37, 0xe0, 0x41, 0x81, 0x1d, 0x6a, 0xc8, 0xfd, 0x6d, 0xc1, 0xc6, 0x54, 0xfd, 0xb3, 0x3f,
-	0x50, 0x26, 0xbc, 0x66, 0x9a, 0xaa, 0x85, 0xef, 0x40, 0x67, 0x98, 0x10, 0xac, 0x3d, 0x03, 0xa6,
-	0xe9, 0x75, 0x03, 0xb5, 0x6f, 0x8d, 0xa7, 0x18, 0x3d, 0x01, 0x10, 0x69, 0xc8, 0xe8, 0x70, 0x70,
-	0x45, 0x6e, 0xec, 0x86, 0x61, 0xb4, 0x32, 0xcb, 0x07, 0x72, 0xa3, 0x4b, 0x0a, 0x82, 0x28, 0xa5,
-	0xd8, 0x68, 0x6d, 0xfb, 0xf9, 0x4d, 0xbb, 0x49, 0x1a, 0xc5, 0x83, 0x21, 0x4f, 0x63, 0x65, 0x37,
-	0xbb, 0xd6, 0x6e, 0xc7, 0x6f, 0x69, 0xcb, 0x3b, 0x6d, 0xe8, 0xff, 0xa9, 0xc3, 0xfa, 0x05, 0x09,
-	0xf7, 0x8b, 0xa6, 0x9e, 0x91, 0xe4, 0x07, 0x1d, 0xea, 0x4f, 0xd7, 0x32, 0xf3, 0x6f, 0x1a, 0x3d,
-	0x7d, 0x9c, 0xc6, 0xf7, 0x8c, 0xe3, 0xce, 0xa3, 0xe4, 0x5f, 0xe2, 0x1c, 0x16, 0xf3, 0xb1, 0x45,
-	0x3b, 0x53, 0xe9, 0xd5, 0x4d, 0xe1, 0x3c, 0x9f, 0x4f, 0xca, 0xa3, 0x7e, 0x85, 0xcd, 0xc9, 0x09,
-	0x3e, 0xe7, 0x26, 0xc9, 0xab, 0xa9, 0xfe, 0x33, 0xc6, 0xdd, 0xd9, 0xf4, 0xb2, 0xbd, 0xea, 0x15,
-	0x7b, 0xd5, 0x3b, 0xd4, 0x7b, 0x15, 0x51, 0x40, 0x3a, 0x5a, 0x75, 0x38, 0xef, 0x57, 0x80, 0x37,
-	0x8b, 0x34, 0x63, 0xd2, 0x39, 0xac, 0x4d, 0x82, 0x33, 0x8a, 0x98, 0x31, 0xbc, 0xce, 0xeb, 0x7b,
-	0xb2, 0xb3, 0x84, 0x07, 0x2f, 0xbf, 0xec, 0x45, 0x54, 0x5d, 0xa6, 0xa1, 0x37, 0xe4, 0xa3, 0x5e,
-	0xe6, 0xda, 0xa3, 0x58, 0xf4, 0x0a, 0xd7, 0xf2, 0x20, 0xc2, 0xb0, 0x69, 0x1a, 0xf3, 0xe6, 0x6f,
-	0x00, 0x00, 0x00, 0xff, 0xff, 0xee, 0xbb, 0xaa, 0xd2, 0xc7, 0x06, 0x00, 0x00,
+var fileDescriptor_userstore_242c0364dffa1572 = []byte{
+	// 628 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x54, 0x6d, 0x6e, 0xd3, 0x40,
+	0x10, 0x95, 0x93, 0x34, 0x6d, 0xa6, 0xe9, 0x07, 0x9b, 0x92, 0x1a, 0x23, 0x44, 0xea, 0xf2, 0x23,
+	0xa5, 0xc5, 0x11, 0x45, 0x1c, 0xa0, 0xb4, 0xa8, 0x54, 0x48, 0x08, 0x99, 0xa2, 0x4a, 0xfc, 0x20,
+	0xf2, 0xc7, 0xe0, 0xac, 0xd8, 0x78, 0x8d, 0x77, 0x5d, 0x94, 0x13, 0xf4, 0x0c, 0xdc, 0x81, 0x43,
+	0x22, 0x6f, 0x9c, 0xb4, 0x76, 0xed, 0x28, 0xa8, 0xff, 0x76, 0xde, 0xbc, 0x99, 0x79, 0x3b, 0x5e,
+	0x3f, 0xd8, 0x4a, 0x04, 0xc6, 0x42, 0xf2, 0x18, 0xad, 0x28, 0xe6, 0x92, 0x93, 0x0e, 0x13, 0x92,
+	0x33, 0x66, 0x51, 0x3f, 0xb2, 0x7e, 0xa3, 0xeb, 0x24, 0x72, 0x14, 0x1a, 0xcf, 0x03, 0xce, 0x03,
+	0x86, 0x03, 0x45, 0x71, 0x93, 0x1f, 0x03, 0x49, 0xc7, 0x28, 0xa4, 0x33, 0x8e, 0xa6, 0x55, 0xc6,
+	0xd3, 0x22, 0x01, 0xc7, 0x91, 0x9c, 0x4c, 0x93, 0xe6, 0x11, 0x6c, 0x9e, 0xa3, 0xfc, 0x2a, 0x30,
+	0xb6, 0xf1, 0x57, 0x82, 0x42, 0x12, 0x03, 0xd6, 0xd2, 0xb9, 0xa1, 0x33, 0x46, 0x5d, 0xeb, 0x69,
+	0xfd, 0x96, 0x3d, 0x8f, 0xcd, 0x0f, 0xb0, 0x35, 0x67, 0x8b, 0x88, 0x87, 0x02, 0xc9, 0x5b, 0x68,
+	0xa4, 0x69, 0x45, 0x5d, 0x3f, 0xde, 0xb3, 0x4a, 0x24, 0x5a, 0x57, 0xd9, 0x41, 0x15, 0x2a, 0xba,
+	0x79, 0xa3, 0xc1, 0xee, 0x89, 0xef, 0x9f, 0x24, 0x72, 0x84, 0xa1, 0xa4, 0x9e, 0x23, 0xf9, 0x32,
+	0x0a, 0xc8, 0x67, 0xd8, 0x70, 0xee, 0xd6, 0xe8, 0x35, 0x35, 0xf7, 0xe5, 0xc2, 0xb9, 0xf9, 0x29,
+	0xf9, 0x06, 0x26, 0x87, 0x27, 0xe7, 0x28, 0x73, 0x14, 0x31, 0xbf, 0x9d, 0x0d, 0x9b, 0x39, 0xb6,
+	0xd0, 0xb5, 0x5e, 0xfd, 0x3f, 0xe7, 0x15, 0x3a, 0x98, 0x67, 0xb0, 0x5b, 0x1c, 0x38, 0xbb, 0xf9,
+	0x01, 0x6c, 0xe7, 0xc8, 0x43, 0xea, 0xab, 0x0d, 0xb4, 0xed, 0xad, 0x1c, 0x7e, 0xe1, 0x9b, 0x0c,
+	0xf4, 0xfb, 0x5d, 0x32, 0xd5, 0xf7, 0x96, 0xa4, 0x3d, 0x74, 0x49, 0xe7, 0x60, 0x9c, 0x21, 0x43,
+	0x89, 0x0f, 0x95, 0xfd, 0x47, 0x83, 0xf6, 0xdd, 0xe7, 0xb0, 0xf0, 0x63, 0x13, 0x68, 0x28, 0xbc,
+	0xa6, 0x70, 0x75, 0x26, 0x3b, 0xb0, 0x82, 0x63, 0x87, 0x32, 0xbd, 0xae, 0xc0, 0x69, 0x40, 0xba,
+	0xd0, 0x0c, 0x62, 0x9e, 0x44, 0x42, 0x6f, 0xf4, 0xea, 0xfd, 0x96, 0x9d, 0x45, 0xe4, 0x10, 0x1e,
+	0x15, 0x95, 0x09, 0x7d, 0xa5, 0x57, 0xef, 0xb7, 0xed, 0xed, 0x82, 0x34, 0x61, 0xfe, 0xad, 0xc1,
+	0xe3, 0xd2, 0x6d, 0x2c, 0x14, 0xb9, 0x07, 0x6d, 0x9f, 0x8a, 0x88, 0x39, 0x93, 0xe1, 0x1d, 0xb1,
+	0xeb, 0x19, 0xf6, 0x29, 0xa5, 0x74, 0xa1, 0xe9, 0x78, 0x92, 0x5e, 0xa3, 0x12, 0xbd, 0x66, 0x67,
+	0x11, 0x79, 0x0d, 0x3b, 0xea, 0xe4, 0x48, 0xca, 0xc3, 0xa1, 0x37, 0x72, 0x18, 0xc3, 0x30, 0x40,
+	0xbd, 0xa1, 0x5a, 0x74, 0x6e, 0x73, 0xa7, 0xb3, 0x14, 0xd9, 0x84, 0x1a, 0xf5, 0xf5, 0x15, 0xb5,
+	0xdc, 0x1a, 0xf5, 0xc9, 0x3e, 0x6c, 0x78, 0x31, 0xfa, 0xa9, 0x54, 0x87, 0xa5, 0x7b, 0x6f, 0xaa,
+	0x54, 0xfb, 0x16, 0xbc, 0xf0, 0xc9, 0x33, 0x80, 0x28, 0x71, 0x19, 0xf5, 0x86, 0x3f, 0x71, 0xa2,
+	0xaf, 0x2a, 0x46, 0x6b, 0x8a, 0x7c, 0xc4, 0x89, 0x92, 0xe7, 0x04, 0x09, 0xf5, 0xf5, 0x35, 0x95,
+	0xca, 0xa2, 0xb4, 0x4c, 0xd0, 0x20, 0x1c, 0x7a, 0x3c, 0x09, 0xa5, 0xde, 0xea, 0x69, 0xfd, 0x0d,
+	0xbb, 0x95, 0x22, 0xa7, 0x29, 0x70, 0x7c, 0xd3, 0x80, 0xce, 0x15, 0xba, 0x27, 0xb3, 0x4f, 0xf9,
+	0x05, 0xe3, 0x6b, 0xea, 0x21, 0xb9, 0x84, 0xd5, 0xcc, 0x24, 0xc8, 0x7e, 0xe9, 0x8b, 0xcb, 0x1b,
+	0x8e, 0xf1, 0x62, 0x31, 0x29, 0x7b, 0xd3, 0xdf, 0xa1, 0x5b, 0xf4, 0x8b, 0x4b, 0xae, 0x86, 0x1c,
+	0x95, 0xd6, 0x57, 0x98, 0x8b, 0xd1, 0xb5, 0xa6, 0x76, 0x68, 0xcd, 0xec, 0xd0, 0x7a, 0x9f, 0xda,
+	0x21, 0xa1, 0x40, 0xd2, 0x6e, 0x79, 0x1f, 0x58, 0xee, 0x02, 0x56, 0x15, 0xa9, 0xc2, 0x54, 0x38,
+	0x6c, 0x17, 0x93, 0x15, 0x97, 0xa8, 0xf0, 0x09, 0xe3, 0xd5, 0x92, 0xec, 0xf9, 0xee, 0x3a, 0x25,
+	0x7f, 0x2f, 0x19, 0x94, 0x76, 0xa9, 0xfe, 0xcf, 0xab, 0x76, 0xf7, 0xee, 0xf0, 0xdb, 0x41, 0x40,
+	0xe5, 0x28, 0x71, 0x2d, 0x8f, 0x8f, 0x07, 0xd3, 0xa6, 0x03, 0xea, 0x47, 0x83, 0x59, 0xd3, 0xf9,
+	0x21, 0x72, 0xdd, 0xa6, 0x2a, 0x7e, 0xf3, 0x2f, 0x00, 0x00, 0xff, 0xff, 0xcb, 0x56, 0xdd, 0xc3,
+	0xde, 0x06, 0x00, 0x00,
 }
