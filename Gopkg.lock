@@ -103,6 +103,20 @@
   version = "v3.3.3"
 
 [[projects]]
+  digest = "1:d3a1c56d511ffb1241379781e9c7d579e39edbbe758d45e1293aff2c1745ccf8"
+  name = "github.com/golang-migrate/migrate"
+  packages = [
+    ".",
+    "database",
+    "database/postgres",
+    "source",
+    "source/go_bindata",
+  ]
+  pruneopts = "UT"
+  revision = "4937cd088f7c7193ee59b319c1c2caa7482aae8e"
+  version = "v3.5.4"
+
+[[projects]]
   digest = "1:54a9254d3845e3a80d4957975abfc5e771a49d08379509ec4f9c99c1ccbe13a9"
   name = "github.com/golang/protobuf"
   packages = [
@@ -214,6 +228,17 @@
   pruneopts = "UT"
   revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
   version = "v1.0.1"
+
+[[projects]]
+  digest = "1:8ef506fc2bb9ced9b151dafa592d4046063d744c646c1bbe801982ce87e4bc24"
+  name = "github.com/lib/pq"
+  packages = [
+    ".",
+    "oid",
+  ]
+  pruneopts = "UT"
+  revision = "4ded0e9383f75c197b3a2aaa6d590ac52df6fd79"
+  version = "v1.0.0"
 
 [[projects]]
   digest = "1:98d86d2cf3e91942612d637f855c5110ef0388b9a4af3afcc71d407f2fa654cf"
@@ -532,9 +557,13 @@
     "github.com/go-bindata/go-bindata/go-bindata",
     "github.com/go-chi/chi",
     "github.com/go-chi/chi/middleware",
+    "github.com/golang-migrate/migrate",
+    "github.com/golang-migrate/migrate/database/postgres",
+    "github.com/golang-migrate/migrate/source/go_bindata",
     "github.com/golang/protobuf/proto",
     "github.com/golang/protobuf/protoc-gen-go",
     "github.com/golang/protobuf/ptypes",
+    "github.com/golang/protobuf/ptypes/any",
     "github.com/golang/protobuf/ptypes/empty",
     "github.com/golang/protobuf/ptypes/timestamp",
     "github.com/gorilla/schema",
@@ -542,6 +571,7 @@
     "github.com/gorilla/sessions",
     "github.com/koesie10/webauthn/protocol",
     "github.com/koesie10/webauthn/webauthn",
+    "github.com/lib/pq",
     "github.com/lstoll/grpce/inproc",
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",

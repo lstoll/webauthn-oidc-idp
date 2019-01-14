@@ -61,6 +61,14 @@ required = [
   name = "github.com/lstoll/grpce"
   version = "~1.5.0"
 
+[[constraint]]
+  name = "github.com/lib/pq"
+  version = "~1.0.0"
+
+[[constraint]]
+  name = "github.com/golang-migrate/migrate"
+  version = "~3.5.4"
+
 [prune]
   go-tests = true
   unused-packages = true

@@ -2,26 +2,60 @@ package test
 
 import (
 	"context"
+	"database/sql"
+	"flag"
 	"log"
 	"testing"
 	"time"
 
+	"github.com/golang-migrate/migrate"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/golang/protobuf/ptypes/empty"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	_ "github.com/lib/pq"
 	"github.com/lstoll/grpce/inproc"
 	"github.com/lstoll/idp/storage"
 	"github.com/lstoll/idp/storage/memory"
+	"github.com/lstoll/idp/storage/sqlstore"
 	"github.com/lstoll/idp/storage/storagepb"
 )
+
+var dbURL string
+
+func init() {
+	flag.StringVar(&dbURL, "dburl", "", "DB to run database tests against, tests skipped if no DB. e.g postgres://localhost/idp_test?sslmode=disable")
+}
 
 func TestStorage(t *testing.T) {
 	t.Run("Memory", func(t *testing.T) {
 		testImpl(t, memory.MemStorage{})
+	})
+
+	t.Run("SQL", func(t *testing.T) {
+		if dbURL == "" {
+			t.Skip("-dburl not specifed")
+			return
+		}
+
+		db, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			t.Fatalf("Failed to open database %v", err)
+		}
+		// reset DB
+		if err := sqlstore.MigrateDown(db); err != nil && errors.Cause(err) != migrate.ErrNoChange {
+			t.Fatalf("Failed to down migrate DB [%+v]", err)
+		}
+		store, err := sqlstore.New(logrus.New(), db)
+		if err != nil {
+			t.Fatalf("Failed to initialize storage server [%+v]", err)
+		}
+		testImpl(t, store)
 	})
 }
 
@@ -48,12 +82,13 @@ func testImpl(t *testing.T, stor storagepb.StorageServer) {
 		}
 
 		if _, err := sc.Mutate(ctx, mreq); err != nil {
-			t.Fatal("Unexpected error putting record")
+			t.Fatalf("Unexpected error putting record [%+v]", err)
 		}
 
 		gresp, err := sc.Get(ctx, &storagepb.GetRequest{Keyspace: "ks1", Keys: []string{"key2"}})
 		if err != nil {
-			t.Errorf("Unexpected error getting item %v", err)
+			t.Fatalf("Unexpected error getting item %v", err)
+			panic("boo")
 		}
 		if gresp.Items[0].Key != "key2" {
 			t.Error("Wrong item returned")
@@ -66,7 +101,7 @@ func testImpl(t *testing.T, stor storagepb.StorageServer) {
 		mreq = storage.DeleteMutation("ks1", "key2")
 
 		if _, err := sc.Mutate(ctx, mreq); err != nil {
-			t.Fatal("Unexpected error deleting record")
+			t.Fatalf("Unexpected error deleting record [%+v]", err)
 		}
 
 		_, err = sc.Get(ctx, &storagepb.GetRequest{Keyspace: "ks1", Keys: []string{"key2"}})
@@ -96,7 +131,7 @@ func testImpl(t *testing.T, stor storagepb.StorageServer) {
 
 		gresp, err := sc.Get(ctx, &storagepb.GetRequest{Keyspace: "ks1", Keys: []string{"key1", "key2"}})
 		if err != nil {
-			t.Errorf("Unexpected error getting items %v", err)
+			t.Fatalf("Unexpected error getting items %v", err)
 		}
 		if len(gresp.Items) != 2 {
 			t.Error("Did not return 2 items")
