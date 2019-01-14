@@ -10,9 +10,6 @@ option go_package = "github.com/lstoll/idp/webauthn/webauthnpb";
 // WebAuthnUserService is used by the WebAuthn connector to retrieve and manage
 // user information
 service WebAuthnUserService {
-	// LoginUser should return a User object if username and password are
-	// correct
-	rpc LoginUser(LoginRequest) returns (LoginResponse);
 	// GetUser returns the user
 	rpc GetUser(GetUserRequest) returns (GetUserResponse);
 	// AddAuthenticatorToUser should associate the given user with the given
@@ -22,23 +19,13 @@ service WebAuthnUserService {
 	// given user
 	rpc UserAuthenticators(GetUserRequest) returns (GetAuthenticatorsResponse);
 	// GetAuthenticator returns the authenticator matching the provided ID
-	rpc GetAuthenticator(GetAuthenticatorRequest) returns (GetAuthenticatorResponse);
-}
-
-message LoginRequest {
-    string username = 1;
-    string password = 2;
-}
-
-message LoginResponse {
-    WebauthnUser user = 1;
+    rpc GetAuthenticator(GetAuthenticatorRequest) returns (GetAuthenticatorResponse);
+    // DeleteAuthenticator removes the authenticator from the system
+	rpc DeleteAuthenticator(DeleteAuthenticatorRequest) returns (google.protobuf.Empty);
 }
 
 message GetUserRequest {
-    oneof lookup {
-        string user_id = 1;
-        string username = 2;
-    }
+    string username = 1;
 }
 
 message GetUserResponse {
@@ -46,7 +33,7 @@ message GetUserResponse {
 }
 
 message AddAuthenticatorRequest {
-    string user_id = 1;
+    string username = 1;
     WebauthnAuthenticator authenticator = 2;
 }
 
@@ -62,26 +49,34 @@ message GetAuthenticatorResponse {
     WebauthnAuthenticator authenticator = 1;
 }
 
+message DeleteAuthenticatorRequest {
+    bytes authenticator_id = 1;
+}
+
 message WebauthnUser {
     // a unique identifier for this user
-    string id = 1;
+    string username = 1;
     // Display name
     string name = 2;
     string email = 3;
     repeated string groups = 4;
-    // AllowBootstrapEnroll indicates if we should allow users with no
-	// authenticators to enroll their first with no external involvement
-    bool allow_bootstrap_enrol = 5;
+    repeated bytes authenticator_ids = 5;
 }
 
 // WebauthnAuthenticator represents an authenticator device
 message WebauthnAuthenticator {
     // user_id that this authenticator belongs to
-    string user_id = 1;
+    string username = 1;
+    // How to reference this authenticator
+    string display_name = 2;
+    // if this is a usable, activated authenticator
+    bool active = 3;
+    // A code word to confirm the authenticatators activation request
+    string activation_challenge = 4;
     /* webauthn data */
-    bytes id = 2;
-	bytes credential_id = 3;
-	bytes public_key = 4;
-	bytes aaguid = 5;
-	uint32 sign_count = 6;
+    bytes id = 5;
+	bytes credential_id = 6;
+	bytes public_key = 7;
+	bytes aaguid = 8;
+	uint32 sign_count = 9;
 }

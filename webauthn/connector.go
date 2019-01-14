@@ -106,7 +106,7 @@ func (c *Connector) LoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up user.
-	ureq := &webauthnpb.GetUserRequest{Lookup: &webauthnpb.GetUserRequest_Username{Username: lb.Username}}
+	ureq := &webauthnpb.GetUserRequest{Username: lb.Username}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -121,7 +121,7 @@ func (c *Connector) LoginStart(w http.ResponseWriter, r *http.Request) {
 
 	// Reset the userID in use
 	delete(session.FromContext(r.Context()).Values, userIDKey)
-	session.FromContext(r.Context()).Values[userIDKey] = uresp.User.Id
+	session.FromContext(r.Context()).Values[userIDKey] = uresp.User.Username
 
 	// Stash username in session for future use.
 	// TODO - what is the expiry on this? Would we be just better with a long-lived cookie?
@@ -151,7 +151,7 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
 	userID := session.FromContext(r.Context()).Values[userIDKey]
-	ureq := &webauthnpb.GetUserRequest{Lookup: &webauthnpb.GetUserRequest_UserId{UserId: userID.(string)}}
+	ureq := &webauthnpb.GetUserRequest{Username: userID.(string)}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
@@ -179,7 +179,7 @@ func (c *Connector) LoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redir, err := ssoauth.Authenticate(session.FromContext(r.Context()).Values[authIDKey].(string), idppb.Identity{UserId: uresp.User.Id})
+	redir, err := ssoauth.Authenticate(session.FromContext(r.Context()).Values[authIDKey].(string), idppb.Identity{UserId: uresp.User.Username})
 	if err != nil {
 		c.Logger.WithError(err).Error("Error fetching user")
 		http.Error(w, "Error fetching user", http.StatusInternalServerError)
@@ -201,7 +201,7 @@ type registrationBody struct {
 }
 
 func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
-	sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
+	//sess := webauthn.WrapMap(session.FromContext(r.Context()).Values)
 
 	// Clear the UserID Tracking
 	delete(session.FromContext(r.Context()).Values, userIDKey)
@@ -213,36 +213,40 @@ func (c *Connector) RegistrationStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lreq := &webauthnpb.LoginRequest{
-		Username: rb.Username,
-		Password: rb.Password,
-	}
-	lresp, err := c.UserAuthenticator.LoginUser(r.Context(), lreq)
-	if err != nil {
-		if status.Code(err) == codes.Unauthenticated {
-			http.Error(w, "Failed to parse registration start body", http.StatusForbidden)
-			return
-		}
-		c.Logger.WithError(err).Error("Error logging user in")
-		http.Error(w, "Failed to log user in", http.StatusInternalServerError)
-		return
-	}
+	panic("re-implement registration flow")
+	// TODO - rather than logging in, associate the key with the user, but mark it as not valid.
+	// Generate a challenge and store it on this key, and present it to the user.
 
-	session.FromContext(r.Context()).Values[userIDKey] = lresp.User.Id
-	session.FromContext(r.Context()).Values[usernameKey] = rb.Username
+	// lreq := &webauthnpb.LoginRequest{
+	// 	Username: rb.Username,
+	// 	Password: rb.Password,
+	// }
+	// lresp, err := c.UserAuthenticator.LoginUser(r.Context(), lreq)
+	// if err != nil {
+	// 	if status.Code(err) == codes.Unauthenticated {
+	// 		http.Error(w, "Failed to parse registration start body", http.StatusForbidden)
+	// 		return
+	// 	}
+	// 	c.Logger.WithError(err).Error("Error logging user in")
+	// 	http.Error(w, "Failed to log user in", http.StatusInternalServerError)
+	// 	return
+	// }
 
-	options, err := c.WebAuthn.GetRegistrationOptions(&user{WebauthnUser: lresp.User}, sess)
-	if err != nil {
-		c.Logger.WithError(err).Error("Failed to get registration options")
-		http.Error(w, "Failed to setup registration options", http.StatusInternalServerError)
-		return
-	}
+	// session.FromContext(r.Context()).Values[userIDKey] = lresp.User.Id
+	// session.FromContext(r.Context()).Values[usernameKey] = rb.Username
 
-	if err := json.NewEncoder(w).Encode(options); err != nil {
-		c.Logger.WithError(err).Error("Failed to marshal options")
-		http.Error(w, "Failed to marshal options", http.StatusInternalServerError)
-		return
-	}
+	// options, err := c.WebAuthn.GetRegistrationOptions(&user{WebauthnUser: lresp.User}, sess)
+	// if err != nil {
+	// 	c.Logger.WithError(err).Error("Failed to get registration options")
+	// 	http.Error(w, "Failed to setup registration options", http.StatusInternalServerError)
+	// 	return
+	// }
+
+	// if err := json.NewEncoder(w).Encode(options); err != nil {
+	// 	c.Logger.WithError(err).Error("Failed to marshal options")
+	// 	http.Error(w, "Failed to marshal options", http.StatusInternalServerError)
+	// 	return
+	// }
 }
 
 func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +259,7 @@ func (c *Connector) RegistrationFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(session.FromContext(r.Context()).Values, userIDKey)
 
-	ureq := &webauthnpb.GetUserRequest{Lookup: &webauthnpb.GetUserRequest_UserId{UserId: userID.(string)}}
+	ureq := &webauthnpb.GetUserRequest{Username: userID.(string)}
 	uresp, err := c.UserAuthenticator.GetUser(r.Context(), ureq)
 	if err != nil {
 		c.Logger.WithError(err).Error("Failed to get user")

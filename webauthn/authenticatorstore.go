@@ -21,9 +21,9 @@ type storage struct {
 // in the future using GetAuthenticator and GetAuthenticators.
 func (s *storage) AddAuthenticator(user webauthn.User, authenticator webauthn.Authenticator) error {
 	req := &webauthnpb.AddAuthenticatorRequest{
-		UserId: string(user.WebAuthID()),
+		Username: string(user.WebAuthID()),
 		Authenticator: &webauthnpb.WebauthnAuthenticator{
-			UserId:       string(user.WebAuthID()),
+			Username:     string(user.WebAuthID()),
 			Id:           authenticator.WebAuthID(),
 			CredentialId: authenticator.WebAuthCredentialID(),
 			PublicKey:    authenticator.WebAuthPublicKey(),
@@ -54,7 +54,7 @@ func (s *storage) GetAuthenticator(id []byte) (webauthn.Authenticator, error) {
 // should still return the authenticators as specified by the ID.
 func (s *storage) GetAuthenticators(user webauthn.User) ([]webauthn.Authenticator, error) {
 	req := &webauthnpb.GetUserRequest{
-		Lookup: &webauthnpb.GetUserRequest_UserId{UserId: string(user.WebAuthID())},
+		Username: string(user.WebAuthID()),
 	}
 	resp, err := s.ua.UserAuthenticators(context.Background(), req)
 	if err != nil {
@@ -83,7 +83,7 @@ type authenticator struct {
 }
 
 func (u *user) WebAuthID() []byte {
-	return []byte(u.Id)
+	return []byte(u.Username)
 }
 
 func (u *user) WebAuthName() string {

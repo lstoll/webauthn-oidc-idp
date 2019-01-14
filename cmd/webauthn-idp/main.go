@@ -13,6 +13,7 @@ import (
 	"github.com/lstoll/idp/oidc"
 	"github.com/lstoll/idp/saml"
 	"github.com/lstoll/idp/session"
+	"github.com/lstoll/idp/storage"
 	"github.com/lstoll/idp/storage/memory"
 	"github.com/lstoll/idp/storage/storagepb"
 	"github.com/lstoll/idp/webauthn"
@@ -32,14 +33,8 @@ func main() {
 	l := logrus.New()
 
 	stor := &memory.MemStorage{}
-
-	us := memory.NewUserStore()
-	us.Users["user"] = &memory.User{
-		Password: "password",
-		User: &webauthnpb.WebauthnUser{
-			Id: "users-unique-id",
-		},
-	}
+	us := &storage.UserStore{Storage: stor}
+	// TODO - do we want some auto approver?
 
 	ips := inproc.New()
 
