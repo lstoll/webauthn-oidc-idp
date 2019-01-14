@@ -69,6 +69,10 @@ required = [
   name = "github.com/golang-migrate/migrate"
   version = "~3.5.4"
 
+[[constraint]]
+  name = "github.com/tjarratt/babble"
+  branch = "master"
+
 [prune]
   go-tests = true
   unused-packages = true

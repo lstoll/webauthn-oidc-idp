@@ -59,7 +59,8 @@ class WebAuthn {
 					}),
 				})
 			})
-			.then(WebAuthn._checkStatus(201));
+			.then(WebAuthn._checkStatus(200))
+			.then(res => res.json());
 	}
 
 	login(data) {

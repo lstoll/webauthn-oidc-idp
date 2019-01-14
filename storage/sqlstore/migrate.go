@@ -38,7 +38,7 @@ func migrateDB(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	if err := m.Up(); err != nil {
+	if err := m.Up(); err != nil && errors.Cause(err) != migrate.ErrNoChange {
 		return errors.Wrap(err, "Failed to migrate database")
 	}
 	return nil

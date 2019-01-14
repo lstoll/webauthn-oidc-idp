@@ -43,10 +43,19 @@
                         <p class="hide lead" id="registerLoading">Registering... Please tap your authenticator.</p>
                         <form id="registerForm">
                             <input type="text" name="username" id="registerLogin" class="form-control" placeholder="Username" />
-                            <input type="password" name="password" id="registerPassword" class="form-control"
-                                placeholder="Username" />
                             <button type="submit" class="btn btn-success mt-3">Register</button>
                         </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Challenge display -->
+            <div id="challengecard" class="mui-row hide">
+                <div class="mui-col-md-4 mui-col-md-offset-4">
+                    <div class="mui-panel mui--text-center">
+                        <p>Registration submitted</p>
+                        <p>Please ask your administrator to confirm the enrollment</p>
+                        <p><strong><span id="enrollChallenge"></span></strong></p>
                     </div>
                 </div>
             </div>
@@ -69,15 +78,14 @@
             if (registerPending) return;
             registerPending = true;
             document.getElementById("registerLoading").classList.remove("hide");
-            w.register({ "username": document.getElementById('registerLogin').value, "password": document.getElementById('registerPassword').value })
+            w.register({ "username": document.getElementById('registerLogin').value })
                 .then(res => {
                     registerPending = false;
                     document.getElementById("registerLoading").classList.add("hide");
-                    // Trigger login process
-                    document.getElementById("loginUsername").value = document.getElementById("registerLogin").value
-                    document.getElementById("logincard").classList.add("hide");
-                    document.getElementById("registercard").classList.remove("hide");
-                    attemptAuthentication();
+                    // Display challenge
+                    document.getElementById("registercard").classList.add("hide");
+                    document.getElementById("enrollChallenge").textContent = res.challenge;
+                    document.getElementById("challengecard").classList.remove("hide");
                 })
                 .catch(err => {
                     console.error(err)
@@ -101,9 +109,11 @@
             document.getElementById("loginLoading").classList.remove("hide");
             w.login({ "username": document.getElementById("loginUsername").value })
                 .then(res => res.json())
-                .then(res => window.location.href = res.redirect_to)
+                .then(res => {
+                    window.location.href = res.redirect_to;
+                })
                 .catch(err => {
-                    console.error(err)
+                    console.error(err);
                     alert('Failed to login: ' + err);
                 })
                 .then(() => {
@@ -119,7 +129,7 @@
 
         // If we have a preseeded username, auth immediately
         if (document.getElementById("loginUsername").value != "") {
-           attemptAuthentication();
+            attemptAuthentication();
         }
     </script>
 </body>

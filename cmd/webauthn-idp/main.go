@@ -1,9 +1,11 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi"
 	"github.com/gorilla/securecookie"
@@ -14,7 +16,7 @@ import (
 	"github.com/lstoll/idp/saml"
 	"github.com/lstoll/idp/session"
 	"github.com/lstoll/idp/storage"
-	"github.com/lstoll/idp/storage/memory"
+	"github.com/lstoll/idp/storage/sqlstore"
 	"github.com/lstoll/idp/storage/storagepb"
 	"github.com/lstoll/idp/webauthn"
 	"github.com/lstoll/idp/webauthn/webauthnpb"
@@ -23,16 +25,30 @@ import (
 
 var (
 	sessionKey string
+	dbURL      string
 )
 
 func main() {
 	flag.StringVar(&sessionKey, "session-key", string(securecookie.GenerateRandomKey(32)), "Key to secure cookie sessions")
+	defaultDB := os.Getenv("DATABASE_URL")
+	if defaultDB == "" {
+		defaultDB = "postgres://localhost/idp_dev?sslmode=disable"
+	}
+	flag.StringVar(&dbURL, "dburl", defaultDB, "URL of the database to talk to")
 
 	flag.Parse()
 
 	l := logrus.New()
 
-	stor := &memory.MemStorage{}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Failed to open database %v", err)
+	}
+	stor, err := sqlstore.New(logrus.New(), db)
+	if err != nil {
+		log.Fatalf("Error setting up store [%+v]", err)
+	}
+
 	us := &storage.UserStore{Storage: stor}
 	// TODO - do we want some auto approver?
 
