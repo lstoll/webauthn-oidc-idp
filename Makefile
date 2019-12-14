@@ -4,7 +4,7 @@ all: build test zip apply
 
 build:
 	mkdir -p build
-	go build -o build/idp ./cmd/idp
+	GOOS=linux GOOARCH=amd64 go build -o build/idp ./cmd/idp
 
 test:
 	go test ./...
