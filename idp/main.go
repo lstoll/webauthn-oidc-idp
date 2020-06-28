@@ -19,9 +19,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kms"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/lstoll/awskms"
 	"github.com/pardot/oidc/discovery"
-	"gopkg.in/square/go-jose.v2"
+	"github.com/pardot/oidc/signer"
 )
 
 var (
@@ -83,9 +84,11 @@ func main() {
 	ctx := context.Background()
 
 	var (
-		baseURL                = os.Getenv("BASE_URL")
-		oidcSignerKMSARN       = os.Getenv("KMS_OIDC_KEY_ARN")
-		oidcSignerGenerateWeak = os.Getenv("OIDC_SIGNER_GENERATE_WEAK")
+		localDevMode = os.Getenv("LOCAL_DEVELOPMENT_MODE") == "true" || os.Getenv("LOCAL_DEVELOPMENT_MODE") == "1"
+
+		baseURL          = os.Getenv("BASE_URL")
+		oidcSignerKMSARN = os.Getenv("KMS_OIDC_KEY_ARN")
+		configBucketName = os.Getenv("CONFIG_BUCKET_NAME")
 	)
 
 	sess, err := session.NewSession(&aws.Config{})
@@ -93,17 +96,15 @@ func main() {
 		log.Fatalf("creating aws sdk session: %v", err)
 	}
 	kmscli := kms.New(sess)
+	s3cli := s3.New(sess)
 
 	var (
 		jwtSigner crypto.Signer
 		jwtKeyID  string
+		clients   clientList
 	)
 
-	log.Printf("env: %v", os.Environ())
-	log.Printf("genweah: %s", oidcSignerGenerateWeak)
-
-	if oidcSignerGenerateWeak == "true" || oidcSignerGenerateWeak == "1" {
-		log.Print("in genweak block")
+	if localDevMode {
 		// generate a crappy local key, for development purposes. Never erver
 		// use this live.
 		k, err := rsa.GenerateKey(rand.Reader, 512)
@@ -112,10 +113,16 @@ func main() {
 		}
 		jwtSigner = k
 		jwtKeyID = time.Now().String()
+
+		clients = localDevelopmentClients
 	} else {
 		if oidcSignerKMSARN == "" {
 			log.Fatal("KMS_OIDC_KEY_ARN must be set")
 		}
+		if configBucketName == "" {
+			log.Fatal("CONFIG_BUCKET_NAME must be set")
+		}
+
 		// Use the KMS key
 		s, err := awskms.NewSigner(ctx, kmscli, oidcSignerKMSARN)
 		if err != nil {
@@ -123,7 +130,15 @@ func main() {
 		}
 		jwtSigner = s
 		jwtKeyID = oidcSignerKMSARN
+
+		cl, err := loadClients(ctx, s3cli, configBucketName)
+		if err != nil {
+			log.Fatalf("loading clients: %v", err)
+		}
+		clients = cl
 	}
+
+	log.Printf("loaded clients: %v", clients)
 
 	// hash the key ID, to make it not easily reversable
 	kh := sha256.New()
@@ -132,14 +147,18 @@ func main() {
 	}
 	jwtKeyID = hex.EncodeToString(kh.Sum(nil))[0:16]
 
-	sks := &signerToKeySource{Signer: jwtSigner, keyID: jwtKeyID}
+	jwts, err := signer.NewFromCrypto(jwtSigner, jwtKeyID)
+	if err != nil {
+		log.Fatalf("creating JWT signer from crypto.Signer: %v", err)
+	}
+
 	oidcmd := discovery.ProviderMetadata{
 		Issuer:                baseURL,
 		JWKSURI:               baseURL + "/keys",
 		AuthorizationEndpoint: baseURL + "/auth",
 		TokenEndpoint:         baseURL + "/token",
 	}
-	keysh := discovery.NewKeysHandler(sks, 1*time.Hour)
+	keysh := discovery.NewKeysHandler(jwts, 1*time.Hour)
 	discoh, err := discovery.NewConfigurationHandler(&oidcmd, discovery.WithCoreDefaults())
 	if err != nil {
 		log.Fatalf("configuring metadata handler: %v", err)
@@ -151,22 +170,4 @@ func main() {
 	m.Handle("/keys", keysh)
 	m.Handle("/.well-known/openid-configuration", discoh)
 	gateway.ListenAndServe("", m)
-}
-
-type signerToKeySource struct {
-	crypto.Signer
-	keyID string
-}
-
-func (s *signerToKeySource) PublicKeys(ctx context.Context) (*jose.JSONWebKeySet, error) {
-	return &jose.JSONWebKeySet{
-		Keys: []jose.JSONWebKey{
-			{
-				Key:       s.Public(),
-				KeyID:     s.keyID,
-				Algorithm: "RS256",
-				Use:       "sig",
-			},
-		},
-	}, nil
 }

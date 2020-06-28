@@ -11,4 +11,5 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/tj/assert v0.0.3 // indirect
 	gopkg.in/square/go-jose.v2 v2.4.0
+	gopkg.in/yaml.v2 v2.2.8
 )

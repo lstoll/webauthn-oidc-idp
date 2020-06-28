@@ -59,9 +59,10 @@ Resources:
       Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
         Variables:
           # Anything we want to override also has to be set here as well.
+          LOCAL_DEVELOPMENT_MODE: "false" # used in dev
           BASE_URL: !Sub "https://${DomainName}"
           KMS_OIDC_KEY_ARN: !Ref OIDCSignerKeyARN
-          OIDC_SIGNER_GENERATE_WEAK: "false" # used in dev
+          CONFIG_BUCKET_NAME: !Ref ConfigBucket
 
   ApiGateway:
     Type: AWS::Serverless::Api
@@ -81,10 +82,24 @@ Resources:
   # OIDCSignerKey:
   #   Type: AWS::KMS::Key
 
-  IDPKMSSigningPolicy:
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-config
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: aws:kms
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  IDPFunctionPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: idp-kms-signing
+      PolicyName: !Sub ${AWS::StackName}-idp-policy
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -94,6 +109,16 @@ Resources:
               - "kms:Sign"
               - "kms:DescribeKey"
             Resource: !Ref OIDCSignerKeyARN
+          - Effect: Allow
+            Action:
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+            Resource: !GetAtt ConfigBucket.Arn
+          - Effect: Allow
+            Action:
+              - "s3:GetObject"
+              - "s3:GetObjectVersion"
+            Resource: !Sub "${ConfigBucket.Arn}/*"
       Roles:
         - !Ref IDPFunctionRole
 
