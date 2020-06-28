@@ -3,7 +3,18 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   lambdaid
 
-  Sample SAM Template for lambdaid
+Parameters:
+  DomainName:
+    Type: String
+    Description: Domain name to serve this app as
+
+  HostedZoneID:
+    Type: String
+    Description: Hosted zone the domain name lives in
+
+  CertificateARN:
+    Type: String
+    Description: ARN of the certificate to use for serving
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
@@ -11,6 +22,7 @@ Globals:
     Timeout: 5
 
 Resources:
+  # Info on implicitly generated resources: https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
   IDPFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -22,26 +34,28 @@ Resources:
         CatchAll:
           Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
           Properties:
+            # TODO - do we want to be explicit, or do we just want to proxy it all?
             Path: /hello
             Method: GET
+            RestApiId: !Ref ApiGateway
       Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
         Variables:
           PARAM1: VALUE
 
-  Domain:
-    DomainName: www.example.com
-    CertificateArn: arn-example
-    EndpointConfiguration: EDGE
-    Route53:
-      HostedZoneId: Z1PA6795UKMFR9
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-gateway
+      StageName: Prod
+      EndpointConfiguration: EDGE
+      Domain:
+        DomainName: !Ref DomainName
+        CertificateArn: !Ref CertificateARN
+        EndpointConfiguration: EDGE
+        Route53:
+          HostedZoneId: !Ref HostedZoneID
 
 Outputs:
-  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-  # Find out more about other implicit resources you can reference within SAM
-  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  IDAPI:
-    Description: "API Gateway endpoint URL for Prod environment for First Function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello"
   IDPFunction:
     Description: "IDP Lambda Function ARN"
     Value: !GetAtt IDPFunction.Arn

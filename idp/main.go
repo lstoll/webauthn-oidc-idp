@@ -27,6 +27,8 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Processing request data for request %s.\n", lreq.RequestID)
 	}
 	log.Printf("Path: %s\n", r.URL.Path)
+	log.Printf("Query: %v\n", r.URL.Query())
+
 	// fmt.Printf("Body size = %d.\n", len(request.Body))
 
 	log.Println("Headers:")
