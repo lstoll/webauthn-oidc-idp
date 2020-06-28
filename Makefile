@@ -5,4 +5,3 @@ build:
 .PHONY: run-local
 run-local: build
 	sam local start-api
-
