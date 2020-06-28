@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 
-	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/apex/gateway"
 )
 
 var (
@@ -21,40 +21,50 @@ var (
 	ErrNon200Response = errors.New("Non 200 Response found")
 )
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	fmt.Printf("Processing request data for request %s.\n", request.RequestContext.RequestID)
-	fmt.Printf("Path: %s\n", request.Path)
-	fmt.Printf("Body size = %d.\n", len(request.Body))
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	lreq, ok := gateway.RequestContext(r.Context())
+	if ok {
+		log.Printf("Processing request data for request %s.\n", lreq.RequestID)
+	}
+	log.Printf("Path: %s\n", r.URL.Path)
+	// fmt.Printf("Body size = %d.\n", len(request.Body))
 
-	fmt.Println("Headers:")
-	for key, value := range request.Headers {
+	log.Println("Headers:")
+	for key, value := range r.Header {
 		fmt.Printf("    %s: %s\n", key, value)
 	}
 
 	resp, err := http.Get(DefaultHTTPGetAddress)
 	if err != nil {
-		return events.APIGatewayProxyResponse{}, err
+		log.Printf("error in get: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	if resp.StatusCode != 200 {
-		return events.APIGatewayProxyResponse{}, ErrNon200Response
+		log.Printf("error in get: %v", ErrNon200Response)
+		http.Error(w, ErrNon200Response.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	ip, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return events.APIGatewayProxyResponse{}, err
+		log.Printf("error in get: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	if len(ip) == 0 {
-		return events.APIGatewayProxyResponse{}, ErrNoIP
+		log.Printf("error in get: %v", ErrNoIP)
+		http.Error(w, ErrNoIP.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	return events.APIGatewayProxyResponse{
-		Body:       fmt.Sprintf("Hello yo, %v", string(ip)),
-		StatusCode: 200,
-	}, nil
+	fmt.Fprintf(w, "Hello, %v", string(ip))
 }
 
 func main() {
-	lambda.Start(handler)
+	m := http.NewServeMux()
+	m.HandleFunc("/hello", helloHandler)
+	gateway.ListenAndServe("", m)
 }
