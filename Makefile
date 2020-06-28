@@ -1,19 +1,8 @@
-.PHONY: all build test zip
-
-all: build test zip apply
-
+.PHONY: build
 build:
-	mkdir -p build
-	GOOS=linux GOOARCH=amd64 go build -o build/idp ./cmd/idp
+	sam build
 
-test:
-	go test ./...
+.PHONY: run-local
+run-local: build
+	sam local start-api
 
-zip: build
-	mkdir -p terraform/files
-	cd build && zip ../terraform/files/idp.zip idp
-
-apply: zip
-	# yolo style.
-	cd terraform && \
-	terraform apply

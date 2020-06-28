@@ -1,4 +1,1 @@
-/build
-/terraform/files/idp.zip
-/terraform/.terraform
-/terraform/terraform.tfvars
+/.aws-sam
