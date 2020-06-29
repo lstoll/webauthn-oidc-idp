@@ -37,10 +37,10 @@ var localDevelopmentClients = clientList([]Client{
 })
 
 type Client struct {
-	ClientID      string   `json"client_id" yaml:"client_id"`
-	ClientSecrets []string `json"client_secrets" yaml:"client_secrets"`
-	RedirectURLs  []string `json"redirect_urls" yaml:"redirect_urls"`
-	Public        bool     `json"public" yaml:"public"`
+	ClientID      string   `json:"client_id" yaml:"client_id"`
+	ClientSecrets []string `json:"client_secrets" yaml:"client_secrets"`
+	RedirectURLs  []string `json:"redirect_urls" yaml:"redirect_urls"`
+	Public        bool     `json:"public" yaml:"public"`
 }
 
 func loadClients(ctx context.Context, s3cli s3iface.S3API, bucket string) (clientList, error) {

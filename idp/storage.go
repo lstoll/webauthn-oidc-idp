@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -20,9 +21,11 @@ type Metadata struct {
 }
 
 type Session struct {
-	SessionID string `dynamodbav:"session_id"`
-	// Meta      *Metadata `dynamodbav:"metadata,omitempty"`
-	// CoreSession interface{} `dynamodbav:"core_session,omitempty"` // See how dynamo handles this, otherwise revert to bytes of json
+	SessionID string    `dynamodbav:"session_id"`
+	Meta      *Metadata `dynamodbav:"metadata,omitempty"`
+	// we just store the marshaled bytes. We never need to partial
+	// update/inspect it, and pardot/oidc doesnt play well with the dynamo types
+	CoreSession []byte `dynamodbav:"core_session,omitempty"`
 }
 
 var _ core.SessionManager = (*DynamoStore)(nil)
@@ -59,8 +62,8 @@ func (d *DynamoStore) GetSession(ctx context.Context, sessionID string, into cor
 	}
 
 	// re-unmarshal the core session again
-	if err := dynamodbattribute.UnmarshalMap(result.Item["core_session"].M, &into); err != nil {
-		return false, fmt.Errorf("Failed to unmarshal the core session")
+	if err := json.Unmarshal(sess.CoreSession, &into); err != nil {
+		return false, fmt.Errorf("failed to unmarshal the core session: %v", err)
 	}
 
 	return true, nil
@@ -71,7 +74,7 @@ func (d *DynamoStore) PutSession(ctx context.Context, sess core.Session) error {
 		return fmt.Errorf("session has no ID")
 	}
 
-	av, err := dynamodbattribute.MarshalMap(sess)
+	sb, err := json.Marshal(sess)
 	if err != nil {
 		return fmt.Errorf("marshaling session for dynamo: %v", err)
 	}
@@ -86,7 +89,7 @@ func (d *DynamoStore) PutSession(ctx context.Context, sess core.Session) error {
 		UpdateExpression: aws.String("set core_session = :c, expires_at = :e"),
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":c": {
-				M: av,
+				B: sb,
 			},
 			":e": {
 				N: aws.String(fmt.Sprintf("%d", sess.Expiry().Unix())),
@@ -145,17 +148,11 @@ func (d *DynamoStore) GetMetadata(ctx context.Context, sessionID string) (Metada
 		return Metadata{}, false, nil
 	}
 
-	var meta Metadata
-	err = dynamodbattribute.UnmarshalMap(result.Item["metadata"].M, &meta)
-	if err != nil {
-		return Metadata{}, false, fmt.Errorf("unmarshaling session %s: %v", sessionID, err)
-	}
-
-	if sess.SessionID == "" {
+	if sess.Meta == nil {
 		return Metadata{}, false, nil
 	}
 
-	return meta, true, nil
+	return *sess.Meta, true, nil
 }
 
 func (d *DynamoStore) PutMetadata(ctx context.Context, sessionID string, meta Metadata) error {

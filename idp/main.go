@@ -1,15 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/gob"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -18,9 +18,11 @@ import (
 	"github.com/apex/gateway"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/lstoll/awskms"
+	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
 	"github.com/pardot/oidc/signer"
 )
@@ -36,50 +38,6 @@ var (
 	ErrNon200Response = errors.New("Non 200 Response found")
 )
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-	lreq, ok := gateway.RequestContext(r.Context())
-	if ok {
-		log.Printf("Processing request data for request %s.\n", lreq.RequestID)
-	}
-	log.Printf("Path: %s\n", r.URL.Path)
-	log.Printf("Query: %v\n", r.URL.Query())
-
-	// fmt.Printf("Body size = %d.\n", len(request.Body))
-
-	log.Println("Headers:")
-	for key, value := range r.Header {
-		fmt.Printf("    %s: %s\n", key, value)
-	}
-
-	resp, err := http.Get(DefaultHTTPGetAddress)
-	if err != nil {
-		log.Printf("error in get: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if resp.StatusCode != 200 {
-		log.Printf("error in get: %v", ErrNon200Response)
-		http.Error(w, ErrNon200Response.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	ip, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("error in get: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if len(ip) == 0 {
-		log.Printf("error in get: %v", ErrNoIP)
-		http.Error(w, ErrNoIP.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Fprintf(w, "Hello, %v", string(ip))
-}
-
 func main() {
 	ctx := context.Background()
 
@@ -89,14 +47,17 @@ func main() {
 		baseURL          = os.Getenv("BASE_URL")
 		oidcSignerKMSARN = os.Getenv("KMS_OIDC_KEY_ARN")
 		configBucketName = os.Getenv("CONFIG_BUCKET_NAME")
+		sessionTableName = os.Getenv("SESSION_TABLE_NAME")
 	)
 
 	sess, err := session.NewSession(&aws.Config{})
 	if err != nil {
 		log.Fatalf("creating aws sdk session: %v", err)
 	}
+
 	kmscli := kms.New(sess)
 	s3cli := s3.New(sess)
+	dynamocli := dynamodb.New(sess)
 
 	var (
 		jwtSigner crypto.Signer
@@ -107,14 +68,14 @@ func main() {
 	if localDevMode {
 		// generate a crappy local key, for development purposes. Never erver
 		// use this live.
-		k, err := rsa.GenerateKey(rand.Reader, 512)
-		if err != nil {
-			log.Fatalf("generating RSA key: %v", err)
-		}
-		jwtSigner = k
-		jwtKeyID = time.Now().String()
+		jwtSigner = localDevKey
+		jwtKeyID = "localdev"
 
 		clients = localDevelopmentClients
+
+		// TODO - is there a more "efficient" way than coming back out to the
+		// host? Does it matter?
+		dynamocli = dynamodb.New(sess, &aws.Config{Endpoint: aws.String("http://host.docker.internal:8027")})
 	} else {
 		if oidcSignerKMSARN == "" {
 			log.Fatal("KMS_OIDC_KEY_ARN must be set")
@@ -137,8 +98,6 @@ func main() {
 		}
 		clients = cl
 	}
-
-	log.Printf("loaded clients: %v", clients)
 
 	// hash the key ID, to make it not easily reversable
 	kh := sha256.New()
@@ -164,10 +123,49 @@ func main() {
 		log.Fatalf("configuring metadata handler: %v", err)
 	}
 
+	st := &DynamoStore{
+		client:           dynamocli,
+		sessionTableName: sessionTableName,
+	}
+
+	oidc, err := core.New(&core.Config{
+		AuthValidityTime: 5 * time.Minute,
+		CodeValidityTime: 5 * time.Minute,
+	}, st, clients, jwts)
+	if err != nil {
+		log.Fatalf("Failed to create OIDC server instance: %v", err)
+	}
+
+	svr := server{
+		issuer:          baseURL,
+		oidc:            oidc,
+		storage:         st,
+		tokenValidFor:   15 * time.Minute,
+		refreshValidFor: 12 * time.Hour,
+	}
+
 	m := http.NewServeMux()
 
-	m.HandleFunc("/hello", helloHandler)
 	m.Handle("/keys", keysh)
 	m.Handle("/.well-known/openid-configuration", discoh)
+
+	svr.AddHandlers(m)
+
 	gateway.ListenAndServe("", m)
 }
+
+func mustDecodeKey(s string) *rsa.PrivateKey {
+	var r *rsa.PrivateKey
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		log.Fatalf("un-base64 key: %v", err)
+	}
+	buf := bytes.Buffer{}
+	buf.Write(b)
+	if err := gob.NewDecoder(&buf).Decode(&r); err != nil {
+		log.Fatalf("decoding key: %v", err)
+	}
+	return r
+}
+
+var localDevKey = mustDecodeKey("S/+BAwEBClByaXZhdGVLZXkB/4IAAQQBCVB1YmxpY0tleQH/hAABAUQB/4YAAQZQcmltZXMB/4gAAQtQcmVjb21wdXRlZAH/igAAACT/gwMBAQlQdWJsaWNLZXkB/4QAAQIBAU4B/4YAAQFFAQQAAAAK/4UFAQL/kAAAABn/hwIBAQpbXSpiaWcuSW50Af+IAAH/hgAASP+JAwEBEVByZWNvbXB1dGVkVmFsdWVzAf+KAAEEAQJEcAH/hgABAkRxAf+GAAEEUWludgH/hgABCUNSVFZhbHVlcwH/jgAAAB3/jQIBAQ5bXXJzYS5DUlRWYWx1ZQH/jgAB/4wAADH/iwMBAQhDUlRWYWx1ZQH/jAABAwEDRXhwAf+GAAEFQ29lZmYB/4YAAQFSAf+GAAAA/gFB/4IBAUEC6ucB8ZXiGQZmcUaBfbEOGfYZoPcs32XGIgHCugePcP3G7cIc5DxofX0gV5lo11+DLDFVYmVDTq+YNYrPcr6LHQH9AgACAAFBAkChrvc5tiwMhsNEEvzyal7aR9LyL3aIGivhMCLfUahUpBlsA0C4DkqqcOTzKZI1dDIibFOTgEncrRPzDWikCkEBAiEC+8WMHSJDcR+Mw/I/bsslFBjMZYkJ7j8ph8MrBmqtfp8hAu7Y7vKhGiT8Xek9Foifb7k/I/5NNOOFr4jUDCyVyejDAQEhAucjVxywBgZmlo6VaVLHwQSQN6XHh4xoBDKVJHzBlwG1ASEC0NeuV0i2a5CfLMnVYjDGp9ulxT4M+MRz79g5rOJsYbEBIQIR0UGs8sDAlPOVpuFq3dFa0PROE4YBEQuqe4Rdb+UwpgAA")

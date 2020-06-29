@@ -1,3 +1,5 @@
 /.aws-sam
 /samconfig.toml
 /env.json
+/dynamodbdata
+/dynamodata
