@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/lstoll/awskms"
+	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
 	"github.com/pardot/oidc/signer"
@@ -44,10 +45,13 @@ func main() {
 	var (
 		localDevMode = os.Getenv("LOCAL_DEVELOPMENT_MODE") == "true" || os.Getenv("LOCAL_DEVELOPMENT_MODE") == "1"
 
-		baseURL          = os.Getenv("BASE_URL")
-		oidcSignerKMSARN = os.Getenv("KMS_OIDC_KEY_ARN")
-		configBucketName = os.Getenv("CONFIG_BUCKET_NAME")
-		sessionTableName = os.Getenv("SESSION_TABLE_NAME")
+		baseURL                = os.Getenv("BASE_URL")
+		oidcSignerKMSARN       = os.Getenv("KMS_OIDC_KEY_ARN")
+		configBucketName       = os.Getenv("CONFIG_BUCKET_NAME")
+		sessionTableName       = os.Getenv("SESSION_TABLE_NAME")
+		googleOIDCClientIssuer = os.Getenv("GOOGLE_OIDC_ISSUER")
+		googleOIDCClientID     = os.Getenv("GOOGLE_OIDC_CLIENT_ID")
+		googleOIDCClientSecret = os.Getenv("GOOGLE_OIDC_CLIENT_SECRET")
 	)
 
 	sess, err := session.NewSession(&aws.Config{})
@@ -64,6 +68,10 @@ func main() {
 		jwtKeyID  string
 		clients   clientList
 	)
+
+	if googleOIDCClientIssuer == "" || googleOIDCClientID == "" || googleOIDCClientSecret == "" {
+		log.Fatal("Google OIDC params not configured")
+	}
 
 	if localDevMode {
 		// generate a crappy local key, for development purposes. Never erver
@@ -128,7 +136,7 @@ func main() {
 		sessionTableName: sessionTableName,
 	}
 
-	oidc, err := core.New(&core.Config{
+	oidcsvr, err := core.New(&core.Config{
 		AuthValidityTime: 5 * time.Minute,
 		CodeValidityTime: 5 * time.Minute,
 	}, st, clients, jwts)
@@ -136,9 +144,18 @@ func main() {
 		log.Fatalf("Failed to create OIDC server instance: %v", err)
 	}
 
+	oidccli, err := oidc.DiscoverClient(ctx,
+		googleOIDCClientIssuer, googleOIDCClientID, googleOIDCClientSecret, baseURL+"/callback",
+		oidc.WithAdditionalScopes([]string{"profile", "email"}),
+	)
+	if err != nil {
+		log.Fatalf("oidc discovery on %s: %v", googleOIDCClientIssuer, err)
+	}
+
 	svr := server{
 		issuer:          baseURL,
-		oidc:            oidc,
+		oidcsvr:         oidcsvr,
+		oidccli:         oidccli,
 		storage:         st,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,

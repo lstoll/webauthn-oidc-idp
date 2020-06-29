@@ -16,8 +16,7 @@ import (
 // `dynamodbav:"myName,omitempty"`
 
 type Metadata struct {
-	Subject  string
-	Userinfo map[string]interface{}
+	Claims json.RawMessage `dynamodbav:"claims"`
 }
 
 type Session struct {

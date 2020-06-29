@@ -20,6 +20,14 @@ Parameters:
     Type: String
     Description: ARN of the asymmetrics KMS key we use to sign OIDC requests
 
+  GoogleOIDCClientID:
+    Type: String
+    Description: Client ID to use with google
+
+  GoogleOIDCClientSecret:
+    Type: String
+    Description: Client secret to use with google. Note - this is stored plain in the cloudformation stack parameters
+
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
@@ -57,8 +65,8 @@ Resources:
         FinishEndpoint:
           Type: Api
           Properties:
-            Path: /finish
-            Method: POST
+            Path: /callback
+            Method: GET
             RestApiId: !Ref ApiGateway
         TokenEndpoint:
           Type: Api
@@ -74,6 +82,9 @@ Resources:
           KMS_OIDC_KEY_ARN: !Ref OIDCSignerKeyARN
           CONFIG_BUCKET_NAME: !Ref ConfigBucket
           SESSION_TABLE_NAME: !Ref SessionTable
+          GOOGLE_OIDC_ISSUER: "https://accounts.google.com"
+          GOOGLE_OIDC_CLIENT_ID: !Ref GoogleOIDCClientID
+          GOOGLE_OIDC_CLIENT_SECRET: !Ref GoogleOIDCClientSecret
 
   ApiGateway:
     Type: AWS::Serverless::Api
