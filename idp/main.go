@@ -35,7 +35,8 @@ import (
 )
 
 const (
-	clientsKey = "clients.yaml"
+	clientsKey              = "clients.yaml"
+	upstreamClaimsPolicyKey = "upstreamClaims.rego"
 )
 
 var (
@@ -72,6 +73,8 @@ func main() {
 		dynamocli dynamodbiface.DynamoDBAPI
 
 		clients clientList
+
+		upstreamClaimsPolicy []byte
 	)
 
 	if googleOIDCClientIssuer == "" || googleOIDCClientID == "" || googleOIDCClientSecret == "" {
@@ -138,6 +141,13 @@ func main() {
 				return nil
 			},
 		},
+		{
+			Key: upstreamClaimsPolicyKey,
+			DataFn: func(b []byte) error {
+				upstreamClaimsPolicy = b
+				return nil
+			},
+		},
 	})
 	if err != nil {
 		log.Fatalf("loading configuration: %v", err)
@@ -195,6 +205,7 @@ func main() {
 		storage:         st,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
+		upstreamPolicy:  upstreamClaimsPolicy,
 	}
 
 	m := http.NewServeMux()

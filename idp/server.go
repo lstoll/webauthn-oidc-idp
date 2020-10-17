@@ -14,6 +14,8 @@ import (
 
 const (
 	sessIDCookie = "sessID"
+
+	upstreamAllowQuery = "data.upstream.allow"
 )
 
 type server struct {
@@ -23,6 +25,9 @@ type server struct {
 	storage         *DynamoStore
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
+
+	// upstreamPolicy is rego code applied to claims from upstream IDP
+	upstreamPolicy []byte
 }
 
 func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
@@ -56,6 +61,16 @@ func (s *server) callback(w http.ResponseWriter, req *http.Request) {
 	token, err := s.oidccli.Exchange(req.Context(), code)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error exchanging code for token: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	policyOK, err := evalClaimsPolicy(req.Context(), s.upstreamPolicy, upstreamAllowQuery, token.Claims)
+	if err != nil {
+		http.Error(w, "evaluating policy", http.StatusInternalServerError)
+		return
+	}
+	if !policyOK {
+		http.Error(w, "denied by policy", http.StatusForbidden)
 		return
 	}
 
