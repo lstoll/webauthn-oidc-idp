@@ -89,13 +89,6 @@ func main() {
 			log.Fatalf("creating aws sdk session: %v", err)
 		}
 
-		cv, err := sess.Config.Credentials.Get()
-		if err != nil {
-			log.Fatalf("get creds: %v", err)
-		}
-		log.Printf("access key: %s secret key: %s", cv.AccessKeyID, cv.SecretAccessKey)
-		log.Printf("AWS_ACCESS_KEY_ID: %s", os.Getenv("AWS_ACCESS_KEY_ID"))
-
 		// generate a crappy local key, for development purposes. Never erver
 		// use this live.
 		jwtSigner = localDevKey
