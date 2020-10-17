@@ -10,6 +10,8 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -29,6 +31,11 @@ import (
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
 	"github.com/pardot/oidc/signer"
+	"gopkg.in/yaml.v2"
+)
+
+const (
+	clientsKey = "clients.yaml"
 )
 
 var (
@@ -63,6 +70,8 @@ func main() {
 
 		s3cli     s3iface.S3API
 		dynamocli dynamodbiface.DynamoDBAPI
+
+		clients clientList
 	)
 
 	if googleOIDCClientIssuer == "" || googleOIDCClientID == "" || googleOIDCClientSecret == "" {
@@ -118,9 +127,20 @@ func main() {
 
 	}
 
-	clients, err := loadClients(ctx, s3cli, configBucketName)
+	err := fetchS3Items(ctx, s3cli, configBucketName, []s3item{
+		{
+			Key: clientsKey,
+			ReaderFn: func(r io.Reader) error {
+				if err := yaml.NewDecoder(r).Decode(&clients); err != nil {
+					return fmt.Errorf("unmarshaling clients body: %v", err)
+				}
+
+				return nil
+			},
+		},
+	})
 	if err != nil {
-		log.Fatalf("loading clients: %v", err)
+		log.Fatalf("loading configuration: %v", err)
 	}
 
 	// hash the key ID, to make it not easily reversable

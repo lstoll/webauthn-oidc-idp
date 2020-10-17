@@ -1,17 +1,9 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"regexp"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-	"gopkg.in/yaml.v2"
 )
-
-const clientsKey = "clients.yaml"
 
 var (
 	// reValidPublicRedirectUri is a fairly strict regular expression that must
@@ -28,23 +20,6 @@ type Client struct {
 	ClientSecrets []string `json:"client_secrets" yaml:"client_secrets"`
 	RedirectURLs  []string `json:"redirect_urls" yaml:"redirect_urls"`
 	Public        bool     `json:"public" yaml:"public"`
-}
-
-func loadClients(ctx context.Context, s3cli s3iface.S3API, bucket string) (clientList, error) {
-	resp, err := s3cli.GetObjectWithContext(ctx, &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    aws.String(clientsKey),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("reading %s/%s: %v", bucket, clientsKey, err)
-	}
-	defer resp.Body.Close()
-
-	cl := clientList{}
-	if err := yaml.NewDecoder(resp.Body).Decode(&cl); err != nil {
-		return nil, fmt.Errorf("unmarshaling clients body: %v", err)
-	}
-	return cl, nil
 }
 
 type clientList []Client
