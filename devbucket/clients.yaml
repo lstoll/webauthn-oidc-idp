@@ -1,0 +1,9 @@
+- client_id: client-id
+  client_secrets:
+    - client-secret
+  redirect_urls:
+    - http://localhost:8084/callback
+- client_id: cli
+  client_secrets:
+    - cli-client-secret
+  public: true

@@ -23,19 +23,6 @@ var (
 	reValidPublicRedirectURI = regexp.MustCompile(`\Ahttp://localhost(?::[0-9]{1,5})?(?:|/[A-Za-z0-9./_-]{0,1000})\z`)
 )
 
-var localDevelopmentClients = clientList([]Client{
-	{
-		ClientID:      "client-id",
-		ClientSecrets: []string{"client-secret"},
-		RedirectURLs:  []string{"http://localhost:8084/callback"},
-	},
-	{
-		ClientID:      "cli",
-		ClientSecrets: []string{"cli-client-secret"},
-		Public:        true,
-	},
-})
-
 type Client struct {
 	ClientID      string   `json:"client_id" yaml:"client_id"`
 	ClientSecrets []string `json:"client_secrets" yaml:"client_secrets"`

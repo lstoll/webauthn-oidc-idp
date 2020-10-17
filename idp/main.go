@@ -17,10 +17,13 @@ import (
 
 	"github.com/apex/gateway"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/lstoll/awskms"
 	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
@@ -54,19 +57,12 @@ func main() {
 		googleOIDCClientSecret = os.Getenv("GOOGLE_OIDC_CLIENT_SECRET")
 	)
 
-	sess, err := session.NewSession(&aws.Config{})
-	if err != nil {
-		log.Fatalf("creating aws sdk session: %v", err)
-	}
-
-	kmscli := kms.New(sess)
-	s3cli := s3.New(sess)
-	dynamocli := dynamodb.New(sess)
-
 	var (
 		jwtSigner crypto.Signer
 		jwtKeyID  string
-		clients   clientList
+
+		s3cli     s3iface.S3API
+		dynamocli dynamodbiface.DynamoDBAPI
 	)
 
 	if googleOIDCClientIssuer == "" || googleOIDCClientID == "" || googleOIDCClientSecret == "" {
@@ -74,17 +70,37 @@ func main() {
 	}
 
 	if localDevMode {
+		sess, err := session.NewSession(&aws.Config{
+			Credentials: credentials.NewEnvCredentials(),
+		})
+		if err != nil {
+			log.Fatalf("creating aws sdk session: %v", err)
+		}
+
+		cv, err := sess.Config.Credentials.Get()
+		if err != nil {
+			log.Fatalf("get creds: %v", err)
+		}
+		log.Printf("access key: %s secret key: %s", cv.AccessKeyID, cv.SecretAccessKey)
+		log.Printf("AWS_ACCESS_KEY_ID: %s", os.Getenv("AWS_ACCESS_KEY_ID"))
+
 		// generate a crappy local key, for development purposes. Never erver
 		// use this live.
 		jwtSigner = localDevKey
 		jwtKeyID = "localdev"
 
-		clients = localDevelopmentClients
-
-		// TODO - is there a more "efficient" way than coming back out to the
-		// host? Does it matter?
-		dynamocli = dynamodb.New(sess, &aws.Config{Endpoint: aws.String("http://host.docker.internal:8027")})
+		s3cli = s3.New(sess, &aws.Config{Endpoint: aws.String("http://minio:9000"), S3ForcePathStyle: aws.Bool(true)})
+		dynamocli = dynamodb.New(sess, &aws.Config{Endpoint: aws.String("http://dynamodb:8000")})
 	} else {
+		sess, err := session.NewSession(&aws.Config{})
+		if err != nil {
+			log.Fatalf("creating aws sdk session: %v", err)
+		}
+
+		kmscli := kms.New(sess)
+		s3cli = s3.New(sess)
+		dynamocli = dynamodb.New(sess)
+
 		if oidcSignerKMSARN == "" {
 			log.Fatal("KMS_OIDC_KEY_ARN must be set")
 		}
@@ -100,11 +116,11 @@ func main() {
 		jwtSigner = s
 		jwtKeyID = oidcSignerKMSARN
 
-		cl, err := loadClients(ctx, s3cli, configBucketName)
-		if err != nil {
-			log.Fatalf("loading clients: %v", err)
-		}
-		clients = cl
+	}
+
+	clients, err := loadClients(ctx, s3cli, configBucketName)
+	if err != nil {
+		log.Fatalf("loading clients: %v", err)
 	}
 
 	// hash the key ID, to make it not easily reversable
