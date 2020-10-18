@@ -120,6 +120,11 @@ func (s *server) token(w http.ResponseWriter, req *http.Request) {
 
 		idt := tr.PrefillIDToken(s.issuer, email, time.Now().Add(s.tokenValidFor))
 
+		// oauth2 proxy wants this, when we don't have useinfo
+		// TODO - scopes/userinfo etc.
+		idt.Extra["email"] = email
+		idt.Extra["email_verified"] = true
+
 		return &core.TokenResponse{
 			AccessTokenValidUntil:  time.Now().Add(s.tokenValidFor),
 			RefreshTokenValidUntil: time.Now().Add(s.refreshValidFor),
