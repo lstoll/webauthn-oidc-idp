@@ -1,6 +1,6 @@
 module github.com/lstoll/lambdaid/idp
 
-go 1.14
+go 1.15
 
 require (
 	github.com/apex/gateway v1.1.1

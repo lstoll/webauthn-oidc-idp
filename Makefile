@@ -2,6 +2,10 @@
 build:
 	sam build
 
+.PHONY: lint
+lint:
+	golangci-lint ./...
+
 # assumes that docker-compose is running
 .PHONY: run-local
 run-local: build
