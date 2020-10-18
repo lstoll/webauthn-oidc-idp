@@ -51,13 +51,15 @@ func (s clientList) ValidateClientSecret(clientID, clientSecret string) (ok bool
 }
 
 func (s clientList) ValidateClientRedirectURI(clientID, redirectURI string) (ok bool, err error) {
-	var cl *Client
+	var cl Client
+	var found bool
 	for _, c := range s {
 		if c.ClientID == clientID {
-			cl = &c
+			cl = c
+			found = true
 		}
 	}
-	if cl == nil {
+	if !found {
 		return false, fmt.Errorf("invalid client")
 	}
 	if cl.Public && reValidPublicRedirectURI.MatchString(redirectURI) {
@@ -69,5 +71,6 @@ func (s clientList) ValidateClientRedirectURI(clientID, redirectURI string) (ok 
 			return true, nil
 		}
 	}
+
 	return false, nil
 }
