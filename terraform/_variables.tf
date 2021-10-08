@@ -27,6 +27,16 @@ variable "idp_lambda_base64sha256" {
   default     = "___LAMBDA_BASE64SHA256___" # sed'd
 }
 
+variable "domain_name" {
+  type        = string
+  description = "Domain name the IDP is served under, used to form the issuer and the gateway routes"
+}
+
+variable "certificate_arn" {
+  type        = string
+  description = "ARN for the certificate to serve with"
+}
+
 variable "oidc_kms_key_arn" {
   type        = string
   description = "(optional) ARN for a asymmetric KMS key to be used for signing operations. If not provided, one will be generated"
