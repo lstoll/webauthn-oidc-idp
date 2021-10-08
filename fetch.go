@@ -23,7 +23,7 @@ type s3item struct {
 	ReaderFn func(r io.Reader) error
 }
 
-func fetchS3Items(ctx context.Context, s3cli s3iface.S3API, bucket string, items []s3item) error {
+func fetchS3Items(ctx context.Context, s3cli s3iface.S3API, bucket, prefix string, items []s3item) error {
 	var wg sync.WaitGroup
 	var errs []error
 
@@ -39,12 +39,14 @@ func fetchS3Items(ctx context.Context, s3cli s3iface.S3API, bucket string, items
 				return
 			}
 
+			k := prefix + s3i.Key
+
 			resp, err := s3cli.GetObjectWithContext(ctx, &s3.GetObjectInput{
 				Bucket: &bucket,
-				Key:    &s3i.Key,
+				Key:    &k,
 			})
 			if err != nil {
-				errs = append(errs, fmt.Errorf("reading %s/%s: %v", bucket, s3i.Key, err))
+				errs = append(errs, fmt.Errorf("reading %s/%s: %v", bucket, k, err))
 				return
 			}
 			defer resp.Body.Close()
@@ -52,19 +54,19 @@ func fetchS3Items(ctx context.Context, s3cli s3iface.S3API, bucket string, items
 			if s3i.DataFn != nil {
 				respb, err := ioutil.ReadAll(resp.Body)
 				if err != nil {
-					errs = append(errs, fmt.Errorf("reading bytes from %s/%s: %v", bucket, s3i.Key, err))
+					errs = append(errs, fmt.Errorf("reading bytes from %s/%s: %v", bucket, k, err))
 					return
 				}
 
 				if err := s3i.DataFn(respb); err != nil {
-					errs = append(errs, fmt.Errorf("calling dataFn for %s/%s: %v", bucket, s3i.Key, err))
+					errs = append(errs, fmt.Errorf("calling dataFn for %s/%s: %v", bucket, k, err))
 					return
 				}
 			}
 
 			if s3i.ReaderFn != nil {
 				if err := s3i.ReaderFn(resp.Body); err != nil {
-					errs = append(errs, fmt.Errorf("calling dataFn for %s/%s: %v", bucket, s3i.Key, err))
+					errs = append(errs, fmt.Errorf("calling dataFn for %s/%s: %v", bucket, k, err))
 					return
 				}
 			}
