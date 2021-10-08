@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  lambdaid
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: Domain name to serve this app as
+
+  HostedZoneID:
+    Type: String
+    Description: Hosted zone the domain name lives in
+
+  CertificateARN:
+    Type: String
+    Description: ARN of the certificate to use for serving
+
+  OIDCSignerKeyARN:
+    Type: String
+    Description: ARN of the asymmetrics KMS key we use to sign OIDC requests
+
+  GoogleOIDCClientID:
+    Type: String
+    Description: Client ID to use with google
+
+  GoogleOIDCClientSecret:
+    Type: String
+    Description: Client secret to use with google. Note - this is stored plain in the cloudformation stack parameters
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 10
+
+Resources:
+  # Info on implicitly generated resources: https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  IDPFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: idp/
+      Handler: idp
+      Runtime: go1.x
+      Tracing: Active # https://docs.aws.amazon.com/lambda/latest/dg/lambda-x-ray.html
+      Events:
+        # TODO - do we want to be explicit, or do we just want to proxy it all?
+        OIDCJWKS:
+          Type: Api
+          Properties:
+            Path: /keys
+            Method: GET
+            RestApiId: !Ref ApiGateway
+        OIDCConfiguration:
+          Type: Api
+          Properties:
+            Path: /.well-known/openid-configuration
+            Method: GET
+            RestApiId: !Ref ApiGateway
+        AuthEndpoint:
+          Type: Api
+          Properties:
+            Path: /auth
+            Method: GET
+            RestApiId: !Ref ApiGateway
+        FinishEndpoint:
+          Type: Api
+          Properties:
+            Path: /callback
+            Method: GET
+            RestApiId: !Ref ApiGateway
+        TokenEndpoint:
+          Type: Api
+          Properties:
+            Path: /token
+            Method: POST
+            RestApiId: !Ref ApiGateway
+      Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
+        Variables:
+          # Anything we want to override also has to be set here as well.
+          LOCAL_DEVELOPMENT_MODE: "false" # used in dev
+          BASE_URL: !Sub "https://${DomainName}"
+          KMS_OIDC_KEY_ARN: !Ref OIDCSignerKeyARN
+          CONFIG_BUCKET_NAME: !Ref ConfigBucket
+          SESSION_TABLE_NAME: !Ref SessionTable
+          GOOGLE_OIDC_ISSUER: "https://accounts.google.com"
+          GOOGLE_OIDC_CLIENT_ID: !Ref GoogleOIDCClientID
+          GOOGLE_OIDC_CLIENT_SECRET: !Ref GoogleOIDCClientSecret
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-gateway
+      StageName: Prod
+      EndpointConfiguration: EDGE
+      BinaryMediaTypes:
+        - text~html
+      Domain:
+        DomainName: !Ref DomainName
+        CertificateArn: !Ref CertificateARN
+        EndpointConfiguration: EDGE
+        Route53:
+          HostedZoneId: !Ref HostedZoneID
+
+  SessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+          AttributeName: expires_at
+          Enabled: true
+
+  # Ideally this would be provisioned here, but AWS doesn't support it yet.
+  # In the mean time, do it externally and pass it as a param
+  # OIDCSignerKey:
+  #   Type: AWS::KMS::Key
+
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-config
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: aws:kms
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  IDPFunctionPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-idp-policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "kms:GetPublicKey"
+              - "kms:Sign"
+              - "kms:DescribeKey"
+            Resource: !Ref OIDCSignerKeyARN
+          - Effect: Allow
+            Action:
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+            Resource: !GetAtt ConfigBucket.Arn
+          - Effect: Allow
+            Action:
+              - "s3:GetObject"
+              - "s3:GetObjectVersion"
+            Resource: !Sub "${ConfigBucket.Arn}/*"
+          - Effect: Allow
+            Action:
+              - "dynamodb:BatchGet*"
+              - "dynamodb:DescribeStream"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:Get*"
+              - "dynamodb:Query"
+              - "dynamodb:Scan"
+              -  "dynamodb:BatchWrite*"
+              -  "dynamodb:CreateTable"
+              -  "dynamodb:Delete*"
+              -  "dynamodb:Update*"
+              -  "dynamodb:PutItem"
+            Resource: !GetAtt SessionTable.Arn
+
+      Roles:
+        - !Ref IDPFunctionRole
+
+Outputs:
+  IDPFunction:
+    Description: "IDP Lambda Function ARN"
+    Value: !GetAtt IDPFunction.Arn
+  IDPFunctionIamRole:
+    Description: "Implicit IAM Role created for IDP World function"
+    Value: !GetAtt IDPFunctionRole.Arn
