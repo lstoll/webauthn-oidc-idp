@@ -21,10 +21,16 @@ variable "idp_lambda_copy_source" {
 }
 
 variable "idp_lambda_base64sha256" {
-  type        = string
+  type = string
   // https://github.com/hashicorp/terraform/issues/12443#issuecomment-366244446
   description = "base64sha256 sum of the lambda zip package. This is a terraform thing, to re-create outside of it use `openssl dgst -sha256 -binary <file> | openssl enc -base64`"
   default     = "___LAMBDA_BASE64SHA256___" # sed'd
+}
+
+variable "oidc_kms_key_arn" {
+  type        = string
+  description = "(optional) ARN for a asymmetric KMS key to be used for signing operations. If not provided, one will be generated"
+  default     = ""
 }
 
 terraform {

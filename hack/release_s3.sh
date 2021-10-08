@@ -26,8 +26,6 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${workdir}/idp" .
 (cd "$workdir" && zip idp.zip idp)
 idp_sha=$(openssl dgst -sha256 -binary "${workdir}/idp.zip" | openssl enc -base64)
 
-echo "calc sha $idp_sha"
-
 echo "--> Building terraform module"
 # Update the lambda filename to match the sha we're building for. We do this
 # even if it's for a "ref" named terraform bundle, to ensure what we upload
@@ -35,7 +33,7 @@ echo "--> Building terraform module"
 # too, in case people consume them directly/override them
 cp -r terraform "${workdir}"
 sed -i.bak "s/___LAMBDA_GIT_SHA___/${sha}/" "${workdir}/terraform/_variables.tf"
-sed -i.bak "s/___LAMBDA_BASE64SHA256___/${idp_sha}/" "${workdir}/terraform/_variables.tf"
+sed -i.bak "s/___LAMBDA_BASE64SHA256___/${idp_sha//\//\\/}/" "${workdir}/terraform/_variables.tf"
 rm "${workdir}/terraform/_variables.tf.bak"
 rm -r "${workdir}/terraform/.terraform"*
 (cd "$workdir/terraform" && zip -r ../terraform.zip .)
