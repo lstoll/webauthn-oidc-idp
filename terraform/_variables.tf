@@ -43,6 +43,24 @@ variable "oidc_kms_key_arn" {
   default     = ""
 }
 
+// TODO these suck, think if something better. Probably the config file? Shame
+// secrets manager isn't cheaper too.
+
+variable "google_oidc_issuer" {
+  type    = string
+  default = "https://accounts.google.com"
+}
+
+variable "google_oidc_client_id" {
+  type = string
+}
+
+variable "google_oidc_client_secret" {
+  type = string
+}
+
+// end TODO these suck
+
 terraform {
   required_providers {
     aws = {

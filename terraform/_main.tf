@@ -32,14 +32,14 @@ resource "aws_lambda_function" "idp" {
 
   environment {
     variables = {
-      # LOCAL_DEVELOPMENT_MODE: "false" # used in dev
-      #   BASE_URL: !Sub "https://${DomainName}"
-      KMS_OIDC_KEY_ARN = local.lambda_signer_arn
-      CONFIG_BUCKET_NAME : aws_s3_bucket.state_bucket.id
-      #   SESSION_TABLE_NAME: !Ref SessionTable
-      #   GOOGLE_OIDC_ISSUER: "https://accounts.google.com"
-      #   GOOGLE_OIDC_CLIENT_ID: !Ref GoogleOIDCClientID
-      #   GOOGLE_OIDC_CLIENT_SECRET: !Ref GoogleOIDCClientSecret
+      LOCAL_DEVELOPMENT_MODE    = "false" # used in dev
+      BASE_URL                  = "https://${var.domain_name}"
+      KMS_OIDC_KEY_ARN          = local.lambda_signer_arn
+      CONFIG_BUCKET_NAME        = aws_s3_bucket.state_bucket.id
+      SESSION_TABLE_NAME        = aws_dynamodb_table.sessions.name
+      GOOGLE_OIDC_ISSUER        = var.google_oidc_issuer
+      GOOGLE_OIDC_CLIENT_ID     = var.google_oidc_client_id
+      GOOGLE_OIDC_CLIENT_SECRET = var.google_oidc_client_secret
     }
   }
 
