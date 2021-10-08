@@ -59,6 +59,7 @@ func main() {
 		baseURL                = os.Getenv("BASE_URL")
 		oidcSignerKMSARN       = os.Getenv("KMS_OIDC_KEY_ARN")
 		configBucketName       = os.Getenv("CONFIG_BUCKET_NAME")
+		configBucketPrefix     = os.Getenv("CONFIG_BUCKET_PREFIX")
 		sessionTableName       = os.Getenv("SESSION_TABLE_NAME")
 		googleOIDCClientIssuer = os.Getenv("GOOGLE_OIDC_ISSUER")
 		googleOIDCClientID     = os.Getenv("GOOGLE_OIDC_CLIENT_ID")
@@ -123,7 +124,7 @@ func main() {
 
 	}
 
-	err := fetchS3Items(ctx, s3cli, configBucketName, []s3item{
+	err := fetchS3Items(ctx, s3cli, configBucketName, configBucketPrefix, []s3item{
 		{
 			Key: clientsKey,
 			ReaderFn: func(r io.Reader) error {
