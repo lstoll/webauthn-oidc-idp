@@ -18,7 +18,7 @@ resource "aws_s3_object_copy" "idp_lambda_zip" {
 }
 
 resource "aws_lambda_function" "idp" {
-  function_name = "idp-${var.name}"
+  function_name = "${var.name}-idp"
 
   s3_bucket = aws_s3_bucket.state_bucket.id
   s3_key    = aws_s3_object_copy.idp_lambda_zip.key
@@ -36,6 +36,7 @@ resource "aws_lambda_function" "idp" {
       BASE_URL                  = "https://${var.domain_name}"
       KMS_OIDC_KEY_ARN          = local.lambda_signer_arn
       CONFIG_BUCKET_NAME        = aws_s3_bucket.state_bucket.id
+      CONFIG_BUCKET_PREFIX      = local.s3_config_prefix
       SESSION_TABLE_NAME        = aws_dynamodb_table.sessions.name
       GOOGLE_OIDC_ISSUER        = var.google_oidc_issuer
       GOOGLE_OIDC_CLIENT_ID     = var.google_oidc_client_id
@@ -43,13 +44,15 @@ resource "aws_lambda_function" "idp" {
     }
   }
 
+  timeout = 10
+
   tags = merge({
     Name = "${var.name} IDP lambda"
   }, var.tags)
 }
 
 resource "aws_cloudwatch_log_group" "idp" {
-  name = "/aws/lambda/${var.name}"
+  name = "/aws/lambda/${aws_lambda_function.idp.function_name}"
 
   retention_in_days = 30
 }
