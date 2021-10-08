@@ -33,8 +33,8 @@ echo "--> Building terraform module"
 cp -r terraform "${workdir}"
 sed -i.bak "s/___LAMBDA_GIT_SHA___/${sha}/" "${workdir}/terraform/_variables.tf"
 sed -i.bak "s/___LAMBDA_BASE64SHA256___/${idp_sha//\//\\/}/" "${workdir}/terraform/_variables.tf"
-rm "${workdir}/terraform/_variables.tf.bak"
-rm -r "${workdir}/terraform/.terraform"*
+rm "${workdir}/terraform/_variables.tf.bak" || true
+rm -r "${workdir}/terraform/.terraform"* || true
 (cd "$workdir/terraform" && zip -r ../terraform.zip .)
 
 # Disable this for now, doubles the upload amount. For now, the "entrypoint" is
