@@ -29,8 +29,7 @@ idp_sha=$(openssl dgst -sha256 -binary "${workdir}/idp.zip" | openssl enc -base6
 echo "--> Building terraform module"
 # Update the lambda filename to match the sha we're building for. We do this
 # even if it's for a "ref" named terraform bundle, to ensure what we upload
-# alignes with the exact binary at time of upload. We still upload sha binaries
-# too, in case people consume them directly/override them
+# alignes with the exact binary at time of upload.
 cp -r terraform "${workdir}"
 sed -i.bak "s/___LAMBDA_GIT_SHA___/${sha}/" "${workdir}/terraform/_variables.tf"
 sed -i.bak "s/___LAMBDA_BASE64SHA256___/${idp_sha//\//\\/}/" "${workdir}/terraform/_variables.tf"
@@ -38,8 +37,12 @@ rm "${workdir}/terraform/_variables.tf.bak"
 rm -r "${workdir}/terraform/.terraform"*
 (cd "$workdir/terraform" && zip -r ../terraform.zip .)
 
-echo "--> Uploading idp to $upload_prefix/lambda/$ref.zip"
-aws s3 cp --acl public-read "${workdir}/idp.zip" "$upload_prefix/lambda/$ref.zip"
+# Disable this for now, doubles the upload amount. For now, the "entrypoint" is
+# the terraform module, which just uses the sha version. If someone has their
+# own entrypoint, they can source bins themselves.
+#
+# echo "--> Uploading idp to $upload_prefix/lambda/$ref.zip"
+# aws s3 cp --acl public-read "${workdir}/idp.zip" "$upload_prefix/lambda/$ref.zip"
 
 echo "--> Uploading idp to $upload_prefix/lambda/$sha.zip"
 aws s3 cp --acl public-read "${workdir}/idp.zip" "$upload_prefix/lambda/$sha.zip"

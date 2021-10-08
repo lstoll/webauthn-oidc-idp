@@ -3,6 +3,12 @@ resource "aws_apigatewayv2_api" "idp" {
   protocol_type = "HTTP"
 }
 
+resource "aws_apigatewayv2_api_mapping" "idp" {
+  api_id      = aws_apigatewayv2_api.idp.id
+  domain_name = aws_apigatewayv2_domain_name.default.id
+  stage       = aws_apigatewayv2_stage.idp.id
+}
+
 resource "aws_apigatewayv2_domain_name" "default" {
   domain_name = var.domain_name
 
