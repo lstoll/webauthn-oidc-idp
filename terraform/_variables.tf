@@ -14,10 +14,10 @@ variable "tags" {
   default     = {}
 }
 
-variable "lambda_copy_source" {
+variable "idp_lambda_package" {
   type        = string
-  description = "value in s3_object_copy source field format, for the lambda binary we should use"
-  default     = "lstoll-lds-content-public/assets/idp/___LAMBDA_SHA___.zip" # sed'd
+  description = "http url, for the lambda package we should use"
+  default     = "https://lstoll-lds-content-public.s3.amazonaws.com/assets/idp/terraform/___LAMBDA_SHA___.zip"
 }
 
 terraform {
@@ -25,6 +25,10 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 3.0"
+    }
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 2.1"
     }
   }
 }

@@ -40,10 +40,10 @@ echo "--> Uploading idp to $upload_prefix/lambda/$ref.zip"
 aws s3 cp --acl public-read "${workdir}/idp.zip" "$upload_prefix/lambda/$ref.zip"
 
 echo "--> Uploading idp to $upload_prefix/lambda/$sha.zip"
-aws s3 cp --acl public-read "${workdir}/idp.zip" "$upload_prefix/lambda/$ref.zip"
+aws s3 cp --acl public-read "${workdir}/idp.zip" "$upload_prefix/lambda/$sha.zip"
 
 echo "--> Uploading terraform to $upload_prefix/terraform/$ref.zip"
 aws s3 cp --acl public-read "${workdir}/terraform.zip" "$upload_prefix/terraform/$ref.zip"
 
 echo "--> Uploading terraform to $upload_prefix/terraform/$sha.zip"
-aws s3 cp --acl public-read "${workdir}/terraform.zip" "$upload_prefix/terraform/$ref.zip"
+aws s3 cp --acl public-read "${workdir}/terraform.zip" "$upload_prefix/terraform/$sha.zip"
