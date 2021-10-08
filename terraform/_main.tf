@@ -7,46 +7,35 @@ resource "aws_s3_bucket" "state_bucket" {
   }, var.tags)
 }
 
-# this is gross, but we need the shasum to trigger updates and the etag/object
-# copy isn't going to do it. So we just download it, calculate the sums of the
-# reponse and re-upload it. This isn't as efficient as a copy, but probably
-# fine. The alternate is probably external checksums, but that's a hassle
-data "http" "idp_lambda_zip" {
-  url = var.idp_lambda_package
-}
-
-resource "aws_s3_bucket_object" "idp_lambda_zip" {
+resource "aws_s3_object_copy" "idp_lambda_zip" {
   bucket = aws_s3_bucket.state_bucket.bucket
   key    = "lambda/idp.zip"
-  source = data.http.idp_lambda_zip.body
-
-  etag = md5(data.http.idp_lambda_zip.body)
+  source = var.idp_lambda_copy_source
 }
-
 
 resource "aws_lambda_function" "idp" {
   function_name = "idp-${var.name}"
 
   s3_bucket = aws_s3_bucket.state_bucket.id
-  s3_key    = aws_s3_bucket_object.idp_lambda_zip.key
+  s3_key    = aws_s3_object_copy.idp_lambda_zip.key
 
   runtime = "go1.x"
   handler = "idp"
 
-  source_code_hash = base64sha256(data.http.idp_lambda_zip.body)
+  source_code_hash = var.idp_lambda_base64sha256
 
   role = aws_iam_role.lambda_exec.arn
 
-    environment {
+  environment {
     variables = {
-        # LOCAL_DEVELOPMENT_MODE: "false" # used in dev
-        #   BASE_URL: !Sub "https://${DomainName}"
-        #   KMS_OIDC_KEY_ARN: !Ref OIDCSignerKeyARN
-        #   CONFIG_BUCKET_NAME: !Ref ConfigBucket
-        #   SESSION_TABLE_NAME: !Ref SessionTable
-        #   GOOGLE_OIDC_ISSUER: "https://accounts.google.com"
-        #   GOOGLE_OIDC_CLIENT_ID: !Ref GoogleOIDCClientID
-        #   GOOGLE_OIDC_CLIENT_SECRET: !Ref GoogleOIDCClientSecret
+      # LOCAL_DEVELOPMENT_MODE: "false" # used in dev
+      #   BASE_URL: !Sub "https://${DomainName}"
+      #   KMS_OIDC_KEY_ARN: !Ref OIDCSignerKeyARN
+      #   CONFIG_BUCKET_NAME: !Ref ConfigBucket
+      #   SESSION_TABLE_NAME: !Ref SessionTable
+      #   GOOGLE_OIDC_ISSUER: "https://accounts.google.com"
+      #   GOOGLE_OIDC_CLIENT_ID: !Ref GoogleOIDCClientID
+      #   GOOGLE_OIDC_CLIENT_SECRET: !Ref GoogleOIDCClientSecret
     }
   }
 

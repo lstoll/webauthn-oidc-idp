@@ -24,6 +24,9 @@ trap cleanup EXIT
 echo "--> Building binary"
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${workdir}/idp" .
 (cd "$workdir" && zip idp.zip idp)
+idp_sha=$(openssl dgst -sha256 -binary "${workdir}/idp.zip" | openssl enc -base64)
+
+echo "calc sha $idp_sha"
 
 echo "--> Building terraform module"
 # Update the lambda filename to match the sha we're building for. We do this
@@ -31,7 +34,8 @@ echo "--> Building terraform module"
 # alignes with the exact binary at time of upload. We still upload sha binaries
 # too, in case people consume them directly/override them
 cp -r terraform "${workdir}"
-sed -i.bak "s/___LAMBDA_SHA___/${sha}/" "${workdir}/terraform/_variables.tf"
+sed -i.bak "s/___LAMBDA_GIT_SHA___/${sha}/" "${workdir}/terraform/_variables.tf"
+sed -i.bak "s/___LAMBDA_BASE64SHA256___/${idp_sha}/" "${workdir}/terraform/_variables.tf"
 rm "${workdir}/terraform/_variables.tf.bak"
 rm -r "${workdir}/terraform/.terraform"*
 (cd "$workdir/terraform" && zip -r ../terraform.zip .)

@@ -14,10 +14,17 @@ variable "tags" {
   default     = {}
 }
 
-variable "idp_lambda_package" {
+variable "idp_lambda_copy_source" {
   type        = string
-  description = "http url, for the lambda package we should use"
-  default     = "https://lstoll-lds-content-public.s3.amazonaws.com/assets/idp/terraform/___LAMBDA_SHA___.zip"
+  description = "value in s3_object_copy source field format, for the lambda binary we should use"
+  default     = "lstoll-lds-content-public/assets/idp/___LAMBDA_GIT_SHA___.zip" # sed'd
+}
+
+variable "idp_lambda_base64sha256" {
+  type        = string
+  // https://github.com/hashicorp/terraform/issues/12443#issuecomment-366244446
+  description = "base64sha256 sum of the lambda zip package. This is a terraform thing, to re-create outside of it use `openssl dgst -sha256 -binary <file> | openssl enc -base64`"
+  default     = "___LAMBDA_BASE64SHA256___" # sed'd
 }
 
 terraform {
@@ -25,10 +32,6 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 3.0"
-    }
-    http = {
-      source  = "hashicorp/http"
-      version = "~> 2.1"
     }
   }
 }
