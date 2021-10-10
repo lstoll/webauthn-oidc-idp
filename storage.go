@@ -22,7 +22,8 @@ type Storage interface {
 // `dynamodbav:"myName,omitempty"`
 
 type Metadata struct {
-	Claims json.RawMessage `dynamodbav:"claims"`
+	Claims           json.RawMessage `dynamodbav:"claims"`
+	ProviderMetadata json.RawMessage `dynamodbav:"providerMetadata"`
 }
 
 type Session struct {
@@ -42,8 +43,9 @@ type DynamoStore struct {
 	sessionTableName string
 }
 
-/* Session manager */
+/* pardot/oidc Session manager */
 
+// GetSession retrieves session information from a pardot/oidc perspective.
 func (d *DynamoStore) GetSession(ctx context.Context, sessionID string, into core.Session) (bool, error) {
 	result, err := d.client.GetItemWithContext(ctx, &dynamodb.GetItemInput{
 		TableName: &d.sessionTableName,
@@ -74,6 +76,7 @@ func (d *DynamoStore) GetSession(ctx context.Context, sessionID string, into cor
 	return true, nil
 }
 
+// PutSession updates the session from a pardot/oidc perspective
 func (d *DynamoStore) PutSession(ctx context.Context, sess core.Session) error {
 	if sess.ID() == "" {
 		return fmt.Errorf("session has no ID")
@@ -110,6 +113,10 @@ func (d *DynamoStore) PutSession(ctx context.Context, sess core.Session) error {
 }
 
 func (d *DynamoStore) DeleteSession(ctx context.Context, sessionID string) error {
+	// TODO - soft delete here - we want to keep the session around for the
+	// lifespan of the end-user session, so we can track refreshes and stuff
+	// like that. But, we don't want the session ID to be able to replay the
+	// initial auth flow, so close it out.
 	_, err := d.client.DeleteItemWithContext(ctx, &dynamodb.DeleteItemInput{
 		TableName: &d.sessionTableName,
 		Key: map[string]*dynamodb.AttributeValue{
@@ -161,6 +168,8 @@ func (d *DynamoStore) GetMetadata(ctx context.Context, sessionID string) (Metada
 }
 
 func (d *DynamoStore) PutMetadata(ctx context.Context, sessionID string, meta Metadata) error {
+	// TODO - some kind of conflict resolution
+
 	av, err := dynamodbattribute.MarshalMap(meta)
 	if err != nil {
 		return fmt.Errorf("marshaling metadata for dynamo: %v", err)

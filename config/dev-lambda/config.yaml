@@ -35,6 +35,7 @@ policies:
   upstreamClaims: upstreamClaims.rego
 providers:
   - id: google
+    name: Google
     type: oidc
     oidc:
       issuer: https://accounts.google.com

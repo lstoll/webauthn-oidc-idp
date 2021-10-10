@@ -158,7 +158,7 @@ func main() {
 	}
 
 	oidccli, err := oidc.DiscoverClient(ctx,
-		provider.OIDC.Issuer, provider.OIDC.ClientID, provider.OIDC.ClientSecret, cfg.Issuer+"/callback",
+		provider.OIDC.Issuer, provider.OIDC.ClientID, provider.OIDC.ClientSecret, cfg.Issuer+"/provider/"+provider.ID+"/callback",
 		oidc.WithAdditionalScopes([]string{"profile", "email"}),
 	)
 	if err != nil {
@@ -166,13 +166,24 @@ func main() {
 	}
 
 	svr := server{
-		issuer:          cfg.Issuer,
-		oidcsvr:         oidcsvr,
-		oidccli:         oidccli,
+		issuer:  cfg.Issuer,
+		oidcsvr: oidcsvr,
+		providers: map[string]Provider{
+			provider.ID: &OIDCProvider{
+				name:    provider.Name,
+				oidccli: oidccli,
+				up:      cfg,
+			},
+		},
 		storage:         st,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
 		upstreamPolicy:  []byte(ucp),
+	}
+
+	asm := &authSessionManager{
+		storage: st,
+		oidcsvr: oidcsvr,
 	}
 
 	m := http.NewServeMux()
@@ -181,6 +192,16 @@ func main() {
 	m.Handle("/.well-known/openid-configuration", discoh)
 
 	svr.AddHandlers(m)
+
+	for id, p := range svr.providers {
+		p.Initialize(asm)
+		h, ok := p.(http.Handler)
+		if ok {
+			p := "/provider/" + id
+			m.Handle(p, http.StripPrefix(p, h))
+			m.Handle(p+"/", http.StripPrefix(p, h))
+		}
+	}
 
 	var g run.Group
 

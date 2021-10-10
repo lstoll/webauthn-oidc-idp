@@ -56,6 +56,7 @@ type config struct {
 	Providers []struct {
 		ID   string `yaml:"id"`
 		Type string `yaml:"type"`
+		Name string `yaml:"name"`
 		OIDC *struct {
 			Issuer       string `yaml:"issuer"`
 			ClientID     string `yaml:"clientID"`

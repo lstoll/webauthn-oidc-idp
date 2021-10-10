@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,7 +22,7 @@ const (
 type server struct {
 	issuer          string
 	oidcsvr         *core.OIDC
-	oidccli         *oidc.Client
+	providers       map[string]Provider
 	storage         Storage
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
@@ -37,64 +38,29 @@ func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	http.Redirect(w, req, s.oidccli.AuthCodeURL(ar.SessionID), http.StatusFound)
-}
+	w.Write([]byte(`<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>title</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
+  </head>
+  <body>`))
 
-func (s *server) callback(w http.ResponseWriter, req *http.Request) {
-	if errMsg := req.FormValue("error"); errMsg != "" {
-		http.Error(w, fmt.Sprintf("error returned to callback %s: %s", errMsg, req.FormValue("error_description")), http.StatusInternalServerError)
-		return
-	}
-
-	code := req.FormValue("code")
-	if code == "" {
-		http.Error(w, "no code in callback response", http.StatusBadRequest)
-		return
-	}
-
-	state := req.FormValue("state")
-	if state == "" {
-		http.Error(w, "no state in callback response", http.StatusBadRequest)
-		return
-	}
-
-	token, err := s.oidccli.Exchange(req.Context(), code)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error exchanging code for token: %v", err), http.StatusInternalServerError)
-		return
+	for id, p := range s.providers {
+		panel, err := p.LoginPanel(req, ar)
+		if err != nil {
+			http.Error(w, "Internal Error", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, `<div id="%s-panel">`, id)
+		w.Write([]byte(panel))
+		w.Write([]byte(`</div>`))
 	}
 
-	policyOK, err := evalClaimsPolicy(req.Context(), s.upstreamPolicy, upstreamAllowQuery, token.Claims)
-	if err != nil {
-		http.Error(w, "evaluating policy", http.StatusInternalServerError)
-		return
-	}
-	if !policyOK {
-		http.Error(w, "denied by policy", http.StatusForbidden)
-		return
-	}
-
-	auth := &core.Authorization{
-		Scopes: []string{"openid"},
-	}
-
-	cljson, err := json.Marshal(token.Claims)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("claims to json: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.storage.PutMetadata(req.Context(), state, Metadata{
-		Claims: cljson,
-	}); err != nil {
-		http.Error(w, fmt.Sprintf("putting metadata: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// finalize it. this will redirect the user to the appropriate place
-	if err := s.oidcsvr.FinishAuthorization(w, req, state, auth); err != nil {
-		log.Printf("error finishing authorization: %v", err)
-	}
+	w.Write([]byte(`</body>
+	</html>`))
 }
 
 func (s *server) token(w http.ResponseWriter, req *http.Request) {
@@ -139,6 +105,60 @@ func (s *server) token(w http.ResponseWriter, req *http.Request) {
 
 func (s *server) AddHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/auth", s.authorization)
-	mux.HandleFunc("/callback", s.callback)
 	mux.HandleFunc("/token", s.token)
+}
+
+type authSessionManager struct {
+	storage Storage
+	oidcsvr *core.OIDC
+}
+
+func (a *authSessionManager) GetMetadata(ctx context.Context, sessionID string, into interface{}) (ok bool, err error) {
+	md, ok, err := a.storage.GetMetadata(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if err := json.Unmarshal(md.ProviderMetadata, into); err != nil {
+		return false, fmt.Errorf("unmarshaling provider metadata: %v", err)
+	}
+	return true, nil
+}
+
+func (a *authSessionManager) PutMetadata(ctx context.Context, sessionID string, d interface{}) error {
+	md, ok, err := a.storage.GetMetadata(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		md = Metadata{}
+	}
+	md.ProviderMetadata, err = json.Marshal(d)
+	if err != nil {
+		return fmt.Errorf("marshaling provider metadata: %v", err)
+	}
+	return nil
+}
+
+func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth *Authentication) {
+	md, ok, err := a.storage.GetMetadata(req.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "Internal Error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		md = Metadata{}
+	}
+	md.Claims, err = json.Marshal(auth.Claims)
+	if err != nil {
+		http.Error(w, "Internal Error", http.StatusInternalServerError)
+		return
+	}
+	if err := a.storage.PutMetadata(req.Context(), sessionID, md); err != nil {
+		http.Error(w, "Internal Error", http.StatusInternalServerError)
+		return
+	}
+	a.oidcsvr.FinishAuthorization(w, req, sessionID, auth.Authorization)
 }
