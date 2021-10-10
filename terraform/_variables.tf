@@ -39,27 +39,9 @@ variable "certificate_arn" {
 
 variable "oidc_kms_key_arn" {
   type        = string
-  description = "(optional) ARN for a asymmetric KMS key to be used for signing operations. If not provided, one will be generated"
+  description = "(optional) ARN for a asymmetric KMS key to be used for signing operations. If not provided, one will be generated. The key ARN is made available to the config via the OIDC_KMS_KEY_ARN environment variabls"
   default     = ""
 }
-
-// TODO these suck, think if something better. Probably the config file? Shame
-// secrets manager isn't cheaper too.
-
-variable "google_oidc_issuer" {
-  type    = string
-  default = "https://accounts.google.com"
-}
-
-variable "google_oidc_client_id" {
-  type = string
-}
-
-variable "google_oidc_client_secret" {
-  type = string
-}
-
-// end TODO these suck
 
 terraform {
   required_providers {

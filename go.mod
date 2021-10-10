@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/apex/gateway v1.1.1
 	github.com/aws/aws-lambda-go v1.13.3 // indirect
-	github.com/aws/aws-sdk-go v1.25.44
+	github.com/aws/aws-sdk-go v1.36.24
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/crewjam/saml v0.4.5
 	github.com/dexidp/dex v2.13.0+incompatible
@@ -53,11 +53,13 @@ require (
 	github.com/gorilla/mux v1.7.2 // indirect
 	github.com/hydrogen18/memlistener v0.0.0-20141126152155-54553eb933fb // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
-	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.2.1 // indirect
+	github.com/jszwec/s3fs v0.3.1 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.0.0-20201213122252-bcd7e1b9601e // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+	github.com/oklog/run v1.1.0 // indirect
 	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/onsi/gomega v1.16.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -72,8 +74,11 @@ require (
 	github.com/ugorji/go/codec v0.0.0-20180918125716-ed9a3b5f078b // indirect
 	github.com/yashtewari/glob-intersection v0.0.0-20180916065949-5c77d914dd0b // indirect
 	github.com/zenazn/goji v0.9.1-0.20160507202103-64eb34159fe5 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/multierr v1.6.0 // indirect
+	go.uber.org/zap v1.19.1 // indirect
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2 // indirect
-	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887 // indirect
+	golang.org/x/sys v0.0.0-20210510120138-977fb7262007 // indirect
 	golang.org/x/text v0.3.6 // indirect
 	google.golang.org/appengine v1.6.5 // indirect
 	google.golang.org/genproto v0.0.0-20201110150050-8816d57aaa9a // indirect

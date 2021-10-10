@@ -9,6 +9,12 @@ output "s3_bucket_config_prefix" {
   value       = local.s3_config_prefix
 }
 
+output "s3_bucket_config_key" {
+  description = "S3 key to write the config file to (prefix accounted for)"
+  value       = local.s3_config_file
+}
+
+
 output "gateway_domain_name" {
   description = "Name to alias the DNS record to"
 

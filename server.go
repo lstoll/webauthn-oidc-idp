@@ -22,7 +22,7 @@ type server struct {
 	issuer          string
 	oidcsvr         *core.OIDC
 	oidccli         *oidc.Client
-	storage         *DynamoStore
+	storage         Storage
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
 

@@ -13,6 +13,12 @@ import (
 	"github.com/pardot/oidc/core"
 )
 
+type Storage interface {
+	core.SessionManager
+	GetMetadata(ctx context.Context, sessionID string) (Metadata, bool, error)
+	PutMetadata(ctx context.Context, sessionID string, meta Metadata) error
+}
+
 // `dynamodbav:"myName,omitempty"`
 
 type Metadata struct {

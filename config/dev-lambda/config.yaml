@@ -1,0 +1,55 @@
+issuer: http://localhost:8080
+oidcSigner:
+  type: static
+  static:
+    keyID: tester
+    keyPEM: |
+      -----BEGIN RSA PRIVATE KEY-----
+      MIIEowIBAAKCAQEA0aQ9WkiIHw8XPd6twvMtcXrBRRjihR2N+uQFvsjYpmH5MBmU
+      aq8btznHb30PSDvVrDh62UdMcNvvUapjblVpi74TzoMvBWhojI+oybiOoUotIn2q
+      0kZeRX0wnFVjS8Uc1RagqIRsBIYvx5YVKxXGqeDafAna3P/CBn7Fg+gBe5dz17uD
+      75w6/5tO1n9L1lLm+NDRQO0LbqmDzsSd3zDZnk4SDg1/EEYXFfU7Ygbrib/iiwYX
+      dYpdqb2mg55lbMDtoMtx8IXJo2EK51X/UNJzauJsiPqr/JoIuYaqAB22cFUdkrrB
+      xMSu+Cnd7km9Q/64wwlxtN8xlreoyLF8iVfv/wIDAQABAoIBADmJjTkxPQLhPmzB
+      qAkgevFxUognW0xTnzsjyBvjvep0a1LzQlPBeabhGcaUmVQm7+8TlUv7EJTNGDLe
+      w+ltUcmDwqXkRUyDqmYhq56po6PK2vZjbTXHEGqcAHJ30QfjspUdX7zAk3Dub0Cl
+      BWxMzrijOPPgNIyBOXxU4NriGz4TBQ10Xf4hTTJMTzUBFJrQ8ITGmdcu0sstIRCP
+      0gskXTilGR3/e8JjGSSA/M7A2Uk5qe7Ot78jruO3VjJybwcXkaXMmzt+mUTsCquF
+      JCU0zm6A9/xio0vqSrgxtIo2qPTC391fJn5cgaiV+GjJ1FbuLhrlRl/JPgIYcDuJ
+      0n/cVRECgYEA42fnlNQZO6B8aw+hirt33zGlJPz/2u0kEXtLRXYZN8gx+d0H7H14
+      +jKP6/EpFDm9vM0/0OiaaPpEgPv6AEXvQvMBsSH6eXWh9rZB77ciRvHqeSeL4hkj
+      8Lh0sqpF620sMUdgbwz0n7CeGkF69YhW2q955Z22x5HLxqIbjnR78AcCgYEA7ACC
+      bq43VTpLQm7G9Zwtt2k/pYWvekmIHm4MN1WwB1QFJ7Qb2ZEm+8oEcIG1YKQQ9hHo
+      ZbF68zMXmShjqLENAXaiL7R8pJHsr4Rpj3IqSzIy6LOAspilm2fsI9PIk3ib3rou
+      XF/mCM1obNTs/nXdyz7oU2MmkRxw/s0ToYPgEkkCgYBiH/iuoKLOtt5Y+CK1kVUV
+      Sv++qSjh18fjfzconuAc0Na3wWdk5XNpSp4Nqj8Wih/UMyChTW0rdSpQGepzabnn
+      QqJtQ4MoG9kqctSa0oQI5uRNKQJUKpL2kTFR0uVew/n4vZrf8FAyA+0E2VJsVktc
+      C7HmoZo4HTI34MVRP/QmywKBgQCSJvafqJBn3YQCDix0qlW9ghaCYTn811DO14QF
+      OLGcuDHBFs8we63SvJbnPcyfnrtKSGjNoY3s0rVIijS9oXfWciuas4GFQUF8qNne
+      lesPSnUwmwmWkOXuSft5bIyIl2agFljjqBgDV4HV9D8YjtHeLoUeLwcRUrW/di00
+      F0FK0QKBgBVCyf9Z61B6zO2tgFfjxaiXPKy4AoKrQ0rI4eEcr6OUa6Vdrs1Fm1jU
+      t6v7qY68+FMTZRCY/THKOYQHHNj4nMevYrrgGLCeQcWVtfAcK97hAUxz2dpoY3pn
+      De2h3ddty1t3aE6R05PoAgrTTIHXrmQQPUxOpzkIB/CLzM6X8kKh
+      -----END RSA PRIVATE KEY-----
+policies:
+  upstreamClaims: upstreamClaims.rego
+providers:
+  - id: google
+    type: oidc
+    oidc:
+      issuer: https://accounts.google.com
+      clientID: 55784286321-4a0avr7hife7i75lak5absu0h6a7m1cj.apps.googleusercontent.com
+      clientSecret: ${GOOGLE_CLIENT_SECRET}
+clientSources:
+  - id: file
+    type: file
+    file:
+      filename: clients.yaml
+storage:
+  type: dynamodb
+  dynamodb:
+    sessionTableName: sessions
+aws:
+  dynamoEndpoint: http://localhost:8027
+  s3Endpoint: http://localhost:8028
+  s3ForcePathStyle: true

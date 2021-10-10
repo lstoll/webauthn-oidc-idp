@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"regexp"
+
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -22,10 +25,28 @@ type Client struct {
 	Public        bool     `json:"public" yaml:"public"`
 }
 
-type clientList []Client
+type fsClients struct {
+	readerFn func() (io.ReadCloser, error)
+}
 
-func (s clientList) IsValidClientID(clientID string) (ok bool, err error) {
-	for _, c := range s {
+func (f *fsClients) load() ([]Client, error) {
+	r, err := f.readerFn()
+	if err != nil {
+		return nil, fmt.Errorf("getting reader: %v", err)
+	}
+	var cs []Client
+	if err := yaml.NewDecoder(r).Decode(&cs); err != nil {
+		return nil, fmt.Errorf("decoding clients: %v", err)
+	}
+	return cs, nil
+}
+
+func (f *fsClients) IsValidClientID(clientID string) (ok bool, err error) {
+	cs, err := f.load()
+	if err != nil {
+		return false, err
+	}
+	for _, c := range cs {
 		if c.ClientID == clientID {
 			return true, nil
 		}
@@ -33,12 +54,17 @@ func (s clientList) IsValidClientID(clientID string) (ok bool, err error) {
 	return false, nil
 }
 
-func (s clientList) IsUnauthenticatedClient(clientID string) (ok bool, err error) {
+func (f *fsClients) IsUnauthenticatedClient(clientID string) (ok bool, err error) {
 	return false, nil
 }
 
-func (s clientList) ValidateClientSecret(clientID, clientSecret string) (ok bool, err error) {
-	for _, c := range s {
+func (f *fsClients) ValidateClientSecret(clientID, clientSecret string) (ok bool, err error) {
+	cs, err := f.load()
+	if err != nil {
+		return false, err
+	}
+
+	for _, c := range cs {
 		if c.ClientID == clientID {
 			for _, cs := range c.ClientSecrets {
 				if cs == clientSecret {
@@ -50,10 +76,15 @@ func (s clientList) ValidateClientSecret(clientID, clientSecret string) (ok bool
 	return false, nil
 }
 
-func (s clientList) ValidateClientRedirectURI(clientID, redirectURI string) (ok bool, err error) {
+func (f *fsClients) ValidateClientRedirectURI(clientID, redirectURI string) (ok bool, err error) {
+	cs, err := f.load()
+	if err != nil {
+		return false, err
+	}
+
 	var cl Client
 	var found bool
-	for _, c := range s {
+	for _, c := range cs {
 		if c.ClientID == clientID {
 			cl = c
 			found = true
