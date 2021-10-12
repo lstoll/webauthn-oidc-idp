@@ -5,22 +5,35 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
 )
 
-// Authentication
+// Authentication are the details flagged for an authenticated user of the
+// system.
 type Authentication struct {
-	// TODO the below probably applies here too. ACR/AMR are definitely not a
-	// provider concern, unclear if scopes even are. At the end of the day a
-	// providers only real goal is to just say "yep i confirmed who this is"
-	*core.Authorization
-	// TODO claims probably isn't the correct data type to bubble up here - the
-	// provider doesn't really control a bunch of the fields. Think a bit about
-	// what we really want, and implement a subset.
-	Claims oidc.Claims
+	// Subject (required) is the unique identifier for the authenticated user.
+	// This should be stable over time.
+	Subject string `dynamodbav:"subject"`
+	// EMail (optional), for when the email/profile scope is requested
+	EMail string `dynamodbav:"email,omitempty"`
+	// FullName (optional), for when the profile scope is requested
+	FullName string `dynamodbav:"full_name,omitempty"`
+	// Groups (optional), for when the groups scope is requested
+	Groups []string `dynamodbav:"groups,omitempty"`
+	// ExtraClaims (optional) fields to add to the returned ID token claims
+	ExtraClaims map[string]interface{} `dynamodbav:"extra_claims,omitempty"`
+	// PolicyContext is internal data, that is passed to the policies that are
+	// evaluated downstream. This data is not presented to the user.
+	PolicyContext map[string]interface{} `dynamodbav:"policy_context,omitempty"`
 }
 
+// AuthSessionManager is responsible for managing an auth session throughout
+// it's lifecycle, from the moment a user decides to authenticate via us until
+// the credentials expire or are revoked. This is essentially a companion of
+// github.com/pardot/oidc/core/SessionManager , for tracking our application
+// specific items. It can associate and retrieve relevant metadata with a
+// session. In addition, it can mark a session as authenticated, moving it from
+// the gathering user info stage in to the tokens issued/refreshed stage.
 type AuthSessionManager interface {
 	// GetMetadata retrieves provider-specific metadata for the given session in
 	// to the provided json-compatible object. If no metadata is found, ok will
@@ -34,14 +47,11 @@ type AuthSessionManager interface {
 	// flow, to provide details about who was authenticated for the sesion. This
 	// should be passed the http request and non-started response, it will
 	// handle the next steps.
-	Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth *Authentication)
+	Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth Authentication)
 }
 
+// Provider is used to authenticate users.
 type Provider interface {
-	// Initialize is called before the provider is used, to pass it an
-	// AuthSessionManager. It should hold on to this, and use it during flow
-	// execution.
-	Initialize(asm AuthSessionManager) error
-	// LoginPanel is called to provide HTML to be rendered in to the login
+	// LoginPanel is called to provide HTML to be rendered in to the login page
 	LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error)
 }

@@ -165,6 +165,11 @@ func main() {
 		log.Fatalf("oidc discovery on %s: %v", provider.OIDC.Issuer, err)
 	}
 
+	asm := &authSessionManager{
+		storage: st,
+		oidcsvr: oidcsvr,
+	}
+
 	svr := server{
 		issuer:  cfg.Issuer,
 		oidcsvr: oidcsvr,
@@ -172,6 +177,7 @@ func main() {
 			provider.ID: &OIDCProvider{
 				name:    provider.Name,
 				oidccli: oidccli,
+				asm:     asm,
 				up:      cfg,
 			},
 		},
@@ -179,11 +185,6 @@ func main() {
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
 		upstreamPolicy:  []byte(ucp),
-	}
-
-	asm := &authSessionManager{
-		storage: st,
-		oidcsvr: oidcsvr,
 	}
 
 	m := http.NewServeMux()
@@ -194,7 +195,6 @@ func main() {
 	svr.AddHandlers(m)
 
 	for id, p := range svr.providers {
-		p.Initialize(asm)
 		h, ok := p.(http.Handler)
 		if ok {
 			p := "/provider/" + id

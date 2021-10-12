@@ -31,11 +31,6 @@ type OIDCProvider struct {
 	up UpstreamPolicy
 }
 
-func (o *OIDCProvider) Initialize(a AuthSessionManager) error {
-	o.asm = a
-	return nil
-}
-
 func (o *OIDCProvider) LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error) {
 	// TODO - box with link to s.oidccli.AuthCodeURL(ar.SessionID)
 	return template.HTML(fmt.Sprintf(`
@@ -107,10 +102,9 @@ func (o *OIDCProvider) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// finalize it. this will redirect the user to the appropriate place
-	o.asm.Authenticate(w, req, state, &Authentication{
-		Authorization: &core.Authorization{
-			Scopes: []string{"openid"},
-		},
-		Claims: token.Claims,
+	o.asm.Authenticate(w, req, state, Authentication{
+		Subject: token.Claims.Subject,
+		EMail:   token.Claims.Extra["email"].(string), // TODO
+		// TODO other fields
 	})
 }

@@ -9,7 +9,6 @@ import (
 
 	"net/http"
 
-	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
 )
 
@@ -65,30 +64,19 @@ func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
 
 func (s *server) token(w http.ResponseWriter, req *http.Request) {
 	err := s.oidcsvr.Token(w, req, func(tr *core.TokenRequest) (*core.TokenResponse, error) {
-		// This is how we could update our metadata
-		meta, ok, err := s.storage.GetMetadata(req.Context(), tr.SessionID)
+		auth, ok, err := s.storage.GetAuthentication(req.Context(), tr.SessionID)
 		if err != nil {
-			return nil, fmt.Errorf("getting metadata for session %s", tr.SessionID)
+			return nil, fmt.Errorf("getting authentication for session %s", tr.SessionID)
 		}
 		if !ok {
-			return nil, fmt.Errorf("no metadata for session %s", tr.SessionID)
+			return nil, fmt.Errorf("no authentication for session %s", tr.SessionID)
 		}
 
-		var claims oidc.Claims
-		if err := json.Unmarshal(meta.Claims, &claims); err != nil {
-			return nil, fmt.Errorf("unmarshaling claims: %v", err)
-		}
-
-		email, ok := claims.Extra["email"].(string)
-		if !ok {
-			return nil, fmt.Errorf("email claim not found")
-		}
-
-		idt := tr.PrefillIDToken(s.issuer, email, time.Now().Add(s.tokenValidFor))
+		idt := tr.PrefillIDToken(s.issuer, auth.Subject, time.Now().Add(s.tokenValidFor))
 
 		// oauth2 proxy wants this, when we don't have useinfo
 		// TODO - scopes/userinfo etc.
-		idt.Extra["email"] = email
+		idt.Extra["email"] = auth.EMail
 		idt.Extra["email_verified"] = true
 
 		return &core.TokenResponse{
@@ -142,23 +130,16 @@ func (a *authSessionManager) PutMetadata(ctx context.Context, sessionID string, 
 	return nil
 }
 
-func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth *Authentication) {
-	md, ok, err := a.storage.GetMetadata(req.Context(), sessionID)
-	if err != nil {
+func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth Authentication) {
+	if err := a.storage.Authenticate(req.Context(), sessionID, auth); err != nil {
 		http.Error(w, "Internal Error", http.StatusInternalServerError)
 		return
 	}
-	if !ok {
-		md = Metadata{}
+	// TODO - we need to fill this. This is likely going to need information
+	// about the provider (acr), requested claims, etc. This probably goes in
+	// the server metadata field
+	az := &core.Authorization{
+		Scopes: []string{"openid"},
 	}
-	md.Claims, err = json.Marshal(auth.Claims)
-	if err != nil {
-		http.Error(w, "Internal Error", http.StatusInternalServerError)
-		return
-	}
-	if err := a.storage.PutMetadata(req.Context(), sessionID, md); err != nil {
-		http.Error(w, "Internal Error", http.StatusInternalServerError)
-		return
-	}
-	a.oidcsvr.FinishAuthorization(w, req, sessionID, auth.Authorization)
+	a.oidcsvr.FinishAuthorization(w, req, sessionID, az)
 }

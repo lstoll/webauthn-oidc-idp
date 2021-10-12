@@ -17,6 +17,8 @@ type Storage interface {
 	core.SessionManager
 	GetMetadata(ctx context.Context, sessionID string) (Metadata, bool, error)
 	PutMetadata(ctx context.Context, sessionID string, meta Metadata) error
+	Authenticate(ctx context.Context, sessionID string, auth Authentication) error
+	GetAuthentication(ctx context.Context, sessionID string) (Authentication, bool, error)
 }
 
 // `dynamodbav:"myName,omitempty"`
@@ -27,8 +29,10 @@ type Metadata struct {
 }
 
 type Session struct {
-	SessionID string    `dynamodbav:"session_id"`
-	Meta      *Metadata `dynamodbav:"metadata,omitempty"`
+	SessionID      string          `dynamodbav:"session_id"`
+	Authentication *Authentication `dynamodbav:"authentication,omitempty"`
+	Authenticated  bool            `dynamodbav:"authenticated,omitempty"`
+	Meta           *Metadata       `dynamodbav:"metadata,omitempty"`
 	// we just store the marshaled bytes. We never need to partial
 	// update/inspect it, and pardot/oidc doesnt play well with the dynamo types
 	CoreSession []byte `dynamodbav:"core_session,omitempty"`
@@ -113,10 +117,7 @@ func (d *DynamoStore) PutSession(ctx context.Context, sess core.Session) error {
 }
 
 func (d *DynamoStore) DeleteSession(ctx context.Context, sessionID string) error {
-	// TODO - soft delete here - we want to keep the session around for the
-	// lifespan of the end-user session, so we can track refreshes and stuff
-	// like that. But, we don't want the session ID to be able to replay the
-	// initial auth flow, so close it out.
+	// TODO - consider soft deleting, so we can audit history
 	_, err := d.client.DeleteItemWithContext(ctx, &dynamodb.DeleteItemInput{
 		TableName: &d.sessionTableName,
 		Key: map[string]*dynamodb.AttributeValue{
@@ -132,6 +133,7 @@ func (d *DynamoStore) DeleteSession(ctx context.Context, sessionID string) error
 }
 
 func (d *DynamoStore) NewID() string {
+	// uses crypto/rand
 	return uuid.New().String()
 }
 
@@ -188,11 +190,95 @@ func (d *DynamoStore) PutMetadata(ctx context.Context, sessionID string, meta Me
 				M: av,
 			},
 		},
-		ReturnValues: aws.String("UPDATED_NEW"),
+		ReturnValues: aws.String(dynamodb.ReturnValueNone),
 	})
 	if err != nil {
 		return fmt.Errorf("putting metadata in session %s: %v", sessionID, err)
 	}
 
 	return nil
+}
+
+func (d *DynamoStore) Authenticate(ctx context.Context, sessionID string, auth Authentication) error {
+	// TODO - some kind of conflict resolution
+	result, err := d.client.GetItemWithContext(ctx, &dynamodb.GetItemInput{
+		TableName: &d.sessionTableName,
+		Key: map[string]*dynamodb.AttributeValue{
+			"session_id": {
+				S: &sessionID,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("getting session %s: %v", sessionID, err)
+	}
+
+	var sess Session
+	err = dynamodbattribute.UnmarshalMap(result.Item, &sess)
+	if err != nil {
+		return fmt.Errorf("unmarshaling session %s: %v", sessionID, err)
+	}
+
+	if sess.Authenticated {
+		return fmt.Errorf("session alread authenticated")
+	}
+
+	av, err := dynamodbattribute.MarshalMap(auth)
+	if err != nil {
+		return fmt.Errorf("marshaling metadata for dynamo: %v", err)
+	}
+
+	_, err = d.client.UpdateItemWithContext(ctx, &dynamodb.UpdateItemInput{
+		TableName: &d.sessionTableName,
+		Key: map[string]*dynamodb.AttributeValue{
+			"session_id": {
+				S: &sessionID,
+			},
+		},
+		UpdateExpression: aws.String("set authentication = :a, authenticated = :ab"),
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":a": {
+				M: av,
+			},
+			":ab": {
+				BOOL: aws.Bool(true),
+			},
+		},
+		ReturnValues: aws.String(dynamodb.ReturnValueNone),
+	})
+	if err != nil {
+		return fmt.Errorf("putting metadata in session %s: %v", sessionID, err)
+	}
+
+	return nil
+}
+
+func (d *DynamoStore) GetAuthentication(ctx context.Context, sessionID string) (Authentication, bool, error) {
+	result, err := d.client.GetItemWithContext(ctx, &dynamodb.GetItemInput{
+		TableName: &d.sessionTableName,
+		Key: map[string]*dynamodb.AttributeValue{
+			"session_id": {
+				S: &sessionID,
+			},
+		},
+	})
+	if err != nil {
+		return Authentication{}, false, fmt.Errorf("getting session %s: %v", sessionID, err)
+	}
+
+	var sess Session
+	err = dynamodbattribute.UnmarshalMap(result.Item, &sess)
+	if err != nil {
+		return Authentication{}, false, fmt.Errorf("unmarshaling session %s: %v", sessionID, err)
+	}
+
+	if sess.SessionID == "" {
+		return Authentication{}, false, nil
+	}
+
+	if !sess.Authenticated || sess.Authentication == nil {
+		return Authentication{}, false, nil
+	}
+
+	return *sess.Authentication, true, nil
 }
