@@ -22,7 +22,7 @@ type server struct {
 	issuer          string
 	oidcsvr         *core.OIDC
 	providers       map[string]Provider
-	storage         Storage
+	asm             AuthSessionManager
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
 
@@ -64,7 +64,7 @@ func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
 
 func (s *server) token(w http.ResponseWriter, req *http.Request) {
 	err := s.oidcsvr.Token(w, req, func(tr *core.TokenRequest) (*core.TokenResponse, error) {
-		auth, ok, err := s.storage.GetAuthentication(req.Context(), tr.SessionID)
+		auth, ok, err := s.asm.GetAuthentication(req.Context(), tr.SessionID)
 		if err != nil {
 			return nil, fmt.Errorf("getting authentication for session %s", tr.SessionID)
 		}
@@ -142,4 +142,9 @@ func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Reque
 		Scopes: []string{"openid"},
 	}
 	a.oidcsvr.FinishAuthorization(w, req, sessionID, az)
+}
+
+func (a *authSessionManager) GetAuthentication(ctx context.Context, sessionID string) (Authentication, bool, error) {
+	// this smells a bit
+	return a.storage.GetAuthentication(ctx, sessionID)
 }

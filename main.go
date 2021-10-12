@@ -181,7 +181,7 @@ func main() {
 				up:      cfg,
 			},
 		},
-		storage:         st,
+		asm:             asm,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
 		upstreamPolicy:  []byte(ucp),

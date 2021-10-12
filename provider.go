@@ -48,6 +48,9 @@ type AuthSessionManager interface {
 	// should be passed the http request and non-started response, it will
 	// handle the next steps.
 	Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth Authentication)
+	// GetAuthentication returns the authentication details for a sesion, if
+	// authenticated
+	GetAuthentication(ctx context.Context, sessionID string) (Authentication, bool, error)
 }
 
 // Provider is used to authenticate users.
