@@ -18,7 +18,7 @@ const (
 	upstreamAllowQuery = "data.upstream.allow"
 )
 
-type server struct {
+type oidcServer struct {
 	issuer          string
 	oidcsvr         *core.OIDC
 	providers       map[string]Provider
@@ -26,11 +26,13 @@ type server struct {
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
 
+	eh *httpErrHandler
+
 	// upstreamPolicy is rego code applied to claims from upstream IDP
 	upstreamPolicy []byte
 }
 
-func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
+func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 	ar, err := s.oidcsvr.StartAuthorization(w, req)
 	if err != nil {
 		log.Printf("error starting authorization: %v", err)
@@ -50,7 +52,7 @@ func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
 	for id, p := range s.providers {
 		panel, err := p.LoginPanel(req, ar)
 		if err != nil {
-			http.Error(w, "Internal Error", http.StatusInternalServerError)
+			s.eh.Error(w, req, err)
 			return
 		}
 		fmt.Fprintf(w, `<div id="%s-panel">`, id)
@@ -62,7 +64,7 @@ func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
 	</html>`))
 }
 
-func (s *server) token(w http.ResponseWriter, req *http.Request) {
+func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
 	err := s.oidcsvr.Token(w, req, func(tr *core.TokenRequest) (*core.TokenResponse, error) {
 		auth, ok, err := s.asm.GetAuthentication(req.Context(), tr.SessionID)
 		if err != nil {
@@ -87,11 +89,11 @@ func (s *server) token(w http.ResponseWriter, req *http.Request) {
 		}, nil
 	})
 	if err != nil {
-		log.Printf("error in token endpoint: %v", err)
+		s.eh.Error(w, req, err)
 	}
 }
 
-func (s *server) AddHandlers(mux *http.ServeMux) {
+func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/auth", s.authorization)
 	mux.HandleFunc("/token", s.token)
 }
@@ -99,6 +101,7 @@ func (s *server) AddHandlers(mux *http.ServeMux) {
 type authSessionManager struct {
 	storage Storage
 	oidcsvr *core.OIDC
+	eh      *httpErrHandler
 }
 
 func (a *authSessionManager) GetMetadata(ctx context.Context, sessionID string, into interface{}) (ok bool, err error) {
@@ -132,7 +135,7 @@ func (a *authSessionManager) PutMetadata(ctx context.Context, sessionID string, 
 
 func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth Authentication) {
 	if err := a.storage.Authenticate(req.Context(), sessionID, auth); err != nil {
-		http.Error(w, "Internal Error", http.StatusInternalServerError)
+		a.eh.Error(w, req, err)
 		return
 	}
 	// TODO - we need to fill this. This is likely going to need information

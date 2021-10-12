@@ -29,6 +29,7 @@ type OIDCProvider struct {
 	// up is a rego policy applied to the claims we receive
 	// from the upstream provider, before finalizing the auth
 	up UpstreamPolicy
+	eh *httpErrHandler
 }
 
 func (o *OIDCProvider) LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error) {
@@ -54,50 +55,50 @@ func (o *OIDCProvider) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	code := req.FormValue("code")
 	if code == "" {
-		http.Error(w, "no code in callback response", http.StatusBadRequest)
+		o.eh.BadRequest(w, req, "no code in callback response")
 		return
 	}
 
 	state := req.FormValue("state")
 	if state == "" {
-		http.Error(w, "no state in callback response", http.StatusBadRequest)
+		o.eh.BadRequest(w, req, "no state in callback response")
 		return
 	}
 
 	token, err := o.oidccli.Exchange(req.Context(), code)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error exchanging code for token: %v", err), http.StatusInternalServerError)
+		o.eh.Error(w, req, fmt.Errorf("error exchanging code for token: %v", err))
 		return
 	}
 
 	if o.up.HasUpstreamClaimsPolicy() {
 		p, err := o.up.UpstreamClaimsPolicy()
 		if err != nil {
-			http.Error(w, "fetching policy", http.StatusInternalServerError)
+			o.eh.Error(w, req, fmt.Errorf("fetching policy: %v", err))
 			return
 		}
 
 		policyOK, err := evalClaimsPolicy(req.Context(), []byte(p), upstreamAllowQuery, token.Claims)
 		if err != nil {
-			http.Error(w, "evaluating policy", http.StatusInternalServerError)
+			o.eh.Error(w, req, fmt.Errorf("evaluating policy: %v", err))
 			return
 		}
 		if !policyOK {
-			http.Error(w, "denied by policy", http.StatusForbidden)
+			o.eh.Forbidden(w, req, "denied by policy")
 			return
 		}
 	}
 
 	cljson, err := json.Marshal(token.Claims)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("claims to json: %v", err), http.StatusInternalServerError)
+		o.eh.Error(w, req, fmt.Errorf("claims to json: %v", err))
 		return
 	}
 
 	if err := o.asm.PutMetadata(req.Context(), state, Metadata{
 		Claims: cljson,
 	}); err != nil {
-		http.Error(w, fmt.Sprintf("putting metadata: %v", err), http.StatusInternalServerError)
+		o.eh.Error(w, req, fmt.Errorf("putting metadata: %v", err))
 		return
 	}
 

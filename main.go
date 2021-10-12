@@ -165,12 +165,15 @@ func main() {
 		log.Fatalf("oidc discovery on %s: %v", provider.OIDC.Issuer, err)
 	}
 
+	heh := &httpErrHandler{}
+
 	asm := &authSessionManager{
 		storage: st,
 		oidcsvr: oidcsvr,
+		eh:      heh,
 	}
 
-	svr := server{
+	svr := oidcServer{
 		issuer:  cfg.Issuer,
 		oidcsvr: oidcsvr,
 		providers: map[string]Provider{
@@ -179,27 +182,29 @@ func main() {
 				oidccli: oidccli,
 				asm:     asm,
 				up:      cfg,
+				eh:      heh,
 			},
 		},
 		asm:             asm,
+		eh:              heh,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
 		upstreamPolicy:  []byte(ucp),
 	}
 
-	m := http.NewServeMux()
+	mux := http.NewServeMux()
 
-	m.Handle("/keys", keysh)
-	m.Handle("/.well-known/openid-configuration", discoh)
+	mux.Handle("/keys", keysh)
+	mux.Handle("/.well-known/openid-configuration", discoh)
 
-	svr.AddHandlers(m)
+	svr.AddHandlers(mux)
 
 	for id, p := range svr.providers {
 		h, ok := p.(http.Handler)
 		if ok {
 			p := "/provider/" + id
-			m.Handle(p, http.StripPrefix(p, h))
-			m.Handle(p+"/", http.StripPrefix(p, h))
+			mux.Handle(p, http.StripPrefix(p, h))
+			mux.Handle(p+"/", http.StripPrefix(p, h))
 		}
 	}
 
@@ -207,11 +212,13 @@ func main() {
 
 	g.Add(run.SignalHandler(ctx, os.Interrupt))
 
+	hh := baseMiddleware(mux, sugar)
+
 	switch flgs.listenMode {
 	case "http":
 		hs := &http.Server{
 			Addr:    flgs.addr,
-			Handler: m,
+			Handler: hh,
 		}
 		g.Add(func() error {
 			sugar.Infof("Listing on %s", flgs.addr)
@@ -227,7 +234,7 @@ func main() {
 		})
 	case "lambda":
 		g.Add(func() error {
-			return gateway.ListenAndServe("", m)
+			return gateway.ListenAndServe("", hh)
 		}, func(error) {
 			// TODO - how do we best stop the lambda?
 		})
