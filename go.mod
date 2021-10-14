@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go v1.36.24
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/securecookie v1.1.1
-	github.com/gorilla/sessions v1.2.0
+	github.com/gorilla/sessions v1.2.1
 	github.com/jszwec/s3fs v0.3.1
 	github.com/lstoll/awskms v0.0.0-20200603175638-a388516467f1
 	github.com/oklog/run v1.1.0
@@ -25,6 +25,7 @@ require (
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/gorilla/csrf v1.7.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect

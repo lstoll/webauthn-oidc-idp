@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/gob"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -22,11 +24,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/gorilla/csrf"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/hkdf"
 )
 
 const (
@@ -57,6 +61,7 @@ type flags struct {
 	s3ConfigForcePathStyle bool
 	kmsOIDCArn             string
 	sessionTableName       string
+	securePassphrase       string
 }
 
 func main() {
@@ -76,6 +81,8 @@ func main() {
 	flag.StringVar(&flgs.kmsOIDCArn, "oidc-jwt-kms-arn", os.Getenv("KMS_OIDC_KEY_ARN"), "ARN to the KMS key to use for signing")
 	flag.StringVar(&flgs.sessionTableName, "dynamo-session-table-name", os.Getenv("SESSION_TABLE_NAME"), "Name of the DynamoDB table to track sessions in")
 
+	flag.StringVar(&flgs.securePassphrase, "secure-passphrase", os.Getenv("SECURE_PASSPHRASE"), "Passphrase used to secure sessions/csrf")
+
 	flag.Parse()
 
 	if flgs.listenMode != "http" && flgs.listenMode != "lambda" {
@@ -86,6 +93,9 @@ func main() {
 	}
 	if flgs.config == "" {
 		sugar.Fatalf("path to config must be specified")
+	}
+	if flgs.securePassphrase == "" {
+		sugar.Fatal("secure-passphrase must be provided")
 	}
 
 	sess, err := session.NewSession(&aws.Config{})
@@ -114,6 +124,21 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		sugar.Fatalf("invalid config: %v", err)
 	}
+
+	krdr := hkdf.New(sha256.New, []byte(flgs.securePassphrase), nil, nil)
+	scHashKey := make([]byte, 64)
+	scEncryptKey := make([]byte, 32)
+	csrfKey := make([]byte, 32)
+	if _, err := io.ReadFull(krdr, scHashKey); err != nil {
+		sugar.Fatal(err)
+	}
+	if _, err := io.ReadFull(krdr, scEncryptKey); err != nil {
+		sugar.Fatal(err)
+	}
+	if _, err := io.ReadFull(krdr, csrfKey); err != nil {
+		sugar.Fatal(err)
+	}
+	csrfh := csrf.Protect(csrfKey)
 
 	provider := cfg.Providers[0]
 
@@ -199,6 +224,8 @@ func main() {
 
 	svr.AddHandlers(mux)
 
+	_ = csrfh
+
 	for id, p := range svr.providers {
 		h, ok := p.(http.Handler)
 		if ok {
@@ -212,7 +239,7 @@ func main() {
 
 	g.Add(run.SignalHandler(ctx, os.Interrupt))
 
-	hh := baseMiddleware(mux, sugar)
+	hh := baseMiddleware(mux, sugar, scHashKey, scEncryptKey)
 
 	switch flgs.listenMode {
 	case "http":

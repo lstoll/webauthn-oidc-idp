@@ -6,14 +6,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/sessions"
 	"go.uber.org/zap"
 )
 
 type loggerCtxKey struct{}
 type requestIDCtxKey struct{}
+type sessionStoreCtxKey struct{}
 
 // baseMiddleware should wrap all requests to the service
-func baseMiddleware(wrapped http.Handler, logger *zap.SugaredLogger) http.Handler {
+func baseMiddleware(wrapped http.Handler,
+	logger *zap.SugaredLogger,
+	scHashKey []byte,
+	scEncryptKey []byte,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -24,6 +30,9 @@ func baseMiddleware(wrapped http.Handler, logger *zap.SugaredLogger) http.Handle
 
 		sl := logger.With("request_id", rid)
 		ctx = context.WithValue(ctx, loggerCtxKey{}, rid)
+
+		store := sessions.NewCookieStore(scHashKey, scEncryptKey)
+		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, store)
 
 		ww := &wrapResponseWriter{ResponseWriter: w}
 
@@ -44,6 +53,10 @@ func loggerFromContext(ctx context.Context) *zap.SugaredLogger {
 		return l
 	}
 	return zap.NewNop().Sugar()
+}
+
+func sessionStoreFromContext(ctx context.Context) sessions.Store {
+	return ctx.Value(sessionStoreCtxKey{}).(sessions.Store)
 }
 
 // httpErrHandler renders out nicer errors
