@@ -33,11 +33,6 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-const (
-	clientsKey              = "clients.yaml"
-	upstreamClaimsPolicyKey = "upstreamClaims.rego"
-)
-
 var (
 	// DefaultHTTPGetAddress Default Address
 	DefaultHTTPGetAddress = "https://checkip.amazonaws.com"
