@@ -17,7 +17,7 @@ run-lambda-local: export AWS_ACCESS_KEY_ID = defaultkey
 run-lambda-local: export AWS_SECRET_ACCESS_KEY = defaultsecret
 run-lambda-local: export S3_CONFIG_ENDPOINT = http://localhost:8028
 run-lambda-local: export S3_FORCE_CONFIG_PATH_STYLE = true
-run-lambda-local: $(GOPATH)/bin/idp
+run-lambda-local: $(GOPATH)/bin/idp miniosync
 	$(GOPATH)/bin/idp
 
 .PHONY: create-dynamo-tables
