@@ -291,6 +291,50 @@ func (d *DynamoStore) ListUsers(ctx context.Context) ([]*DynamoWebauthnUser, err
 	return ret, nil
 }
 
+func (d *DynamoStore) DeleteUser(ctx context.Context, id string) error {
+
+	// fetch user so we know the email to delete
+	dbu, ok, err := d.GetUserByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting existing user from DB: %v", err)
+	}
+	if !ok {
+		// already gone
+		return nil
+	}
+
+	tis := []*dynamodb.TransactWriteItem{
+		{
+			Delete: &dynamodb.Delete{
+				TableName: &d.webauthnUserTableName,
+				Key: map[string]*dynamodb.AttributeValue{
+					"id": {
+						S: aws.String(emailKey(dbu.Email)),
+					},
+				},
+			},
+		},
+		{
+			Delete: &dynamodb.Delete{
+				TableName: &d.webauthnUserTableName,
+				Key: map[string]*dynamodb.AttributeValue{
+					"id": {
+						S: &id,
+					},
+				},
+			},
+		},
+	}
+
+	if _, err := d.client.TransactWriteItemsWithContext(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: tis,
+	}); err != nil {
+		return fmt.Errorf("deleting user: %v", err)
+	}
+
+	return nil
+}
+
 // emailKey is the table ID record for a given email address, to enforce it's
 // uniqueness and map it to a user
 func emailKey(email string) string {

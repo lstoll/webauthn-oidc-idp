@@ -219,6 +219,7 @@ func main() {
 				logger:     sugar.With("component", "webauthnManager"),
 				store:      st,
 				httpPrefix: prefix,
+				// TODO - this needs a prefix
 				oidcMiddleware: &oidcm.Handler{
 					Issuer:                   cfg.Issuer,
 					ClientID:                 p.Webauthn.ClientID,
@@ -229,8 +230,9 @@ func main() {
 					SessionEncryptionKey:     scEncryptKey,
 					SessionName:              "webauthn-manager",
 				},
-				admins: []string{}, // TODO - google account id
-				acrs:   nil,
+				csrfMiddleware: csrfh,
+				admins:         p.Webauthn.AdminSubjects, // TODO - google account id
+				acrs:           nil,
 			}
 
 			clients.sources = append([]core.ClientSource{
@@ -265,8 +267,6 @@ func main() {
 	}
 
 	svr.AddHandlers(mux)
-
-	_ = csrfh
 
 	for id, p := range svr.providers {
 		h, ok := p.(http.Handler)

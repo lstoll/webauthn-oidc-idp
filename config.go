@@ -71,7 +71,7 @@ type config struct {
 			ClientSecret string `yaml:"clientSecret"`
 			// AdminSubjects is a list of subjects allowed to administer the
 			// service
-			AdminSubjects []string `yaml"adminSubjets"`
+			AdminSubjects []string `yaml:"adminSubjects"`
 		} `yaml:"webauthn"`
 	} `yaml:"providers"`
 	ClientSources []struct {
