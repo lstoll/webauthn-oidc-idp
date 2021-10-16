@@ -61,7 +61,18 @@ type config struct {
 			Issuer       string `yaml:"issuer"`
 			ClientID     string `yaml:"clientID"`
 			ClientSecret string `yaml:"clientSecret"`
-		}
+		} `yaml:"oidc"`
+		Webauthn *struct {
+			// ClientID is a client ID for the webauthn manager to authenticate
+			// with.
+			//
+			// TODO - these are transitional, ideally we'd self-allocation these
+			ClientID     string `yaml:"clientID"`
+			ClientSecret string `yaml:"clientSecret"`
+			// AdminSubjects is a list of subjects allowed to administer the
+			// service
+			AdminSubjects []string `yaml"adminSubjets"`
+		} `yaml:"webauthn"`
 	} `yaml:"providers"`
 	ClientSources []struct {
 		ID   string `yaml:"id"`
@@ -73,7 +84,8 @@ type config struct {
 	Storage struct {
 		Type     string `yaml:"type"`
 		DynamoDB struct {
-			SessionTableName string `yaml:"sessionTableName"`
+			SessionTableName      string `yaml:"sessionTableName"`
+			WebauthnUserTableName string `yaml:"webauthnUserTableName"`
 		}
 	} `yaml:"storage"`
 	AWS struct {
@@ -141,19 +153,32 @@ func (c *config) OverrideFromFlags(f flags) {
 func (c *config) Validate() error {
 	var errs []string
 
-	ve := func(msg string) {
-		errs = append(errs, msg)
+	ve := func(format string, a ...interface{}) {
+		errs = append(errs, fmt.Sprintf(format, a...))
 	}
 
 	if c.Issuer == "" {
 		ve("issuer is required")
 	}
 
-	if len(c.Providers) != 1 {
-		ve("must be exactly one provider")
+	if len(c.Providers) < 1 {
+		ve("must have at least one provider")
 	}
-	if c.Providers[0].Type != "oidc" {
-		ve("provider must be type oidc")
+	var webauthnProviderCount int
+	for _, p := range c.Providers {
+		switch p.Type {
+		case "oidc":
+		case "webauthn":
+			webauthnProviderCount++
+			if p.Webauthn.ClientID == "" || p.Webauthn.ClientSecret == "" {
+				ve("client id and secret must be provided for webauthn provider")
+			}
+		default:
+			ve("provider %s must be one of webauthn, oidc", p.ID)
+		}
+	}
+	if webauthnProviderCount > 1 {
+		ve("no more than one webauthn provider can be specified")
 	}
 
 	if len(c.ClientSources) != 1 {
@@ -161,6 +186,15 @@ func (c *config) Validate() error {
 	}
 	if c.ClientSources[0].Type != "file" {
 		ve("client source must be type file")
+	}
+
+	switch c.Storage.Type {
+	case "dynamodb":
+		if c.Storage.DynamoDB.SessionTableName == "" || c.Storage.DynamoDB.WebauthnUserTableName == "" {
+			ve("all dynamo table names must be specified")
+		}
+	default:
+		ve("unknown storage type %s", c.Storage.Type)
 	}
 
 	if len(errs) > 0 {
@@ -249,7 +283,8 @@ func (c *config) GetStorage() (Storage, error) {
 	dc := dynamodb.New(c.awsConfig, awsCfg)
 
 	return &DynamoStore{
-		client:           dc,
-		sessionTableName: c.Storage.DynamoDB.SessionTableName,
+		client:                dc,
+		sessionTableName:      c.Storage.DynamoDB.SessionTableName,
+		webauthnUserTableName: c.Storage.DynamoDB.WebauthnUserTableName,
 	}, nil
 }

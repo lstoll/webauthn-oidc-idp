@@ -29,6 +29,7 @@ import (
 	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
+	oidcm "github.com/pardot/oidc/middleware"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/hkdf"
 )
@@ -135,8 +136,6 @@ func main() {
 	}
 	csrfh := csrf.Protect(csrfKey)
 
-	provider := cfg.Providers[0]
-
 	jwts, jwtks, err := cfg.OIDCJWTSigner(ctx)
 	if err != nil {
 		sugar.Fatalf("getting OIDC JWT signer: %v", err)
@@ -147,9 +146,12 @@ func main() {
 		sugar.Fatalf("getting storage: %v", err)
 	}
 
-	clients, err := cfg.Clients()
+	cfgClients, err := cfg.Clients()
 	if err != nil {
 		sugar.Fatalf("getting clients: %v", err)
+	}
+	clients := &multiClients{
+		sources: []core.ClientSource{cfgClients},
 	}
 
 	ucp, err := cfg.UpstreamClaimsPolicy()
@@ -177,13 +179,10 @@ func main() {
 		log.Fatalf("Failed to create OIDC server instance: %v", err)
 	}
 
-	oidccli, err := oidc.DiscoverClient(ctx,
-		provider.OIDC.Issuer, provider.OIDC.ClientID, provider.OIDC.ClientSecret, cfg.Issuer+"/provider/"+provider.ID+"/callback",
-		oidc.WithAdditionalScopes([]string{"profile", "email"}),
-	)
-	if err != nil {
-		log.Fatalf("oidc discovery on %s: %v", provider.OIDC.Issuer, err)
-	}
+	mux := http.NewServeMux()
+
+	mux.Handle("/keys", keysh)
+	mux.Handle("/.well-known/openid-configuration", discoh)
 
 	heh := &httpErrHandler{}
 
@@ -193,29 +192,77 @@ func main() {
 		eh:      heh,
 	}
 
-	svr := oidcServer{
-		issuer:  cfg.Issuer,
-		oidcsvr: oidcsvr,
-		providers: map[string]Provider{
-			provider.ID: &OIDCProvider{
-				name:    provider.Name,
+	providers := map[string]Provider{}
+
+	for _, p := range cfg.Providers {
+		switch p.Type {
+		case "oidc":
+			oidccli, err := oidc.DiscoverClient(ctx,
+				p.OIDC.Issuer, p.OIDC.ClientID, p.OIDC.ClientSecret, cfg.Issuer+"/provider/"+p.ID+"/callback",
+				oidc.WithAdditionalScopes([]string{"profile", "email"}),
+			)
+			if err != nil {
+				log.Fatalf("oidc discovery on %s: %v", p.OIDC.Issuer, err)
+			}
+			providers[p.ID] = &OIDCProvider{
+				name:    p.Name,
 				oidccli: oidccli,
 				asm:     asm,
 				up:      cfg,
 				eh:      heh,
-			},
-		},
+			}
+		case "webauthn":
+			// TODO - configure a provider when we have one. And when we decide
+			// if the manager is one, or if it's independent.
+			prefix := "/webauthn"
+			mgr := &webauthnManager{
+				logger:     sugar.With("component", "webauthnManager"),
+				store:      st,
+				httpPrefix: prefix,
+				oidcMiddleware: &oidcm.Handler{
+					Issuer:                   cfg.Issuer,
+					ClientID:                 p.Webauthn.ClientID,
+					ClientSecret:             p.Webauthn.ClientSecret,
+					BaseURL:                  cfg.Issuer + prefix,
+					RedirectURL:              cfg.Issuer + prefix + "/oidc-callback",
+					SessionAuthenticationKey: scHashKey,
+					SessionEncryptionKey:     scEncryptKey,
+					SessionName:              "webauthn-manager",
+				},
+				admins: []string{}, // TODO - google account id
+				acrs:   nil,
+			}
+
+			clients.sources = append([]core.ClientSource{
+				&staticClients{
+					clients: []Client{
+						{
+							ClientID:      mgr.oidcMiddleware.ClientID,
+							ClientSecrets: []string{mgr.oidcMiddleware.ClientSecret},
+							RedirectURLs:  []string{mgr.oidcMiddleware.RedirectURL},
+						},
+					},
+				},
+			}, clients.sources...)
+
+			mux.HandleFunc(mgr.httpPrefix, func(w http.ResponseWriter, r *http.Request) {
+				log.Printf("called")
+				http.Redirect(w, r, mgr.httpPrefix+"/", http.StatusMovedPermanently)
+			})
+			mux.Handle(mgr.httpPrefix+"/", http.StripPrefix(mgr.httpPrefix, mgr))
+		}
+	}
+
+	svr := oidcServer{
+		issuer:          cfg.Issuer,
+		oidcsvr:         oidcsvr,
+		providers:       providers,
 		asm:             asm,
 		eh:              heh,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
 		upstreamPolicy:  []byte(ucp),
 	}
-
-	mux := http.NewServeMux()
-
-	mux.Handle("/keys", keysh)
-	mux.Handle("/.well-known/openid-configuration", discoh)
 
 	svr.AddHandlers(mux)
 

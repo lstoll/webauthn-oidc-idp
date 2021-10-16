@@ -41,6 +41,14 @@ providers:
       issuer: https://accounts.google.com
       clientID: 55784286321-4a0avr7hife7i75lak5absu0h6a7m1cj.apps.googleusercontent.com
       clientSecret: ${GOOGLE_CLIENT_SECRET}
+  - id: webauthn
+    name: Webauthn
+    type: webauthn
+    webauthn:
+      clientID: webauthn-manager
+      clientSecret: xxxxxxxxsecretxxxxxxxx
+      adminSubjects:
+        - "111226499373151800499" # google account number, for bootstrap
 clientSources:
   - id: file
     type: file
@@ -50,6 +58,7 @@ storage:
   type: dynamodb
   dynamodb:
     sessionTableName: sessions
+    webauthnUserTableName: webauthn_users
 aws:
   dynamoEndpoint: http://localhost:8027
   s3Endpoint: http://localhost:8028

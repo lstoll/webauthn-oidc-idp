@@ -27,6 +27,7 @@ create-dynamo-tables: export AWS_SECRET_ACCESS_KEY = defaultsecret
 create-dynamo-tables:
 	aws dynamodb --endpoint-url http://localhost:8027 create-table --billing-mode PAY_PER_REQUEST --table-name sessions --attribute-definitions AttributeName=session_id,AttributeType=S --key-schema AttributeName=session_id,KeyType=HASH
 	aws dynamodb --endpoint-url http://localhost:8027 update-time-to-live --table-name sessions --time-to-live-specification "Enabled=true, AttributeName=expires_at"
+	aws dynamodb --endpoint-url http://localhost:8027 create-table --billing-mode PAY_PER_REQUEST --table-name webauthn_users --attribute-definitions AttributeName=id,AttributeType=S --key-schema AttributeName=id,KeyType=HASH
 
 .PHONY: miniosync
 miniosync: export AWS_REGION = us-east-1
