@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/csrf"
 	oidcm "github.com/pardot/oidc/middleware"
-	"go.uber.org/zap"
 )
 
 const (
@@ -40,7 +40,6 @@ type WebauthnUserStore interface {
 }
 
 type webauthnManager struct {
-	logger   *zap.SugaredLogger
 	store    WebauthnUserStore
 	webauthn *webauthn.WebAuthn
 
@@ -92,11 +91,11 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 		switch req.Form.Get("action") {
 		case "delete":
 			if err := w.deleteKey(req.Context(), u, req.Form); err != nil {
-				w.httpErr(rw, err)
+				w.httpErr(req.Context(), rw, err)
 				return
 			}
 		default:
-			w.httpErr(rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
+			w.httpErr(req.Context(), rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
 			return
 		}
 		// TODO - we need to track this some other way, in case form doesn't include it?
@@ -157,16 +156,16 @@ func (w *webauthnManager) users(rw http.ResponseWriter, req *http.Request) {
 		switch req.Form.Get("action") {
 		case "create":
 			if err := w.addUser(req.Context(), req.Form); err != nil {
-				w.httpErr(rw, err)
+				w.httpErr(req.Context(), rw, err)
 				return
 			}
 		case "delete":
 			if err := w.deleteUser(req.Context(), req.Form); err != nil {
-				w.httpErr(rw, err)
+				w.httpErr(req.Context(), rw, err)
 				return
 			}
 		default:
-			w.httpErr(rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
+			w.httpErr(req.Context(), rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
 			return
 		}
 		http.Redirect(rw, req, w.pathFor(req.URL.Path), http.StatusSeeOther)
@@ -175,7 +174,7 @@ func (w *webauthnManager) users(rw http.ResponseWriter, req *http.Request) {
 
 	users, err := w.store.ListUsers(req.Context())
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 
@@ -216,31 +215,31 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 
 	keyName := req.URL.Query().Get("key_name")
 	if keyName == "" {
-		w.httpErr(rw, fmt.Errorf("key name required"))
+		w.httpErr(req.Context(), rw, fmt.Errorf("key name required"))
 		return
 	}
 
 	options, sessionData, err := w.webauthn.BeginRegistration(u)
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 	ss := sessionStoreFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnmgrSessionName)
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 
 	sess.Values["keyname"] = keyName
 	sess.Values["registration"] = *sessionData
 	if err := ss.Save(req, rw, sess); err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 
 	if err := json.NewEncoder(rw).Encode(options); err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 }
@@ -254,37 +253,37 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 	ss := sessionStoreFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnmgrSessionName)
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 	sessionData, ok := sess.Values["registration"].(webauthn.SessionData)
 	if !ok {
-		w.httpErr(rw, fmt.Errorf("session data not in session"))
+		w.httpErr(req.Context(), rw, fmt.Errorf("session data not in session"))
 		return
 	}
 	delete(sess.Values, "registration")
 	keyName := sess.Values["keyname"].(string)
 	delete(sess.Values, "keyname")
 	if err := ss.Save(req, rw, sess); err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 
 	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(req.Body)
 	if err != nil {
-		w.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("parsing credential creation response: %v", err))
 		return
 	}
 	credential, err := w.webauthn.CreateCredential(u, sessionData, parsedResponse)
 	if err != nil {
-		w.httpErr(rw, fmt.Errorf("creating credential: %v", err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("creating credential: %v", err))
 		return
 	}
 
 	u.AddWebauthnCredential(keyName, credential)
 
 	if _, err := w.store.PutUser(req.Context(), u); err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return
 	}
 
@@ -313,7 +312,7 @@ func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) 
 
 	u, ok, err := w.store.GetUserByID(req.Context(), uid)
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(req.Context(), rw, err)
 		return true, overriden, nil
 	}
 	if !ok {
@@ -328,8 +327,15 @@ func (w *webauthnManager) pathFor(path string) string {
 	return w.httpPrefix + path
 }
 
-func (w *webauthnManager) httpErr(rw http.ResponseWriter, err error) {
-	w.logger.Error(err)
+func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
+	l := loggerFromContext(ctx)
+	var pErr *protocol.Error
+	if errors.As(err, &pErr) {
+		if pErr.Details != "" {
+			l = l.With("webauthnDetails", pErr.Details)
+		}
+	}
+	l.Error(err)
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
 }
 
@@ -361,15 +367,15 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 
 	lt, err := template.New("").Funcs(funcs).ParseFS(webauthnTemplateData, "web/templates/webauthn/layout.tmpl.html")
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(r.Context(), rw, err)
 	}
 	t, err := lt.ParseFS(webauthnTemplateData, "web/templates/webauthn/"+templateName)
 	if err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(r.Context(), rw, err)
 		return
 	}
 	if err := t.ExecuteTemplate(rw, templateName, data); err != nil {
-		w.httpErr(rw, err)
+		w.httpErr(r.Context(), rw, err)
 		return
 	}
 }

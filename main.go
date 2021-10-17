@@ -251,7 +251,6 @@ func main() {
 
 			prefix := "/webauthn"
 			mgr := &webauthnManager{
-				logger:     sugar.With("component", "webauthnManager"),
 				store:      st,
 				webauthn:   wn,
 				httpPrefix: prefix,
