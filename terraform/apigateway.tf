@@ -65,6 +65,11 @@ resource "aws_lambda_permission" "api_gw" {
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "${aws_apigatewayv2_api.idp.execution_arn}/*/*"
+
+  # re-creating the lambda should trigger this too
+  depends_on = [
+    aws_lambda_function.idp,
+  ]
 }
 
 /**********
