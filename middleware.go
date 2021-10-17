@@ -25,7 +25,11 @@ func baseMiddleware(wrapped http.Handler,
 
 		st := time.Now()
 
-		rid := uuid.New()
+		// TODO - determine if we're in a place to trust this
+		rid := r.Header.Get("X-Request-Id") // lambda
+		if rid == "" {
+			rid = uuid.NewString()
+		}
 		ctx = context.WithValue(ctx, requestIDCtxKey{}, rid)
 
 		sl := logger.With("request_id", rid)
