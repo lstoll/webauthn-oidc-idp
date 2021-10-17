@@ -38,6 +38,7 @@ resource "aws_lambda_function" "idp" {
       KMS_OIDC_KEY_ARN         = local.lambda_signer_arn
       SESSION_TABLE_NAME       = aws_dynamodb_table.sessions.name
       WEBAUTHN_USER_TABLE_NAME = aws_dynamodb_table.webauthn_users.name
+      SECURE_PASSPHRASE        = random_password.secure_passphrase.result
     }
   }
 
@@ -204,4 +205,10 @@ resource "aws_dynamodb_table" "webauthn_users" {
   tags = merge({
     Name = "${var.name} Webauthn Users Table"
   }, var.tags)
+}
+
+# would be ideal to have KMS wrap something or the like, but for now this is probably fine
+resource "random_password" "secure_passphrase" {
+  length  = 64
+  special = false
 }
