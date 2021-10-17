@@ -27,6 +27,7 @@ import (
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/csrf"
+	"github.com/gorilla/sessions"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
@@ -251,14 +252,14 @@ func main() {
 				httpPrefix: prefix,
 				// TODO - this needs a prefix
 				oidcMiddleware: &oidcm.Handler{
-					Issuer:                   cfg.Issuer,
-					ClientID:                 p.Webauthn.ClientID,
-					ClientSecret:             p.Webauthn.ClientSecret,
-					BaseURL:                  cfg.Issuer + prefix,
-					RedirectURL:              cfg.Issuer + prefix + "/oidc-callback",
-					SessionAuthenticationKey: scHashKey,
-					SessionEncryptionKey:     scEncryptKey,
-					SessionName:              "webauthn-manager",
+					Issuer:       cfg.Issuer,
+					ClientID:     p.Webauthn.ClientID,
+					ClientSecret: p.Webauthn.ClientSecret,
+					BaseURL:      cfg.Issuer + prefix,
+					Prefix:       prefix,
+					RedirectURL:  cfg.Issuer + prefix + "/oidc-callback",
+					SessionStore: sessions.NewCookieStore(scHashKey, scEncryptKey),
+					SessionName:  "webauthn-manager",
 				},
 				csrfMiddleware: csrfh,
 				admins:         p.Webauthn.AdminSubjects, // TODO - google account id

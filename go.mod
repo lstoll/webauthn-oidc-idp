@@ -2,6 +2,8 @@ module github.com/lstoll/idp
 
 go 1.17
 
+replace github.com/pardot/oidc => github.com/lstoll/oidc v0.0.0-20211017044517-5317de4b6c01
+
 require (
 	github.com/apex/gateway v1.1.1
 	github.com/aws/aws-lambda-go v1.13.3 // indirect
