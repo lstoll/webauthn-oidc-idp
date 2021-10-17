@@ -111,13 +111,13 @@ resource "aws_apigatewayv2_route" "token" {
 resource "aws_apigatewayv2_route" "webauthn" {
   api_id = aws_apigatewayv2_api.idp.id
 
-  route_key = "POST /webauthn/{proxy+}"
+  route_key = "ANY /webauthn/{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
 }
 
 resource "aws_apigatewayv2_route" "providers" {
   api_id = aws_apigatewayv2_api.idp.id
 
-  route_key = "POST /provider/{proxy+}"
+  route_key = "ANY /provider/{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
 }
