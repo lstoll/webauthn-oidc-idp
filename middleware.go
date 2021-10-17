@@ -101,12 +101,11 @@ func (w *wrapResponseWriter) WriteHeader(code int) {
 }
 
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
+	if w.Header().Get("content-type") == "" {
+		w.Header().Set("content-type", http.DetectContentType(b))
+	}
 	if w.st == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
-	if w.Header().Get("content-type") != "" {
-		return w.ResponseWriter.Write(b)
-	}
-	w.Header().Set("content-type", http.DetectContentType(b))
 	return w.ResponseWriter.Write(b)
 }
