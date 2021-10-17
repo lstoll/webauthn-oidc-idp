@@ -18,10 +18,16 @@ const (
 	upstreamAllowQuery = "data.upstream.allow"
 )
 
+type serverProvider struct {
+	// ID for this instance of the provider
+	ID       string
+	Provider Provider
+}
+
 type oidcServer struct {
 	issuer          string
 	oidcsvr         *core.OIDC
-	providers       map[string]Provider
+	providers       []serverProvider
 	asm             AuthSessionManager
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
@@ -50,7 +56,7 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
   <body>`))
 
 	for id, p := range s.providers {
-		panel, err := p.LoginPanel(req, ar)
+		panel, err := p.Provider.LoginPanel(req, ar)
 		if err != nil {
 			s.eh.Error(w, req, err)
 			return

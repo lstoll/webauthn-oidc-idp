@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -67,6 +68,34 @@ func (d *DynamoWebauthnUser) WebAuthnCredentials() []webauthn.Credential {
 	return ret
 }
 
+func (d *DynamoWebauthnUser) AddWebauthnCredential(name string, c *webauthn.Credential) {
+	d.Credentials = append(d.Credentials, DynamoWebauthnCredential{
+		Name:            name,
+		ID:              c.ID,
+		PublicKey:       c.PublicKey,
+		AttestationType: c.AttestationType,
+		Authenticator:   DynamoWebauthnAuthenticator(c.Authenticator),
+	})
+}
+
+func (d *DynamoWebauthnUser) UpdateWebauthnCredential(c *webauthn.Credential) {
+	for _, sc := range d.Credentials {
+		if !bytes.Equal(c.ID, sc.ID) {
+			sc.Authenticator = DynamoWebauthnAuthenticator(c.Authenticator)
+		}
+	}
+}
+
+func (d *DynamoWebauthnUser) DeleteWebauthnCredential(id []byte) {
+	sc := []DynamoWebauthnCredential{}
+	for _, c := range d.Credentials {
+		if !bytes.Equal(c.ID, id) {
+			sc = append(sc, c)
+		}
+	}
+	d.Credentials = sc
+}
+
 // DynamoWebauthnCredential is a local version of webauthn.Credential, that we
 // can tag for dynamo insertion
 type DynamoWebauthnCredential struct {
@@ -81,6 +110,9 @@ type DynamoWebauthnCredential struct {
 	AttestationType string `dynamodbav:"attestation_type"`
 	// The Authenticator information for a given certificate
 	Authenticator DynamoWebauthnAuthenticator `dynamodbav:"authenticator"`
+	/* end required duo/webauthn fields */
+	// Name is a friendly way to refer to this credential in the UI
+	Name string
 }
 
 // DynamoWebauthnAuthenticator is a localversion of webauthn.Authenticator, that

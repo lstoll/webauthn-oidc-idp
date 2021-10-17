@@ -3,16 +3,30 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/base64"
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/duo-labs/webauthn/protocol"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/csrf"
 	oidcm "github.com/pardot/oidc/middleware"
 	"go.uber.org/zap"
 )
+
+const (
+	webauthnmgrSessionName = "wamgr"
+)
+
+var _ = func() struct{} {
+	gob.Register(webauthn.SessionData{})
+	return struct{}{}
+}()
 
 //go:embed web/templates/webauthn/*
 var webauthnTemplateData embed.FS
@@ -26,8 +40,9 @@ type WebauthnUserStore interface {
 }
 
 type webauthnManager struct {
-	logger *zap.SugaredLogger
-	store  WebauthnUserStore
+	logger   *zap.SugaredLogger
+	store    WebauthnUserStore
+	webauthn *webauthn.WebAuthn
 
 	// httpPrefix is the prefix which the service is mounted under, so we can
 	// add this to path references we generate
@@ -50,12 +65,12 @@ type webauthnManager struct {
 }
 
 func (w *webauthnManager) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	w.logger.Debug("serve http called")
 	w.initHandler.Do(func() {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", w.listKeys)
+		mux.Handle("/", w.csrfMiddleware(http.HandlerFunc(w.listKeys)))
 		mux.Handle("/users", w.csrfMiddleware(http.HandlerFunc(w.users)))
-
+		mux.HandleFunc("/registration/begin", w.beginRegistration)
+		mux.HandleFunc("/registration/finish", w.finishRegistration)
 		w.handler = w.oidcMiddleware.Wrap(mux)
 	})
 	w.handler.ServeHTTP(rw, req)
@@ -63,32 +78,63 @@ func (w *webauthnManager) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 // listKeys is the "index" page for a users credentials. It can be used to add,
 func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodGet {
+	if req.Method != http.MethodGet && req.Method != http.MethodPost {
 		http.Error(rw, "Invalid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	claims := oidcm.ClaimsFromContext(req.Context())
-	if claims == nil {
-		w.httpUnauth(rw, "")
-		return
-	}
-	uid := claims.Subject
-	if req.URL.Query().Get("override_uid") != "" && w.isAdmin(claims.Subject) {
-		// impersonation path = we allow user to override the user ID to perform
-		// actions as the targeted user
-		uid = req.URL.Query().Get("override_uid")
-	}
-	u, ok, err := w.store.GetUserByID(req.Context(), uid)
-	if err != nil {
-		w.httpErr(rw, err)
-		return
-	}
-	if !ok {
-		w.httpNotFound(rw)
-		return
-	}
-	_ = u
 
+	responded, overriden, u := w.userForReq(rw, req)
+	if responded {
+		return
+	}
+
+	if req.Method == http.MethodPost {
+		switch req.Form.Get("action") {
+		case "delete":
+			if err := w.deleteKey(req.Context(), u, req.Form); err != nil {
+				w.httpErr(rw, err)
+				return
+			}
+		default:
+			w.httpErr(rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
+			return
+		}
+		// TODO - we need to track this some other way, in case form doesn't include it?
+		http.Redirect(rw, req, w.pathFor(req.URL.Path)+"?"+req.URL.Query().Encode(), http.StatusSeeOther)
+		return
+	}
+
+	// need to propogate this to the JS callbacks. TODO - This is janky,
+	// consider putting it in the session or something
+	waq := ""
+	if overriden {
+		waq = fmt.Sprintf("override_uid=" + u.ID)
+	}
+
+	w.execTemplate(rw, req, "list_keys.tmpl.html", map[string]interface{}{
+		"User":          u,
+		"WebauthnQuery": waq,
+	})
+}
+
+func (w *webauthnManager) deleteKey(ctx context.Context, u *DynamoWebauthnUser, form url.Values) error {
+	id := form.Get("keyID")
+	if id == "" {
+		// TODO - more elegant
+		return fmt.Errorf("keyID not provided")
+	}
+	k, err := base64.StdEncoding.DecodeString(id)
+	if err != nil {
+		return fmt.Errorf("decoding key: %v", err)
+	}
+
+	u.DeleteWebauthnCredential(k)
+
+	if _, err := w.store.PutUser(ctx, u); err != nil {
+		return fmt.Errorf("putting user: %v", err)
+	}
+
+	return w.store.DeleteUser(ctx, id)
 }
 
 // users is an admin that lists users, allowing for them to be added, deleted etc.
@@ -162,6 +208,122 @@ func (w *webauthnManager) deleteUser(ctx context.Context, form url.Values) error
 	return w.store.DeleteUser(ctx, id)
 }
 
+func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
+	responded, _, u := w.userForReq(rw, req)
+	if responded {
+		return
+	}
+
+	keyName := req.URL.Query().Get("key_name")
+	if keyName == "" {
+		w.httpErr(rw, fmt.Errorf("key name required"))
+		return
+	}
+
+	options, sessionData, err := w.webauthn.BeginRegistration(u)
+	if err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+	ss := sessionStoreFromContext(req.Context())
+	sess, err := ss.Get(req, webauthnmgrSessionName)
+	if err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+
+	sess.Values["keyname"] = keyName
+	sess.Values["registration"] = *sessionData
+	if err := ss.Save(req, rw, sess); err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+
+	if err := json.NewEncoder(rw).Encode(options); err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+}
+
+func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
+	responded, _, u := w.userForReq(rw, req)
+	if responded {
+		return
+	}
+
+	ss := sessionStoreFromContext(req.Context())
+	sess, err := ss.Get(req, webauthnmgrSessionName)
+	if err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+	sessionData, ok := sess.Values["registration"].(webauthn.SessionData)
+	if !ok {
+		w.httpErr(rw, fmt.Errorf("session data not in session"))
+		return
+	}
+	delete(sess.Values, "registration")
+	keyName := sess.Values["keyname"].(string)
+	delete(sess.Values, "keyname")
+	if err := ss.Save(req, rw, sess); err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+
+	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(req.Body)
+	if err != nil {
+		w.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
+		return
+	}
+	credential, err := w.webauthn.CreateCredential(u, sessionData, parsedResponse)
+	if err != nil {
+		w.httpErr(rw, fmt.Errorf("creating credential: %v", err))
+		return
+	}
+
+	u.AddWebauthnCredential(keyName, credential)
+
+	if _, err := w.store.PutUser(req.Context(), u); err != nil {
+		w.httpErr(rw, err)
+		return
+	}
+
+	// OK
+}
+
+// userForReq gets the user for a given request, accounting for the override_uid
+// / admin params. it will handle reponse to user, indicating if it does via the
+// return. If it has, the caller should simply return
+func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overriden bool, u *DynamoWebauthnUser) {
+	overriden = false
+
+	claims := oidcm.ClaimsFromContext(req.Context())
+	if claims == nil {
+		w.httpUnauth(rw, "")
+		return true, overriden, nil
+	}
+
+	uid := claims.Subject
+	if req.URL.Query().Get("override_uid") != "" && w.isAdmin(claims.Subject) {
+		// impersonation path = we allow user to override the user ID to perform
+		// actions as the targeted user
+		uid = req.URL.Query().Get("override_uid")
+		overriden = true
+	}
+
+	u, ok, err := w.store.GetUserByID(req.Context(), uid)
+	if err != nil {
+		w.httpErr(rw, err)
+		return true, overriden, nil
+	}
+	if !ok {
+		w.httpNotFound(rw)
+		return true, overriden, nil
+	}
+
+	return false, overriden, u
+}
+
 func (w *webauthnManager) pathFor(path string) string {
 	return w.httpPrefix + path
 }
@@ -194,6 +356,7 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		csrf.TemplateTag: func() template.HTML {
 			return csrf.TemplateField(r)
 		},
+		"b64": base64.StdEncoding.EncodeToString,
 	}
 
 	lt, err := template.New("").Funcs(funcs).ParseFS(webauthnTemplateData, "web/templates/webauthn/layout.tmpl.html")

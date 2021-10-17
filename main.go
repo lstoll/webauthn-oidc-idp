@@ -24,6 +24,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/duo-labs/webauthn/protocol"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/csrf"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc"
@@ -192,7 +194,7 @@ func main() {
 		eh:      heh,
 	}
 
-	providers := map[string]Provider{}
+	providers := []serverProvider{}
 
 	for _, p := range cfg.Providers {
 		switch p.Type {
@@ -204,20 +206,48 @@ func main() {
 			if err != nil {
 				log.Fatalf("oidc discovery on %s: %v", p.OIDC.Issuer, err)
 			}
-			providers[p.ID] = &OIDCProvider{
-				name:    p.Name,
-				oidccli: oidccli,
-				asm:     asm,
-				up:      cfg,
-				eh:      heh,
-			}
+			providers = append(providers, serverProvider{
+				ID: p.ID,
+				Provider: &OIDCProvider{
+					name:    p.Name,
+					oidccli: oidccli,
+					asm:     asm,
+					up:      cfg,
+					eh:      heh,
+				}})
 		case "webauthn":
 			// TODO - configure a provider when we have one. And when we decide
 			// if the manager is one, or if it's independent.
+
+			issParsed, err := url.Parse(cfg.Issuer)
+			if err != nil {
+				sugar.Fatalf("parsing %s: %v", cfg.Issuer, err)
+			}
+			issHost, _, err := net.SplitHostPort(issParsed.Host)
+			if err != nil {
+				sugar.Fatalf("split %s: $v", issParsed.Host, err)
+			}
+			// TODO - usernameless via resident keys would be nice, but need to
+			// see what support is like.
+			rrk := false
+			wn, err := webauthn.New(&webauthn.Config{
+				RPDisplayName: issHost,    // Display Name for your site
+				RPID:          issHost,    // Generally the FQDN for your site
+				RPOrigin:      cfg.Issuer, // The origin URL for WebAuthn requests
+				AuthenticatorSelection: protocol.AuthenticatorSelection{
+					UserVerification:   protocol.VerificationRequired,
+					RequireResidentKey: &rrk,
+				},
+			})
+			if err != nil {
+				sugar.Fatalf("configuring webauthn: %v", err)
+			}
+
 			prefix := "/webauthn"
 			mgr := &webauthnManager{
 				logger:     sugar.With("component", "webauthnManager"),
 				store:      st,
+				webauthn:   wn,
 				httpPrefix: prefix,
 				// TODO - this needs a prefix
 				oidcMiddleware: &oidcm.Handler{
@@ -252,6 +282,17 @@ func main() {
 				http.Redirect(w, r, mgr.httpPrefix+"/", http.StatusMovedPermanently)
 			})
 			mux.Handle(mgr.httpPrefix+"/", http.StripPrefix(mgr.httpPrefix, mgr))
+
+			providers = append(providers, serverProvider{
+				ID: p.ID,
+				Provider: &webauthnProvider{
+					logger:     sugar,
+					name:       p.Name,
+					store:      st,
+					asm:        asm,
+					webauthn:   wn,
+					httpPrefix: "/provider/" + p.ID,
+				}})
 		}
 	}
 
@@ -268,10 +309,10 @@ func main() {
 
 	svr.AddHandlers(mux)
 
-	for id, p := range svr.providers {
-		h, ok := p.(http.Handler)
+	for _, p := range svr.providers {
+		h, ok := p.Provider.(http.Handler)
 		if ok {
-			p := "/provider/" + id
+			p := "/provider/" + p.ID
 			mux.Handle(p, http.StripPrefix(p, h))
 			mux.Handle(p+"/", http.StripPrefix(p, h))
 		}
