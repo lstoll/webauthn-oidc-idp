@@ -60,6 +60,7 @@ type flags struct {
 	s3ConfigForcePathStyle bool
 	kmsOIDCArn             string
 	sessionTableName       string
+	webauthnUserTableName  string
 	securePassphrase       string
 }
 
@@ -79,6 +80,7 @@ func main() {
 	flag.BoolVar(&flgs.s3ConfigForcePathStyle, "s3-config-force-path-style", getEnvOrDefaultBool("S3_FORCE_CONFIG_PATH_STYLE", false), "When loading config from S3, the force path style. Other S3 usage configured via config file")
 	flag.StringVar(&flgs.kmsOIDCArn, "oidc-jwt-kms-arn", os.Getenv("KMS_OIDC_KEY_ARN"), "ARN to the KMS key to use for signing")
 	flag.StringVar(&flgs.sessionTableName, "dynamo-session-table-name", os.Getenv("SESSION_TABLE_NAME"), "Name of the DynamoDB table to track sessions in")
+	flag.StringVar(&flgs.webauthnUserTableName, "dynamo-webauthn-user-table-name", os.Getenv("WEBAUTHN_USER_TABLE_NAME"), "Name of the DynamoDB table to track sessions in")
 
 	flag.StringVar(&flgs.securePassphrase, "secure-passphrase", os.Getenv("SECURE_PASSPHRASE"), "Passphrase used to secure sessions/csrf")
 

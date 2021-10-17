@@ -37,6 +37,7 @@ resource "aws_lambda_function" "idp" {
       CONFIG             = "s3://${aws_s3_bucket.state_bucket.bucket}/${local.s3_config_file}"
       KMS_OIDC_KEY_ARN   = local.lambda_signer_arn
       SESSION_TABLE_NAME = aws_dynamodb_table.sessions.name
+      WEBAUTHN_USER_TABLE_NAME = aws_dynamodb_table.webauthn_users.name
     }
   }
 
@@ -127,6 +128,23 @@ resource "aws_iam_policy" "idp" {
         "Effect" : "Allow",
         "Resource" : "${aws_dynamodb_table.sessions.arn}",
       },
+      {
+        "Action" : [
+          "dynamodb:BatchGet*",
+          "dynamodb:DescribeStream",
+          "dynamodb:DescribeTable",
+          "dynamodb:Get*",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:BatchWrite*",
+          "dynamodb:CreateTable",
+          "dynamodb:Delete*",
+          "dynamodb:Update*",
+          "dynamodb:PutItem",
+        ],
+        "Effect" : "Allow",
+        "Resource" : "${aws_dynamodb_table.webauthn_users.arn}",
+      },
     ]
   })
 }
@@ -169,5 +187,21 @@ resource "aws_dynamodb_table" "sessions" {
 
   tags = merge({
     Name = "${var.name} Sessions Table"
+  }, var.tags)
+}
+
+resource "aws_dynamodb_table" "webauthn_users" {
+  name         = "${var.name}-webauthn-users"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = merge({
+    Name = "${var.name} Webauthn Users Table"
   }, var.tags)
 }

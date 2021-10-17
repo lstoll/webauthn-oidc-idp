@@ -130,6 +130,10 @@ func (c *config) OverrideFromFlags(f flags) {
 		c.Storage.Type = "dynamodb"
 		c.Storage.DynamoDB.SessionTableName = f.sessionTableName
 	}
+	if f.webauthnUserTableName != "" {
+		c.Storage.Type = "dynamodb"
+		c.Storage.DynamoDB.WebauthnUserTableName = f.webauthnUserTableName
+	}
 }
 
 func (c *config) Validate() error {
