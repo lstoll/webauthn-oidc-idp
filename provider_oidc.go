@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	_ Provider       = (*OIDCProvider)(nil)
+	_ embedProvider  = (*OIDCProvider)(nil)
 	_ http.Handler   = (*OIDCProvider)(nil)
 	_ UpstreamPolicy = (*config)(nil)
 )

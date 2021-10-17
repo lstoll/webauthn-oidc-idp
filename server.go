@@ -18,16 +18,10 @@ const (
 	upstreamAllowQuery = "data.upstream.allow"
 )
 
-type serverProvider struct {
-	// ID for this instance of the provider
-	ID       string
-	Provider Provider
-}
-
 type oidcServer struct {
 	issuer          string
 	oidcsvr         *core.OIDC
-	providers       []serverProvider
+	providers       []Provider
 	asm             AuthSessionManager
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
@@ -55,13 +49,13 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
   </head>
   <body>`))
 
-	for id, p := range s.providers {
-		panel, err := p.Provider.LoginPanel(req, ar)
+	for _, p := range s.selectProviders(ar.ACRValues) {
+		panel, err := p.LoginPanel(req, ar)
 		if err != nil {
 			s.eh.Error(w, req, err)
 			return
 		}
-		fmt.Fprintf(w, `<div id="%s-panel">`, id)
+		fmt.Fprintf(w, `<div id="%s-panel">`, p.ID)
 		w.Write([]byte(panel))
 		w.Write([]byte(`</div>`))
 	}
@@ -104,10 +98,32 @@ func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/token", s.token)
 }
 
+// selectProviders filters the list down for a given ACR. if we don't have a
+// match, return them all. this doesn't enforce the ACR, the consumer or later
+// policy should set this
+func (s *oidcServer) selectProviders(requestedACRs []string) []Provider {
+	if len(requestedACRs) == 0 {
+		return s.providers
+	}
+	ret := []Provider{}
+	for _, p := range s.providers {
+		for _, a := range requestedACRs {
+			if p.ACR() == a {
+				ret = append(ret, p)
+			}
+		}
+	}
+	if len(ret) > 0 {
+		return ret
+	}
+	return s.providers
+}
+
 type authSessionManager struct {
-	storage Storage
-	oidcsvr *core.OIDC
-	eh      *httpErrHandler
+	provider Provider
+	storage  Storage
+	oidcsvr  *core.OIDC
+	eh       *httpErrHandler
 }
 
 func (a *authSessionManager) GetMetadata(ctx context.Context, sessionID string, into interface{}) (ok bool, err error) {
@@ -149,6 +165,8 @@ func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Reque
 	// the server metadata field
 	az := &core.Authorization{
 		Scopes: []string{"openid"},
+		ACR:    a.provider.ACR(),
+		AMR:    []string{a.provider.AMR()},
 	}
 	a.oidcsvr.FinishAuthorization(w, req, sessionID, az)
 }

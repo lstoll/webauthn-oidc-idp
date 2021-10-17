@@ -21,8 +21,8 @@ const (
 )
 
 var (
-	_ Provider     = (*OIDCProvider)(nil)
-	_ http.Handler = (*OIDCProvider)(nil)
+	_ embedProvider = (*OIDCProvider)(nil)
+	_ http.Handler  = (*OIDCProvider)(nil)
 )
 
 type webauthnProvider struct {

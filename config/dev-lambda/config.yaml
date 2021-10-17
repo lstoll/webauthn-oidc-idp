@@ -44,6 +44,12 @@ providers:
   - id: webauthn
     name: Webauthn
     type: webauthn
+    # https://openid.net/specs/openid-connect-eap-acr-values-1_0.html#rfc.section.5.1.1
+    # when this is set, we also enforce it on webauthn logins. To bootstrap,
+    # start with nothin here. Once webauthn users are provisioned, enable it
+    # acr: http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware
+    # https://openid.net/specs/openid-connect-eap-acr-values-1_0.html#rfc.section.5.2.1
+    amr: pop
     webauthn:
       clientID: webauthn-manager
       clientSecret: xxxxxxxxsecretxxxxxxxx

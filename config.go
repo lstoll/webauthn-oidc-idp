@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -53,27 +55,7 @@ type config struct {
 	Policies *struct {
 		UpstreamClaims *string `yaml:"upstreamClaims"`
 	} `yaml:"policies"`
-	Providers []struct {
-		ID   string `yaml:"id"`
-		Type string `yaml:"type"`
-		Name string `yaml:"name"`
-		OIDC *struct {
-			Issuer       string `yaml:"issuer"`
-			ClientID     string `yaml:"clientID"`
-			ClientSecret string `yaml:"clientSecret"`
-		} `yaml:"oidc"`
-		Webauthn *struct {
-			// ClientID is a client ID for the webauthn manager to authenticate
-			// with.
-			//
-			// TODO - these are transitional, ideally we'd self-allocation these
-			ClientID     string `yaml:"clientID"`
-			ClientSecret string `yaml:"clientSecret"`
-			// AdminSubjects is a list of subjects allowed to administer the
-			// service
-			AdminSubjects []string `yaml:"adminSubjects"`
-		} `yaml:"webauthn"`
-	} `yaml:"providers"`
+	Providers     []configProvider `yaml:"providers"`
 	ClientSources []struct {
 		ID   string `yaml:"id"`
 		Type string `yaml:"type"`
@@ -287,4 +269,49 @@ func (c *config) GetStorage() (Storage, error) {
 		sessionTableName:      c.Storage.DynamoDB.SessionTableName,
 		webauthnUserTableName: c.Storage.DynamoDB.WebauthnUserTableName,
 	}, nil
+}
+
+// embedProvider is the interface we need implementations to have, configProvider satisfies the rest
+type embedProvider interface {
+	LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error)
+}
+
+type configProvider struct {
+	embedProvider
+
+	CfgID string `yaml:"id"`
+	Type  string `yaml:"type"`
+	Name  string `yaml:"name"`
+	// ACR value this provider satisfies, optional
+	CfgACR string `yaml:"acr"`
+	// AMR value for this provider, optional
+	CfgAMR string `yaml:"amr"`
+	OIDC   *struct {
+		Issuer       string `yaml:"issuer"`
+		ClientID     string `yaml:"clientID"`
+		ClientSecret string `yaml:"clientSecret"`
+	} `yaml:"oidc"`
+	Webauthn *struct {
+		// ClientID is a client ID for the webauthn manager to authenticate
+		// with.
+		//
+		// TODO - these are transitional, ideally we'd self-allocation these
+		ClientID     string `yaml:"clientID"`
+		ClientSecret string `yaml:"clientSecret"`
+		// AdminSubjects is a list of subjects allowed to administer the
+		// service
+		AdminSubjects []string `yaml:"adminSubjects"`
+	} `yaml:"webauthn"`
+}
+
+func (c *configProvider) ID() string {
+	return c.CfgID
+}
+
+func (c *configProvider) ACR() string {
+	return c.CfgACR
+}
+
+func (c *configProvider) AMR() string {
+	return c.CfgAMR
 }

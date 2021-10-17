@@ -189,33 +189,38 @@ func main() {
 
 	heh := &httpErrHandler{}
 
-	asm := &authSessionManager{
-		storage: st,
-		oidcsvr: oidcsvr,
-		eh:      heh,
-	}
+	providers := []Provider{}
 
-	providers := []serverProvider{}
-
+	// TODO - this probably belongs as a config thi
 	for _, p := range cfg.Providers {
 		switch p.Type {
 		case "oidc":
 			oidccli, err := oidc.DiscoverClient(ctx,
-				p.OIDC.Issuer, p.OIDC.ClientID, p.OIDC.ClientSecret, cfg.Issuer+"/provider/"+p.ID+"/callback",
+				p.OIDC.Issuer, p.OIDC.ClientID, p.OIDC.ClientSecret, cfg.Issuer+"/provider/"+p.ID()+"/callback",
 				oidc.WithAdditionalScopes([]string{"profile", "email"}),
 			)
 			if err != nil {
 				log.Fatalf("oidc discovery on %s: %v", p.OIDC.Issuer, err)
 			}
-			providers = append(providers, serverProvider{
-				ID: p.ID,
-				Provider: &OIDCProvider{
-					name:    p.Name,
-					oidccli: oidccli,
-					asm:     asm,
-					up:      cfg,
-					eh:      heh,
-				}})
+			asm := &authSessionManager{
+				storage: st,
+				oidcsvr: oidcsvr,
+				eh:      heh,
+			}
+			pi := &OIDCProvider{
+				name:    p.Name,
+				oidccli: oidccli,
+				asm:     asm,
+				up:      cfg,
+				eh:      heh,
+			}
+			ap := p
+			ap.embedProvider = pi
+			asm.provider = &ap // TODO - reason about this circular dependency
+			providers = append(providers, &ap)
+			p := "/provider/" + p.ID()
+			mux.Handle(p, http.StripPrefix(p, pi))
+			mux.Handle(p+"/", http.StripPrefix(p, pi))
 		case "webauthn":
 			// TODO - configure a provider when we have one. And when we decide
 			// if the manager is one, or if it's independent.
@@ -265,6 +270,9 @@ func main() {
 				admins:         p.Webauthn.AdminSubjects, // TODO - google account id
 				acrs:           nil,
 			}
+			if p.ACR() != "" {
+				mgr.oidcMiddleware.ACRValues = []string{p.ACR()}
+			}
 
 			clients.sources = append([]core.ClientSource{
 				&staticClients{
@@ -284,19 +292,35 @@ func main() {
 			})
 			mux.Handle(mgr.httpPrefix+"/", http.StripPrefix(mgr.httpPrefix, mgr))
 
-			providers = append(providers, serverProvider{
-				ID: p.ID,
-				Provider: &webauthnProvider{
-					logger:     sugar,
-					name:       p.Name,
-					store:      st,
-					asm:        asm,
-					webauthn:   wn,
-					httpPrefix: "/provider/" + p.ID,
-				}})
+			asm := &authSessionManager{
+				storage: st,
+				oidcsvr: oidcsvr,
+				eh:      heh,
+			}
+			pi := &webauthnProvider{
+				logger:     sugar,
+				name:       p.Name,
+				store:      st,
+				asm:        asm,
+				webauthn:   wn,
+				httpPrefix: "/provider/" + p.ID(),
+			}
+			ap := p
+			ap.embedProvider = pi
+			asm.provider = &ap // TODO - reason about this circular dependency
+			providers = append(providers, &ap)
+			p := "/provider/" + p.ID()
+			mux.Handle(p, http.StripPrefix(p, pi))
+			mux.Handle(p+"/", http.StripPrefix(p, pi))
 		}
 	}
 
+	// server needs one just to retrieve authentcation from the store.
+	//
+	// TODO - rethink the relationshit between asm / provider / store.
+	asm := &authSessionManager{
+		storage: st,
+	}
 	svr := oidcServer{
 		issuer:          cfg.Issuer,
 		oidcsvr:         oidcsvr,
@@ -309,15 +333,6 @@ func main() {
 	}
 
 	svr.AddHandlers(mux)
-
-	for _, p := range svr.providers {
-		h, ok := p.Provider.(http.Handler)
-		if ok {
-			p := "/provider/" + p.ID
-			mux.Handle(p, http.StripPrefix(p, h))
-			mux.Handle(p+"/", http.StripPrefix(p, h))
-		}
-	}
 
 	var g run.Group
 

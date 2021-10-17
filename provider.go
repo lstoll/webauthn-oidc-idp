@@ -55,6 +55,12 @@ type AuthSessionManager interface {
 
 // Provider is used to authenticate users.
 type Provider interface {
+	// ID returns the unique identifier for this provider instance
+	ID() string
+	// ACRValues returns the ACR value this provider satisfies
+	ACR() string
+	// AMR returns the amr for this provider
+	AMR() string
 	// LoginPanel is called to provide HTML to be rendered in to the login page
 	LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error)
 }
