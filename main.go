@@ -231,10 +231,8 @@ func main() {
 			if err != nil {
 				sugar.Fatalf("parsing %s: %v", cfg.Issuer, err)
 			}
-			issHost, _, err := net.SplitHostPort(issParsed.Host)
-			if err != nil {
-				sugar.Fatalf("split %s: $v", issParsed.Host, err)
-			}
+			sp := strings.Split(issParsed.Host, ":")
+			issHost := sp[0]
 			// TODO - usernameless via resident keys would be nice, but need to
 			// see what support is like.
 			rrk := false
