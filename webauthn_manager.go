@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"sync"
@@ -124,13 +125,13 @@ func (w *webauthnManager) deleteKey(ctx context.Context, u *DynamoWebauthnUser, 
 	}
 	k, err := base64.StdEncoding.DecodeString(id)
 	if err != nil {
-		return fmt.Errorf("decoding key: %v", err)
+		return fmt.Errorf("decoding key: %w", err)
 	}
 
 	u.DeleteWebauthnCredential(k)
 
 	if _, err := w.store.PutUser(ctx, u); err != nil {
-		return fmt.Errorf("putting user: %v", err)
+		return fmt.Errorf("putting user: %w", err)
 	}
 
 	return w.store.DeleteUser(ctx, id)
@@ -271,12 +272,12 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 
 	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(req.Body)
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("parsing credential creation response: %v", err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("parsing credential creation response: %w", err))
 		return
 	}
 	credential, err := w.webauthn.CreateCredential(u, sessionData, parsedResponse)
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("creating credential: %v", err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("creating credential: %w", err))
 		return
 	}
 
@@ -328,11 +329,12 @@ func (w *webauthnManager) pathFor(path string) string {
 }
 
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
+	log.Printf("error %#v", err)
 	l := loggerFromContext(ctx)
 	var pErr *protocol.Error
 	if errors.As(err, &pErr) {
-		if pErr.Details != "" {
-			l = l.With("webauthnDetails", pErr.Details)
+		if pErr.DevInfo != "" {
+			l = l.With("webauthnDevInfo", pErr.DevInfo)
 		}
 	}
 	l.Error(err)

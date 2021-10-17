@@ -33,7 +33,7 @@ func baseMiddleware(wrapped http.Handler,
 		ctx = context.WithValue(ctx, requestIDCtxKey{}, rid)
 
 		sl := logger.With("request_id", rid)
-		ctx = context.WithValue(ctx, loggerCtxKey{}, rid)
+		ctx = context.WithValue(ctx, loggerCtxKey{}, sl)
 
 		store := sessions.NewCookieStore(scHashKey, scEncryptKey)
 		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, store)
