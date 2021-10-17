@@ -49,7 +49,7 @@ resource "aws_apigatewayv2_integration" "idp" {
 
   integration_uri    = aws_lambda_function.idp.invoke_arn
   integration_type   = "AWS_PROXY"
-  integration_method = "ANY"
+  integration_method = "POST"
 }
 
 resource "aws_cloudwatch_log_group" "api_gw" {
