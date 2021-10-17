@@ -42,6 +42,17 @@ func baseMiddleware(wrapped http.Handler,
 
 		wrapped.ServeHTTP(ww, r.WithContext(ctx))
 
+		// in lambda mode, handlers that write no repsonse return a status code
+		// of 0 and no data which breaks things. Normal go has handlers for that:
+		// * https://github.com/golang/go/blob/b59467e0365776761c3787a4d541b5e74fe24b24/src/net/http/server.go#L1971
+		// * https://github.com/golang/gofrontend/blob/33f65dce43bd01c1fa38cd90a78c9aea6ca6dd59/libgo/go/net/http/server.go#L1603-L1624
+		// mimic the bare minimum we need here to maybe lambda happy.
+
+		if ww.st == 0 {
+			// nothing has written to it. write a status
+			ww.WriteHeader(http.StatusOK)
+		}
+
 		sl.With(
 			"method", r.Method,
 			"path", r.URL.Path,

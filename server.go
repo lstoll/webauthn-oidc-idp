@@ -55,7 +55,7 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 			s.eh.Error(w, req, err)
 			return
 		}
-		fmt.Fprintf(w, `<div id="%s-panel">`, p.ID)
+		fmt.Fprintf(w, `<div id="%s-panel">`, p.ID())
 		w.Write([]byte(panel))
 		w.Write([]byte(`</div>`))
 	}
