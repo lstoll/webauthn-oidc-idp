@@ -41,7 +41,7 @@ func baseMiddleware(wrapped http.Handler,
 		sl.With(
 			"method", r.Method,
 			"path", r.URL.Path,
-			"status", ww.Status(),
+			"status", ww.st,
 			"duration", time.Since(st),
 		).Info()
 	})
@@ -87,10 +87,6 @@ type wrapResponseWriter struct {
 	wh bool
 }
 
-func (w *wrapResponseWriter) Status() int {
-	return w.st
-}
-
 func (w *wrapResponseWriter) WriteHeader(code int) {
 	if w.wh {
 		return
@@ -101,6 +97,9 @@ func (w *wrapResponseWriter) WriteHeader(code int) {
 }
 
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
+	if w.st == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
 	if w.Header().Get("content-type") != "" {
 		return w.ResponseWriter.Write(b)
 	}
