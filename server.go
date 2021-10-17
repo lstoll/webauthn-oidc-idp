@@ -39,7 +39,6 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("content-type", "text/html; charset=utf8")
 	w.Write([]byte(`<!DOCTYPE html>
 <html lang="en">
   <head>

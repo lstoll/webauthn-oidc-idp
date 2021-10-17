@@ -77,6 +77,10 @@ func (h *httpErrHandler) Forbidden(w http.ResponseWriter, r *http.Request, messa
 	http.Error(w, message, http.StatusForbidden)
 }
 
+// wrapResponseWriter is our response writer we pass to callers. We hook in here
+// to be able to log things, and set content type to work around the lack of
+// detection on
+// lambda(https://github.com/apex/gateway/blob/46d1104cd6db3bb9e0c0dcde71ddf15db8d87cf1/response.go#L54-L56)
 type wrapResponseWriter struct {
 	http.ResponseWriter
 	st int
@@ -94,4 +98,12 @@ func (w *wrapResponseWriter) WriteHeader(code int) {
 	w.st = code
 	w.ResponseWriter.WriteHeader(code)
 	w.wh = true
+}
+
+func (w *wrapResponseWriter) Write(b []byte) (int, error) {
+	if w.Header().Get("content-type") != "" {
+		return w.ResponseWriter.Write(b)
+	}
+	w.Header().Set("content-type", http.DetectContentType(b))
+	return w.ResponseWriter.Write(b)
 }
