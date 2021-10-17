@@ -1,5 +1,6 @@
 locals {
   s3_config_prefix = "config/"
+  s3_config_file   = "${local.s3_config_prefix}config.yaml"
 }
 
 resource "aws_s3_bucket" "state_bucket" {
@@ -32,15 +33,12 @@ resource "aws_lambda_function" "idp" {
 
   environment {
     variables = {
-      LOCAL_DEVELOPMENT_MODE    = "false" # used in dev
-      BASE_URL                  = "https://${var.domain_name}"
-      KMS_OIDC_KEY_ARN          = local.lambda_signer_arn
-      CONFIG_BUCKET_NAME        = aws_s3_bucket.state_bucket.id
-      CONFIG_BUCKET_PREFIX      = local.s3_config_prefix
-      SESSION_TABLE_NAME        = aws_dynamodb_table.sessions.name
-      GOOGLE_OIDC_ISSUER        = var.google_oidc_issuer
-      GOOGLE_OIDC_CLIENT_ID     = var.google_oidc_client_id
-      GOOGLE_OIDC_CLIENT_SECRET = var.google_oidc_client_secret
+      LISTEN_MODE              = "lambda"
+      CONFIG                   = "s3://${aws_s3_bucket.state_bucket.bucket}/${local.s3_config_file}"
+      KMS_OIDC_KEY_ARN         = local.lambda_signer_arn
+      SESSION_TABLE_NAME       = aws_dynamodb_table.sessions.name
+      WEBAUTHN_USER_TABLE_NAME = aws_dynamodb_table.webauthn_users.name
+      SECURE_PASSPHRASE        = random_password.secure_passphrase.result
     }
   }
 
@@ -49,6 +47,10 @@ resource "aws_lambda_function" "idp" {
   tags = merge({
     Name = "${var.name} IDP lambda"
   }, var.tags)
+
+  depends_on = [
+    aws_s3_object_copy.idp_lambda_zip,
+  ]
 }
 
 resource "aws_cloudwatch_log_group" "idp" {
@@ -127,6 +129,23 @@ resource "aws_iam_policy" "idp" {
         "Effect" : "Allow",
         "Resource" : "${aws_dynamodb_table.sessions.arn}",
       },
+      {
+        "Action" : [
+          "dynamodb:BatchGet*",
+          "dynamodb:DescribeStream",
+          "dynamodb:DescribeTable",
+          "dynamodb:Get*",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:BatchWrite*",
+          "dynamodb:CreateTable",
+          "dynamodb:Delete*",
+          "dynamodb:Update*",
+          "dynamodb:PutItem",
+        ],
+        "Effect" : "Allow",
+        "Resource" : "${aws_dynamodb_table.webauthn_users.arn}",
+      },
     ]
   })
 }
@@ -170,4 +189,26 @@ resource "aws_dynamodb_table" "sessions" {
   tags = merge({
     Name = "${var.name} Sessions Table"
   }, var.tags)
+}
+
+resource "aws_dynamodb_table" "webauthn_users" {
+  name         = "${var.name}-webauthn-users"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = merge({
+    Name = "${var.name} Webauthn Users Table"
+  }, var.tags)
+}
+
+# would be ideal to have KMS wrap something or the like, but for now this is probably fine
+resource "random_password" "secure_passphrase" {
+  length  = 64
+  special = false
 }

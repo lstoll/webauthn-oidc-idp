@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,7 +9,6 @@ import (
 
 	"net/http"
 
-	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
 )
 
@@ -18,111 +18,67 @@ const (
 	upstreamAllowQuery = "data.upstream.allow"
 )
 
-type server struct {
+type oidcServer struct {
 	issuer          string
 	oidcsvr         *core.OIDC
-	oidccli         *oidc.Client
-	storage         *DynamoStore
+	providers       []Provider
+	asm             AuthSessionManager
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
+
+	eh *httpErrHandler
 
 	// upstreamPolicy is rego code applied to claims from upstream IDP
 	upstreamPolicy []byte
 }
 
-func (s *server) authorization(w http.ResponseWriter, req *http.Request) {
+func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 	ar, err := s.oidcsvr.StartAuthorization(w, req)
 	if err != nil {
 		log.Printf("error starting authorization: %v", err)
 		return
 	}
 
-	http.Redirect(w, req, s.oidccli.AuthCodeURL(ar.SessionID), http.StatusFound)
-}
+	w.Write([]byte(`<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>title</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
+  </head>
+  <body>`))
 
-func (s *server) callback(w http.ResponseWriter, req *http.Request) {
-	if errMsg := req.FormValue("error"); errMsg != "" {
-		http.Error(w, fmt.Sprintf("error returned to callback %s: %s", errMsg, req.FormValue("error_description")), http.StatusInternalServerError)
-		return
-	}
-
-	code := req.FormValue("code")
-	if code == "" {
-		http.Error(w, "no code in callback response", http.StatusBadRequest)
-		return
-	}
-
-	state := req.FormValue("state")
-	if state == "" {
-		http.Error(w, "no state in callback response", http.StatusBadRequest)
-		return
-	}
-
-	token, err := s.oidccli.Exchange(req.Context(), code)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error exchanging code for token: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	policyOK, err := evalClaimsPolicy(req.Context(), s.upstreamPolicy, upstreamAllowQuery, token.Claims)
-	if err != nil {
-		http.Error(w, "evaluating policy", http.StatusInternalServerError)
-		return
-	}
-	if !policyOK {
-		http.Error(w, "denied by policy", http.StatusForbidden)
-		return
-	}
-
-	auth := &core.Authorization{
-		Scopes: []string{"openid"},
-	}
-
-	cljson, err := json.Marshal(token.Claims)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("claims to json: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.storage.PutMetadata(req.Context(), state, Metadata{
-		Claims: cljson,
-	}); err != nil {
-		http.Error(w, fmt.Sprintf("putting metadata: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// finalize it. this will redirect the user to the appropriate place
-	if err := s.oidcsvr.FinishAuthorization(w, req, state, auth); err != nil {
-		log.Printf("error finishing authorization: %v", err)
-	}
-}
-
-func (s *server) token(w http.ResponseWriter, req *http.Request) {
-	err := s.oidcsvr.Token(w, req, func(tr *core.TokenRequest) (*core.TokenResponse, error) {
-		// This is how we could update our metadata
-		meta, ok, err := s.storage.GetMetadata(req.Context(), tr.SessionID)
+	for _, p := range s.selectProviders(ar.ACRValues) {
+		panel, err := p.LoginPanel(req, ar)
 		if err != nil {
-			return nil, fmt.Errorf("getting metadata for session %s", tr.SessionID)
+			s.eh.Error(w, req, err)
+			return
+		}
+		fmt.Fprintf(w, `<div id="%s-panel">`, p.ID())
+		w.Write([]byte(panel))
+		w.Write([]byte(`</div>`))
+	}
+
+	w.Write([]byte(`</body>
+	</html>`))
+}
+
+func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
+	err := s.oidcsvr.Token(w, req, func(tr *core.TokenRequest) (*core.TokenResponse, error) {
+		auth, ok, err := s.asm.GetAuthentication(req.Context(), tr.SessionID)
+		if err != nil {
+			return nil, fmt.Errorf("getting authentication for session %s", tr.SessionID)
 		}
 		if !ok {
-			return nil, fmt.Errorf("no metadata for session %s", tr.SessionID)
+			return nil, fmt.Errorf("no authentication for session %s", tr.SessionID)
 		}
 
-		var claims oidc.Claims
-		if err := json.Unmarshal(meta.Claims, &claims); err != nil {
-			return nil, fmt.Errorf("unmarshaling claims: %v", err)
-		}
-
-		email, ok := claims.Extra["email"].(string)
-		if !ok {
-			return nil, fmt.Errorf("email claim not found")
-		}
-
-		idt := tr.PrefillIDToken(s.issuer, email, time.Now().Add(s.tokenValidFor))
+		idt := tr.PrefillIDToken(s.issuer, auth.Subject, time.Now().Add(s.tokenValidFor))
 
 		// oauth2 proxy wants this, when we don't have useinfo
 		// TODO - scopes/userinfo etc.
-		idt.Extra["email"] = email
+		idt.Extra["email"] = auth.EMail
 		idt.Extra["email_verified"] = true
 
 		return &core.TokenResponse{
@@ -133,12 +89,89 @@ func (s *server) token(w http.ResponseWriter, req *http.Request) {
 		}, nil
 	})
 	if err != nil {
-		log.Printf("error in token endpoint: %v", err)
+		s.eh.Error(w, req, err)
 	}
 }
 
-func (s *server) AddHandlers(mux *http.ServeMux) {
+func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/auth", s.authorization)
-	mux.HandleFunc("/callback", s.callback)
 	mux.HandleFunc("/token", s.token)
+}
+
+// selectProviders filters the list down for a given ACR. if we don't have a
+// match, return them all. this doesn't enforce the ACR, the consumer or later
+// policy should set this
+func (s *oidcServer) selectProviders(requestedACRs []string) []Provider {
+	if len(requestedACRs) == 0 {
+		return s.providers
+	}
+	ret := []Provider{}
+	for _, p := range s.providers {
+		for _, a := range requestedACRs {
+			if p.ACR() == a {
+				ret = append(ret, p)
+			}
+		}
+	}
+	if len(ret) > 0 {
+		return ret
+	}
+	return s.providers
+}
+
+type authSessionManager struct {
+	provider Provider
+	storage  Storage
+	oidcsvr  *core.OIDC
+	eh       *httpErrHandler
+}
+
+func (a *authSessionManager) GetMetadata(ctx context.Context, sessionID string, into interface{}) (ok bool, err error) {
+	md, ok, err := a.storage.GetMetadata(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if err := json.Unmarshal(md.ProviderMetadata, into); err != nil {
+		return false, fmt.Errorf("unmarshaling provider metadata: %v", err)
+	}
+	return true, nil
+}
+
+func (a *authSessionManager) PutMetadata(ctx context.Context, sessionID string, d interface{}) error {
+	md, ok, err := a.storage.GetMetadata(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		md = Metadata{}
+	}
+	md.ProviderMetadata, err = json.Marshal(d)
+	if err != nil {
+		return fmt.Errorf("marshaling provider metadata: %v", err)
+	}
+	return nil
+}
+
+func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth Authentication) {
+	if err := a.storage.Authenticate(req.Context(), sessionID, auth); err != nil {
+		a.eh.Error(w, req, err)
+		return
+	}
+	// TODO - we need to fill this. This is likely going to need information
+	// about the provider (acr), requested claims, etc. This probably goes in
+	// the server metadata field
+	az := &core.Authorization{
+		Scopes: []string{"openid"},
+		ACR:    a.provider.ACR(),
+		AMR:    []string{a.provider.AMR()},
+	}
+	a.oidcsvr.FinishAuthorization(w, req, sessionID, az)
+}
+
+func (a *authSessionManager) GetAuthentication(ctx context.Context, sessionID string) (Authentication, bool, error) {
+	// this smells a bit
+	return a.storage.GetAuthentication(ctx, sessionID)
 }

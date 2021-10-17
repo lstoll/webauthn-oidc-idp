@@ -65,6 +65,11 @@ resource "aws_lambda_permission" "api_gw" {
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "${aws_apigatewayv2_api.idp.execution_arn}/*/*"
+
+  # re-creating the lambda should trigger this too
+  depends_on = [
+    aws_lambda_function.idp,
+  ]
 }
 
 /**********
@@ -105,5 +110,19 @@ resource "aws_apigatewayv2_route" "token" {
   api_id = aws_apigatewayv2_api.idp.id
 
   route_key = "POST /token"
+  target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
+}
+
+resource "aws_apigatewayv2_route" "webauthn" {
+  api_id = aws_apigatewayv2_api.idp.id
+
+  route_key = "ANY /webauthn/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
+}
+
+resource "aws_apigatewayv2_route" "providers" {
+  api_id = aws_apigatewayv2_api.idp.id
+
+  route_key = "ANY /provider/{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
 }
