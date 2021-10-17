@@ -107,3 +107,17 @@ resource "aws_apigatewayv2_route" "token" {
   route_key = "POST /token"
   target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
 }
+
+resource "aws_apigatewayv2_route" "webauthn" {
+  api_id = aws_apigatewayv2_api.idp.id
+
+  route_key = "POST /webauthn/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
+}
+
+resource "aws_apigatewayv2_route" "providers" {
+  api_id = aws_apigatewayv2_api.idp.id
+
+  route_key = "POST /provider/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.idp.id}"
+}

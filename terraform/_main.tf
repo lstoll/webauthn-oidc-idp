@@ -33,10 +33,10 @@ resource "aws_lambda_function" "idp" {
 
   environment {
     variables = {
-      LISTEN_MODE        = "lambda"
-      CONFIG             = "s3://${aws_s3_bucket.state_bucket.bucket}/${local.s3_config_file}"
-      KMS_OIDC_KEY_ARN   = local.lambda_signer_arn
-      SESSION_TABLE_NAME = aws_dynamodb_table.sessions.name
+      LISTEN_MODE              = "lambda"
+      CONFIG                   = "s3://${aws_s3_bucket.state_bucket.bucket}/${local.s3_config_file}"
+      KMS_OIDC_KEY_ARN         = local.lambda_signer_arn
+      SESSION_TABLE_NAME       = aws_dynamodb_table.sessions.name
       WEBAUTHN_USER_TABLE_NAME = aws_dynamodb_table.webauthn_users.name
     }
   }
