@@ -6,6 +6,7 @@ import (
 	"io"
 	"regexp"
 
+	"github.com/lstoll/idp/internal/config"
 	"github.com/pardot/oidc/core"
 	"gopkg.in/yaml.v2"
 )
@@ -192,4 +193,14 @@ func (m *multiClients) sourceForID(clientID string) (core.ClientSource, error) {
 		}
 	}
 	return nil, errSourceNotFound
+}
+
+func newClientsFromConfig(cfg *config.Config) (core.ClientSource, error) {
+	return &fsClients{
+		readerFn: func() (io.ReadCloser, error) {
+			panic("todo")
+			return nil, nil
+			// return c.fs.Open(c.ClientSources[0].File.Filename)
+		},
+	}, nil
 }

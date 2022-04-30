@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/lstoll/idp/internal/config"
 	"github.com/pardot/oidc/core"
 )
 
@@ -63,4 +64,34 @@ type Provider interface {
 	AMR() string
 	// LoginPanel is called to provide HTML to be rendered in to the login page
 	LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error)
+}
+
+// embedProvider is the interface we need implementations to have,
+// configProvider satisfies the rest
+type embedProvider interface {
+	LoginPanel(r *http.Request, ar *core.AuthorizationRequest) (template.HTML, error)
+}
+
+type configProvider struct {
+	embedProvider
+
+	id  string
+	acr string
+	amr string
+}
+
+func (c *configProvider) ID() string {
+	return c.id
+}
+
+func (c *configProvider) ACR() string {
+	return c.acr
+}
+
+func (c *configProvider) AMR() string {
+	return c.amr
+}
+
+func newProviderFromConfig(c *config.Provider) Provider {
+	return nil
 }

@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	_ embedProvider  = (*OIDCProvider)(nil)
-	_ http.Handler   = (*OIDCProvider)(nil)
-	_ UpstreamPolicy = (*config)(nil)
+	//	_ embedProvider  = (*OIDCProvider)(nil)
+	_ http.Handler = (*OIDCProvider)(nil)
+	// _ UpstreamPolicy = (*config)(nil)
 )
 
 type UpstreamPolicy interface {

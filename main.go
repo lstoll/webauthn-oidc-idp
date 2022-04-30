@@ -28,6 +28,7 @@ import (
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/sessions"
+	"github.com/lstoll/idp/internal/config"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/core"
@@ -58,9 +59,6 @@ type flags struct {
 	// bootstrap options allow it to be overridden
 	s3ConfigEndpoint       string
 	s3ConfigForcePathStyle bool
-	kmsOIDCArn             string
-	sessionTableName       string
-	webauthnUserTableName  string
 	securePassphrase       string
 }
 
@@ -70,7 +68,10 @@ func main() {
 	defer logger.Sync() // flushes buffer, if any
 	sugar := logger.Sugar()
 
-	var flgs flags
+	var (
+		flgs flags
+		cfg  = &config.Config{}
+	)
 
 	flag.StringVar(&flgs.listenMode, "listen-mode", getEnvOrDefaultStr("LISTEN_MODE", "http"), "mode to listen for requests, either http for a normal http listener or lambad when running as a lambda")
 	flag.StringVar(&flgs.addr, "addr", getEnvOrDefaultStr("PORT", "127.0.0.1:8080"), "address to listen on, if only port is specific address is assumed to be 0.0.0.0")
@@ -78,11 +79,10 @@ func main() {
 
 	flag.StringVar(&flgs.s3ConfigEndpoint, "s3-config-endpoint", os.Getenv("S3_CONFIG_ENDPOINT"), "When loading config from S3, the endpoint to use. Other S3 usage configured via config file")
 	flag.BoolVar(&flgs.s3ConfigForcePathStyle, "s3-config-force-path-style", getEnvOrDefaultBool("S3_FORCE_CONFIG_PATH_STYLE", false), "When loading config from S3, the force path style. Other S3 usage configured via config file")
-	flag.StringVar(&flgs.kmsOIDCArn, "oidc-jwt-kms-arn", os.Getenv("KMS_OIDC_KEY_ARN"), "ARN to the KMS key to use for signing")
-	flag.StringVar(&flgs.sessionTableName, "dynamo-session-table-name", os.Getenv("SESSION_TABLE_NAME"), "Name of the DynamoDB table to track sessions in")
-	flag.StringVar(&flgs.webauthnUserTableName, "dynamo-webauthn-user-table-name", os.Getenv("WEBAUTHN_USER_TABLE_NAME"), "Name of the DynamoDB table to track sessions in")
 
 	flag.StringVar(&flgs.securePassphrase, "secure-passphrase", os.Getenv("SECURE_PASSPHRASE"), "Passphrase used to secure sessions/csrf")
+
+	cfg.Flags(flag.CommandLine)
 
 	flag.Parse()
 
@@ -117,11 +117,9 @@ func main() {
 	if flgs.s3ConfigEndpoint != "" {
 		s3cfg.Endpoint = &flgs.s3ConfigEndpoint
 	}
-	cfg, err := newConfigFromS3(ctx, s3.New(sess, s3cfg), cfgurl, sess)
-	if err != nil {
+	if err := cfg.LoadFromS3(ctx, s3.New(sess, s3cfg), cfgurl, sess); err != nil {
 		sugar.Fatalf("loading config from %s: %v", flgs.config, err)
 	}
-	cfg.OverrideFromFlags(flgs)
 	if err := cfg.Validate(); err != nil {
 		sugar.Fatalf("invalid config: %v", err)
 	}
@@ -141,17 +139,17 @@ func main() {
 	}
 	csrfh := csrf.Protect(csrfKey)
 
-	jwts, jwtks, err := cfg.OIDCJWTSigner(ctx)
+	jwts, jwtks, err := newSignerFromConfig(ctx, cfg)
 	if err != nil {
 		sugar.Fatalf("getting OIDC JWT signer: %v", err)
 	}
 
-	st, err := cfg.GetStorage()
+	st, err := newStorageFromConfig(cfg)
 	if err != nil {
 		sugar.Fatalf("getting storage: %v", err)
 	}
 
-	cfgClients, err := cfg.Clients()
+	cfgClients, err := newClientsFromConfig(cfg)
 	if err != nil {
 		sugar.Fatalf("getting clients: %v", err)
 	}
@@ -198,7 +196,7 @@ func main() {
 		switch p.Type {
 		case "oidc":
 			oidccli, err := oidc.DiscoverClient(ctx,
-				p.OIDC.Issuer, p.OIDC.ClientID, p.OIDC.ClientSecret, cfg.Issuer+"/provider/"+p.ID()+"/callback",
+				p.OIDC.Issuer, p.OIDC.ClientID, p.OIDC.ClientSecret, cfg.Issuer+"/provider/"+p.ID+"/callback",
 				oidc.WithAdditionalScopes([]string{"profile", "email"}),
 			)
 			if err != nil {
