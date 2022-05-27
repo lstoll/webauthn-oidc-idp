@@ -11,7 +11,7 @@ import (
 
 type contextKey string
 
-var contextKeySession = contextKey("session")
+var contextKeySession contextKey = contextKey("session")
 
 // ContextSession is chi middleware that will register the given session on the context.
 func ContextSession(s sessions.Store, sessionName string) func(next http.Handler) http.Handler {

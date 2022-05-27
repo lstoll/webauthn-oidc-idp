@@ -121,19 +121,19 @@ func newConfigFromS3(ctx context.Context, s3client s3iface.S3API, url *url.URL, 
 	return cfg, nil
 }
 
-func (c *config) OverrideFromFlags(f flags) {
-	if f.kmsOIDCArn != "" {
-		c.OIDCSigner.Type = "kms"
-		c.OIDCSigner.KMSSigner.ARN = f.kmsOIDCArn
-	}
-	if f.sessionTableName != "" {
-		c.Storage.Type = "dynamodb"
-		c.Storage.DynamoDB.SessionTableName = f.sessionTableName
-	}
-	if f.webauthnUserTableName != "" {
-		c.Storage.Type = "dynamodb"
-		c.Storage.DynamoDB.WebauthnUserTableName = f.webauthnUserTableName
-	}
+func (c *config) OverrideFromFlags(f cliFlags) {
+	// 	if f.kmsOIDCArn != "" {
+	// 		c.OIDCSigner.Type = "kms"
+	// 		c.OIDCSigner.KMSSigner.ARN = f.kmsOIDCArn
+	// 	}
+	// 	if f.sessionTableName != "" {
+	// 		c.Storage.Type = "dynamodb"
+	// 		c.Storage.DynamoDB.SessionTableName = f.sessionTableName
+	// 	}
+	// 	if f.webauthnUserTableName != "" {
+	// 		c.Storage.Type = "dynamodb"
+	// 		c.Storage.DynamoDB.WebauthnUserTableName = f.webauthnUserTableName
+	// 	}
 }
 
 func (c *config) Validate() error {
