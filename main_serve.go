@@ -28,11 +28,31 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 	issuer := serve.Flag("issuer", "OIDC issuer for this service").Envar("ISSUER").Required().String()
 	addr := serve.Flag("addr", "Address to listen on").Envar("ADDR").Default("127.0.0.1:5556").String()
+	oidcRotateInterval := serve.Flag("oidc-rotate-interval", "Interval we should rotate out OIDC signing keys").Envar("OIDC_ROTATE_INTERVAL").Default("24h").Duration()
+	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
 
 	return serve, func(ctx context.Context, gcfg *globalCfg) error {
 
-		var jwts core.Signer          // TODO
-		var jwtks discovery.KeySource // TODO
+		encryptor := newEncryptor[[]byte](gcfg.keyset.dbCurr, gcfg.keyset.dbPrev...)
+
+		dbr := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
+			db:  gcfg.storage.db,
+			log: ctxLog(ctx),
+
+			usage: rotatorUsageOIDC,
+
+			rotateInterval: *oidcRotateInterval,
+			maxAge:         *oidMaxAge,
+
+			newFn: func() (*rotatableRSAKey, error) {
+				return newRotatableRSAKey(encryptor)
+			},
+		}
+
+		oidcSigner := &oidcSigner{
+			rotator:   dbr,
+			encryptor: encryptor,
+		}
 
 		clients := &multiClients{
 			// sources: []core.ClientSource{cfgClients}, // TODO - load from file
@@ -44,7 +64,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			AuthorizationEndpoint: *issuer + "/auth",
 			TokenEndpoint:         *issuer + "/token",
 		}
-		keysh := discovery.NewKeysHandler(jwtks, 1*time.Hour)
+		keysh := discovery.NewKeysHandler(oidcSigner, 1*time.Hour)
 		discoh, err := discovery.NewConfigurationHandler(&oidcmd, discovery.WithCoreDefaults())
 		if err != nil {
 			log.Fatalf("configuring metadata handler: %v", err)
@@ -53,7 +73,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		oidcsvr, err := core.New(&core.Config{
 			AuthValidityTime: 5 * time.Minute,
 			CodeValidityTime: 5 * time.Minute,
-		}, gcfg.storage, clients, jwts)
+		}, gcfg.storage, clients, oidcSigner)
 		if err != nil {
 			log.Fatalf("Failed to create OIDC server instance: %v", err)
 		}

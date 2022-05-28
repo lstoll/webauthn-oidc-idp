@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pardot/oidc/core"
+	"github.com/pardot/oidc/discovery"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/cryptosigner"
 )
@@ -21,6 +22,9 @@ const rsaKeyBits = 2048
 var _ rotatable = (*rotatableRSAKey)(nil)
 var _ crypto.Signer = (*rotatableRSAKey)(nil)
 var _ core.Signer = (*oidcSigner)(nil)
+var _ discovery.KeySource = (*oidcSigner)(nil)
+
+const rotatorUsageOIDC = "oidc-signer"
 
 // var _ jose.OpaqueVerifier = (*JOSESigner)(nil) // TODO - do we want this?
 
