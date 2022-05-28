@@ -7,18 +7,17 @@ import (
 	"encoding/base64"
 	"encoding/gob"
 	"errors"
-	"flag"
 	"fmt"
 	"log"
-	"net"
 	"os"
+	"runtime/debug"
 	"strconv"
-	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/oklog/run"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
@@ -32,18 +31,11 @@ var (
 	ErrNon200Response = errors.New("Non 200 Response found")
 )
 
-type cliFlags struct {
-	addr   string
-	config string
-
+type globalFlags struct {
 	securePassphrase      string
-	prevSecurePassphrases string
+	prevSecurePassphrases []string
 
-	dbPath string
-}
-
-func (f *cliFlags) validate() error {
-	return nil
+	storage *storage
 }
 
 func main() {
@@ -58,31 +50,38 @@ func main() {
 		l.WithError(err).Fatal("Error loading .env file")
 	}
 
-	var flags cliFlags
+	kingpin.Version(getVersion())
 
-	flag.StringVar(&flags.addr, "addr", getEnvOrDefaultStr("PORT", "127.0.0.1:8080"), "address to listen on, if only port is specific address is assumed to be 0.0.0.0")
-	flag.StringVar(&flags.securePassphrase, "secure-passphrase", os.Getenv("SECURE_PASSPHRASE"), "Passphrase for DB encryption")
-	flag.StringVar(&flags.prevSecurePassphrases, "prev-secure-passphrase", os.Getenv("SECURE_PASSPHRASES_PREV"), "Previous passphrases for DB encryption, for rotation. Comma-delimited")
-	flag.StringVar(&flags.dbPath, "db-path", getEnvOrDefaultStr("DB_PATH", "db/idp.db"), "Path to database file")
+	var globals globalFlags
 
-	flag.Parse()
-	if err := flags.validate(); err != nil {
-		l.WithError(err).Fatal("Invalid options")
-	}
+	app := kingpin.New("idp", "A webauthn IDP.")
+	dbPath := app.Flag("db-path", "Path to database file").Envar("DB_PATH").Default("db/idp.db").String()
+	app.Flag("secure-passphrase", "Passphrase for DB encryption").Envar("SECURE_PASSPHRASE").Required().StringVar(&globals.securePassphrase)
+	app.Flag("prev-secure-passphrases", "Passphrase(s) previously used for DB encryption, to decrypt").Envar("SECURE_PASSPHRASES_PREV").StringsVar(&globals.prevSecurePassphrases)
 
-	if !strings.Contains(flags.addr, ":") {
-		flags.addr = net.JoinHostPort("0.0.0.0", flags.addr)
-	}
-	if flags.securePassphrase == "" {
-		sugar.Fatal("secure-passphrase must be provided")
-	}
+	serveCmd, serveRun := serveCommand(app)
 
-	st, err := newStorage(ctx, l, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", flags.dbPath))
+	cmdName := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	// common initialization
+
+	st, err := newStorage(ctx, l, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", *dbPath))
 	if err != nil {
 		l.WithError(err).Fatal("failed to create storage")
 	}
+	globals.storage = st
 
-	_ = st
+	var runErr error
+	switch cmdName {
+	// Register user
+	case serveCmd.FullCommand():
+		runErr = serveRun()
+	default:
+		panic("should not happen, kingpin should handle this")
+	}
+	if runErr != nil {
+		l.WithError(runErr).Fatal()
+	}
 
 	/*
 
@@ -386,4 +385,32 @@ func getEnvOrDefaultBool(key string, dfault bool) bool {
 		return false
 	}
 	return v
+}
+
+func getVersion() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		panic("couldn't read runtime build info")
+	}
+
+	var (
+		rev   string
+		dirty bool
+	)
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+
+	verStr := bi.Main.Version + " (rev: " + rev
+	if dirty {
+		verStr += ", dirty"
+	}
+	verStr += ")"
+
+	return verStr
 }
