@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"gopkg.in/square/go-jose.v2"
 )
 
 func TestRotatableOIDCSigner(t *testing.T) {
@@ -42,58 +41,12 @@ func TestRotatableOIDCSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	signer, err := jose.NewSigner(
-		jose.SigningKey{
-			Algorithm: jose.RS256,
-			Key: &jose.JSONWebKey{
-				Algorithm: string(jose.RS256),
-				Key:       os,
-				KeyID:     os.Public().KeyID,
-				Use:       "sig",
-			},
-		},
-		nil,
-	)
+	signed, err := os.Sign(ctx, []byte("hello"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	signed, err := signer.Sign([]byte("hello"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	signedser, err := signed.CompactSerialize()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	jws, err := jose.ParseSigned(signedser)
-	if err != nil {
-		t.Fatalf("failed to parse JWT: %v", err)
-	}
-
-	pubs, err := os.PublicKeys(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var (
-		found bool
-		key   jose.JSONWebKey
-	)
-	for _, pubk := range pubs.Keys {
-		for _, sig := range jws.Signatures {
-			if sig.Header.KeyID == pubk.KeyID {
-				found = true
-				key = pubk.Public()
-			}
-		}
-	}
-	if !found {
-		t.Fatal("key not found in jwt headers")
-	}
-
-	payload, err := jws.Verify(key.Public())
+	payload, err := os.VerifySignature(ctx, string(signed))
 	if err != nil {
 		t.Fatalf("failed to verify JWT: %v", err)
 	}
@@ -108,24 +61,7 @@ func TestRotatableOIDCSigner(t *testing.T) {
 		t.Fatalf("want no error rotating, got: %v", err)
 	}
 
-	pubs, err = os.PublicKeys(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, pubk := range pubs.Keys {
-		for _, sig := range jws.Signatures {
-			if sig.Header.KeyID == pubk.KeyID {
-				found = true
-				key = pubk.Public()
-			}
-		}
-	}
-	if !found {
-		t.Fatal("key not found in jwt headers")
-	}
-
-	payload, err = jws.Verify(key.Public())
+	payload, err = os.VerifySignature(ctx, string(signed))
 	if err != nil {
 		t.Fatalf("failed to verify JWT: %v", err)
 	}

@@ -6,10 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/google/uuid"
+	"github.com/pardot/oidc/core"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/cryptosigner"
 )
@@ -18,7 +20,7 @@ const rsaKeyBits = 2048
 
 var _ rotatable = (*rotatableRSAKey)(nil)
 var _ crypto.Signer = (*rotatableRSAKey)(nil)
-var _ jose.OpaqueSigner = (*oidcSigner)(nil)
+var _ core.Signer = (*oidcSigner)(nil)
 
 // var _ jose.OpaqueVerifier = (*JOSESigner)(nil) // TODO - do we want this?
 
@@ -101,44 +103,79 @@ type oidcSigner struct {
 	encryptor *encryptor[[]byte]
 }
 
-// Public returns the public key of the current signing key.
-func (o *oidcSigner) Public() *jose.JSONWebKey {
-	ck, err := o.rotator.GetCurrent(context.Background())
-	if err != nil {
-		panic(err) // TODO?
-	}
-
-	return &jose.JSONWebKey{
-		Key:       ck.Public(),
-		Use:       "sig",
-		KeyID:     ck.ID(),
-		Algorithm: string(jose.RS256),
-	}
+func (o *oidcSigner) SignerAlg(ctx context.Context) (jose.SignatureAlgorithm, error) {
+	return jose.RS256, nil
 }
 
-// Algs returns the alg we support, RS256.
-func (o *oidcSigner) Algs() []jose.SignatureAlgorithm {
-	return []jose.SignatureAlgorithm{jose.RS256}
-}
-
-// SignPayload signs a payload with the current signing key using the given
-// algorithm.
-func (o *oidcSigner) SignPayload(payload []byte, alg jose.SignatureAlgorithm) ([]byte, error) {
-	if alg != jose.RS256 {
-		return nil, fmt.Errorf("only RS256 supported")
-	}
+func (o *oidcSigner) Sign(ctx context.Context, data []byte) (signed []byte, err error) {
 	ck, err := o.rotator.GetCurrent(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("getting current signing key: %w", err)
 	}
 	ck.encryptor = o.encryptor
 
-	return cryptosigner.Opaque(ck).SignPayload(payload, alg)
+	signer, err := jose.NewSigner(
+		jose.SigningKey{
+			Algorithm: jose.RS256,
+			Key: &jose.JSONWebKey{
+				Algorithm: string(jose.RS256),
+				Key:       cryptosigner.Opaque(ck),
+				KeyID:     ck.KeyID,
+				Use:       "sig",
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("signing: %v", err)
+	}
+
+	sg, err := signer.Sign(data)
+	if err != nil {
+		return nil, fmt.Errorf("signing data: %w", err)
+	}
+
+	ser, err := sg.CompactSerialize()
+	if err != nil {
+		return nil, fmt.Errorf("serializing signed data: %v", err)
+	}
+	return []byte(ser), nil
 }
 
-// func (j *oidcSigner) VerifyPayload(payload []byte, signature []byte, alg jose.SignatureAlgorithm) error {
-// cryptosigner.Opaque(s crypto.Signer)
-// }
+func (o *oidcSigner) VerifySignature(ctx context.Context, jwt string) (payload []byte, err error) {
+	pubs, err := o.PublicKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	jws, err := jose.ParseSigned(jwt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JWT: %v", err)
+	}
+
+	var (
+		found bool
+		key   jose.JSONWebKey
+	)
+	for _, pubk := range pubs.Keys {
+		for _, sig := range jws.Signatures {
+			if sig.Header.KeyID == pubk.KeyID {
+				found = true
+				key = pubk.Public()
+			}
+		}
+	}
+	if !found {
+		return nil, errors.New("failed to find matching signing key")
+	}
+
+	payload, err = jws.Verify(key.Public())
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify JWT: %v", err)
+	}
+
+	return payload, nil
+}
 
 // PublicKeys returns a keyset of all public keys that should be considered
 // valid for this signer
