@@ -330,11 +330,11 @@ func (w *webauthnManager) pathFor(path string) string {
 
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
 	log.Printf("error %#v", err)
-	l := loggerFromContext(ctx)
+	l := ctxLog(ctx)
 	var pErr *protocol.Error
 	if errors.As(err, &pErr) {
 		if pErr.DevInfo != "" {
-			l = l.With("webauthnDevInfo", pErr.DevInfo)
+			l = l.WithField("webauthnDevInfo", pErr.DevInfo)
 		}
 	}
 	l.Error(err)

@@ -14,7 +14,6 @@ import (
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/pardot/oidc/core"
-	"go.uber.org/zap"
 )
 
 const (
@@ -67,12 +66,8 @@ type oidcServer struct {
 
 	eh *httpErrHandler
 
-	// upstreamPolicy is rego code applied to claims from upstream IDP
-	upstreamPolicy []byte
-
 	/* here on is old webauthn provider stuff
 	   TODO - merge field better */
-	logger   *zap.SugaredLogger
 	store    WebauthnUserStore
 	webauthn *webauthn.WebAuthn
 
@@ -308,7 +303,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
-	s.logger.Error(err)
+	panic("TODO - replace me with the error handler")
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
 }
 
