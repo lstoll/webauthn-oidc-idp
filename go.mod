@@ -22,6 +22,7 @@ require (
 require (
 	github.com/duo-labs/webauthn v0.0.0-20210727191636-9f1b88ef44cc
 	github.com/gorilla/csrf v1.7.1
+	github.com/joho/godotenv v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/sirupsen/logrus v1.8.1
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"github.com/oklog/run"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
@@ -52,11 +53,16 @@ func main() {
 	defer logger.Sync() // flushes buffer, if any
 	sugar := logger.Sugar()
 
+	// this is optional, ignore when it doesn't exist
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		l.WithError(err).Fatal("Error loading .env file")
+	}
+
 	var flags cliFlags
 
 	flag.StringVar(&flags.addr, "addr", getEnvOrDefaultStr("PORT", "127.0.0.1:8080"), "address to listen on, if only port is specific address is assumed to be 0.0.0.0")
-	flag.StringVar(&flags.securePassphrase, "secure-passphrase", os.Getenv("PASSPHRASE"), "Passphrase for DB encryption")
-	flag.StringVar(&flags.prevSecurePassphrases, "prev-secure-passphrase", os.Getenv("PASSPHRASES_PREV"), "Previous passphrases for DB encryption, for rotation. Comma-delimited")
+	flag.StringVar(&flags.securePassphrase, "secure-passphrase", os.Getenv("SECURE_PASSPHRASE"), "Passphrase for DB encryption")
+	flag.StringVar(&flags.prevSecurePassphrases, "prev-secure-passphrase", os.Getenv("SECURE_PASSPHRASES_PREV"), "Previous passphrases for DB encryption, for rotation. Comma-delimited")
 	flag.StringVar(&flags.dbPath, "db-path", getEnvOrDefaultStr("DB_PATH", "db/idp.db"), "Path to database file")
 
 	flag.Parse()
