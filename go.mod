@@ -5,8 +5,6 @@ go 1.18
 replace github.com/pardot/oidc => github.com/lstoll/oidc v0.0.0-20211017044517-5317de4b6c01
 
 require (
-	github.com/apex/gateway v1.1.1
-	github.com/aws/aws-lambda-go v1.13.3 // indirect
 	github.com/aws/aws-sdk-go v1.36.24
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/securecookie v1.1.1
@@ -17,7 +15,6 @@ require (
 	github.com/open-policy-agent/opa v0.24.0
 	github.com/pardot/oidc v0.0.0-20200518180338-f8645300dfbf
 	github.com/pkg/errors v0.9.1
-	github.com/tj/assert v0.0.3 // indirect
 	go.uber.org/zap v1.19.1
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -25,6 +22,8 @@ require (
 require (
 	github.com/duo-labs/webauthn v0.0.0-20210727191636-9f1b88ef44cc
 	github.com/gorilla/csrf v1.7.1
+	github.com/mattn/go-sqlite3 v1.14.13
+	github.com/sirupsen/logrus v1.8.1
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 )
 
@@ -39,11 +38,9 @@ require (
 	github.com/google/certificate-transparency-go v1.0.21 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
-	github.com/mattn/go-sqlite3 v1.14.13 // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
-	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yashtewari/glob-intersection v0.0.0-20180916065949-5c77d914dd0b // indirect
 	go.uber.org/atomic v1.7.0 // indirect

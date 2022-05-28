@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -124,35 +123,6 @@ type authSessionManager struct {
 	storage  Storage
 	oidcsvr  *core.OIDC
 	eh       *httpErrHandler
-}
-
-func (a *authSessionManager) GetMetadata(ctx context.Context, sessionID string, into interface{}) (ok bool, err error) {
-	md, ok, err := a.storage.GetMetadata(ctx, sessionID)
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, nil
-	}
-	if err := json.Unmarshal(md.ProviderMetadata, into); err != nil {
-		return false, fmt.Errorf("unmarshaling provider metadata: %v", err)
-	}
-	return true, nil
-}
-
-func (a *authSessionManager) PutMetadata(ctx context.Context, sessionID string, d interface{}) error {
-	md, ok, err := a.storage.GetMetadata(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		md = Metadata{}
-	}
-	md.ProviderMetadata, err = json.Marshal(d)
-	if err != nil {
-		return fmt.Errorf("marshaling provider metadata: %v", err)
-	}
-	return nil
 }
 
 func (a *authSessionManager) Authenticate(w http.ResponseWriter, req *http.Request, sessionID string, auth Authentication) {

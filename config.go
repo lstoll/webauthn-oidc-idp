@@ -17,9 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -262,17 +260,18 @@ func (c *config) Clients() (core.ClientSource, error) {
 }
 
 func (c *config) GetStorage() (Storage, error) {
-	awsCfg := aws.NewConfig()
-	if c.AWS.DynamoEndpoint != "" {
-		awsCfg.Endpoint = &c.AWS.DynamoEndpoint
-	}
-	dc := dynamodb.New(c.awsConfig, awsCfg)
+	// awsCfg := aws.NewConfig()
+	// if c.AWS.DynamoEndpoint != "" {
+	// 	awsCfg.Endpoint = &c.AWS.DynamoEndpoint
+	// }
+	// dc := dynamodb.New(c.awsConfig, awsCfg)
 
-	return &DynamoStore{
-		client:                dc,
-		sessionTableName:      c.Storage.DynamoDB.SessionTableName,
-		webauthnUserTableName: c.Storage.DynamoDB.WebauthnUserTableName,
-	}, nil
+	// return &DynamoStore{
+	// 	client:                dc,
+	// 	sessionTableName:      c.Storage.DynamoDB.SessionTableName,
+	// 	webauthnUserTableName: c.Storage.DynamoDB.WebauthnUserTableName,
+	// }, nil
+	return nil, nil
 }
 
 // embedProvider is the interface we need implementations to have, configProvider satisfies the rest
