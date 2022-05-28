@@ -20,37 +20,20 @@ type migration struct {
 
 // migrations are run in the order presented here
 var migrations = []migration{
-	// {
-	// 	Idx: 202006141339,
-	// 	SQL: `
-	// 		create table checkins (
-	// 			id text primary key,
-	// 			fsq_raw text,
-	// 			fsq_id text unique,
-	// 			created_at datetime default (datetime('now'))
-	// 		);
-	// 		create table people (
-	// 			id text primary key,
-	// 			firstname text,
-	// 			lastname text,
-	// 			fsq_id text unique,
-	// 			email text, -- unique would be nice, but imports don't have it
-	// 			created_at datetime default (datetime('now'))
-	// 		);
-	// 		-- venue represents a visitable place/business
-	// 		create table venues (
-	// 			id text primary key,
-	// 			name text,
-	// 			fsq_id text unique,
-	// 			created_at datetime default (datetime('now'))
-	// 		);
-	// 		-- location represent a physical place
-	// 		create table locations (
-	// 			id text primary key,
-	// 			name text,
-	// 			fsq_id text unique,
-	// 			created_at datetime default (datetime('now'))
-	// 		);
-	// 	`,
-	// },
+	// id, usage, stage, data, current_at, expires
+	{
+		Idx: 202205281754,
+		SQL: `
+			create table rotatable (
+				id text primary key,
+				usage text,
+				stage text check ( stage in ('next','current','previous') ) not null,
+				data text not null,
+				current_at datetime, -- when this item should be considered the active item
+				previous_at datetime, -- when this item was moved to the previous state
+				created_at datetime default current_timestamp not null,
+				expires_at datetime not null -- when the item should no longer be used
+			);
+		`,
+	},
 }

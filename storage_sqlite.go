@@ -78,7 +78,7 @@ func (s *storage) migrate(ctx context.Context) error {
 			}
 
 			if err := runMigration(ctx, tx, mig); err != nil {
-				return err
+				return fmt.Errorf("running migration %d: %w", mig.Idx, err)
 			}
 
 			if _, err := tx.ExecContext(ctx, `insert into migrations (idx, at) values ($1, datetime('now'));`, mig.Idx); err != nil {
