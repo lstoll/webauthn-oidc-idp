@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/pardot/oidc/core"
-	uuid "github.com/satori/go.uuid"
 )
 
 /* This file contains the implementation of the oidc core library session manager interface */
@@ -14,7 +14,7 @@ var _ core.SessionManager = (*storage)(nil)
 // NewID should return a new, unique identifier to be used for a session. It
 // should be hard to guess/brute force
 func (s *storage) NewID() string {
-	return uuid.NewV4().String()
+	return uuid.NewString()
 }
 
 // GetSession should return the current session state for the given session

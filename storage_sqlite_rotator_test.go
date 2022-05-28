@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -25,7 +25,7 @@ func (t *testRotatable) ID() string {
 // set up the object
 func (t *testRotatable) Initialize() error {
 	if t.ObjID == "" {
-		t.ObjID = uuid.NewV4().String()
+		t.ObjID = uuid.NewString()
 	}
 	return nil
 }

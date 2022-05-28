@@ -6,7 +6,7 @@ replace github.com/pardot/oidc => github.com/lstoll/oidc v0.0.0-20211017044517-5
 
 require (
 	github.com/aws/aws-sdk-go v1.36.24
-	github.com/google/uuid v1.2.0
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/securecookie v1.1.1
 	github.com/gorilla/sessions v1.2.1
 	github.com/jszwec/s3fs v0.3.1

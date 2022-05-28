@@ -28,7 +28,6 @@ type rotatable interface {
 	Initialize() error
 	// Rotate is called on each rotation, with the stage the key is being
 	// rotated in to.
-	// TODO - call consistently, not called for previous
 	Rotate(stage rotatorStage) error
 }
 
@@ -274,11 +273,11 @@ type dbPubKey struct {
 	PEMBytes []byte
 }
 
-func (d *dbRotator[T, PT]) GetUpcoming(ctx context.Context, usage string) ([]PT, error) {
+func (d *dbRotator[T, PT]) GetUpcoming(ctx context.Context) ([]PT, error) {
 	return d.getStage(ctx, rotatorStageNext)
 }
 
-func (d *dbRotator[T, PT]) GetPrevious(ctx context.Context, usage string) ([]PT, error) {
+func (d *dbRotator[T, PT]) GetPrevious(ctx context.Context) ([]PT, error) {
 	return d.getStage(ctx, rotatorStagePrevious)
 }
 
