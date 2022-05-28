@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"io"
 	"testing"
@@ -32,6 +33,26 @@ func TestEncryptedDB(t *testing.T) {
 
 	if fdec.Plaintext.Hello != plaintext.Hello {
 		t.Errorf("want %s got %s", fdec.Plaintext.Hello, plaintext.Hello)
+	}
+}
+
+func TestEncryptor(t *testing.T) {
+	benc := newEncryptor[[]byte](newKey())
+
+	dat := []byte("hello")
+
+	enc, err := benc.Encrypt(dat)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dec, err := benc.Decrypt(enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(dec, dat) {
+		t.Errorf("round trip failed")
 	}
 }
 

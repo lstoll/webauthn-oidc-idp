@@ -21,15 +21,6 @@ func (t *testRotatable) ID() string {
 	return t.ObjID
 }
 
-// Initialize is called when a new rotatable is created. This can be used to
-// set up the object
-func (t *testRotatable) Initialize() error {
-	if t.ObjID == "" {
-		t.ObjID = uuid.NewString()
-	}
-	return nil
-}
-
 // Rotate is called on each rotation, with the stage the key is being
 // rotated in to.
 // TODO - call consistently, not called for previous
@@ -38,7 +29,7 @@ func (t *testRotatable) Rotate(stage rotatorStage) error {
 	return nil
 }
 
-func TestSSHSigner(t *testing.T) {
+func TestRotator(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStorage(t)
 
@@ -52,10 +43,17 @@ func TestSSHSigner(t *testing.T) {
 
 		rotateInterval: 1 * time.Minute,
 		maxAge:         10 * time.Minute,
+
+		newFn: func() (*testRotatable, error) {
+			return &testRotatable{
+				ObjID: uuid.NewString(),
+			}, nil
+		},
 	}
 
-	if _, err := dbr.GetCurrent(ctx); err == nil {
-		t.Error("should have got an error gteting the signer key on an uninitialized DB")
+	if got, err := dbr.GetCurrent(ctx); err == nil {
+		t.Errorf("should have got an error getting the signer key on an uninitialized DB")
+		t.Logf("got: %#v", got)
 	}
 
 	// t.Run(tc.Name, func(t *testing.T) {

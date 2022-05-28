@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"database/sql/driver"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ const (
 	nonceSize = 24
 	// encryptedMagic indicates that this is a sensitive value in the DB.
 	encryptedMagic = "ENC\x00"
+
+	encryptedMagicJSON = "ENJ\x00"
 )
 
 type fieldEncryptor struct {
@@ -110,4 +113,62 @@ func (e *fieldDecryptor[T]) decrypt(b []byte) ([]byte, error) {
 		}
 	}
 	return nil, errors.New("field failed to decrypt, missing keys?")
+}
+
+type encryptor[T any] struct {
+	// EncryptionKey is used to encrypt and decrypt data
+	EncryptionKey [keySize]byte
+	// AdditionalKeys are also checked for decryption, to allow for rotation
+	AdditionalKeys [][keySize]byte
+	// AllowUnecryptedReads will handle un-encrypted data in the database
+	// transparently by just passing it through. by default, this will cause an
+	// error
+	AllowUnencryptedReads bool
+}
+
+func newEncryptor[T any](key [keySize]byte, additionalKeys ...[keySize]byte) *encryptor[T] {
+	gob.Register(*new(T))
+	return &encryptor[T]{
+		EncryptionKey:  key,
+		AdditionalKeys: additionalKeys,
+	}
+}
+
+func (e *encryptor[T]) Encrypt(data T) ([]byte, error) {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling data: %v", err)
+	}
+
+	var nonce [nonceSize]byte
+	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
+		return nil, errors.Wrap(err, "Failed to create nonce")
+	}
+
+	sealed := secretbox.Seal(nonce[:], b, &nonce, &e.EncryptionKey)
+
+	return append([]byte(encryptedMagicJSON), sealed...), nil
+}
+
+func (e *encryptor[T]) Decrypt(data []byte) (T, error) {
+	var nilt T
+
+	if !bytes.HasPrefix(data, []byte(encryptedMagicJSON)) {
+		return nilt, errors.New("incorrect magic prefix")
+	}
+	b := data[4:]
+
+	for _, k := range append([][keySize]byte{e.EncryptionKey}, e.AdditionalKeys...) {
+		var decryptNonce [nonceSize]byte
+		copy(decryptNonce[:], b[:nonceSize])
+		db, ok := secretbox.Open(nil, b[nonceSize:], &decryptNonce, &k)
+		if ok {
+			newt := *new(T)
+			if err := json.Unmarshal(db, &newt); err != nil {
+				return nilt, fmt.Errorf("unmarshaling data: %w", err)
+			}
+			return newt, nil
+		}
+	}
+	return nilt, errors.New("field failed to decrypt, missing keys?")
 }

@@ -23,9 +23,6 @@ type rotatable interface {
 	// ID returns the globally unique ID for this item. This should always
 	// return the same value
 	ID() string
-	// Initialize is called when a new rotatable is created. This can be used to
-	// set up the object
-	Initialize() error
 	// Rotate is called on each rotation, with the stage the key is being
 	// rotated in to.
 	Rotate(stage rotatorStage) error
@@ -48,6 +45,10 @@ type dbRotator[T any, PT interface {
 	// max age of any key, from it's inception time. This should be at least
 	// twice the rotate period to allow for an upcoming and current
 	maxAge time.Duration
+
+	// newFn is called to instantiate a T. It should set up the item
+	// appropriatly, populate the ID etc.
+	newFn func() (PT, error)
 }
 
 const defaultRotateTxTimeout = 30000 // 30s, leave plenty of time for key generation
@@ -220,9 +221,9 @@ func (d *dbRotator[T, PT]) RotateIfNeeded(ctx context.Context) error {
 }
 
 func (d *dbRotator[T, PT]) newItem(ctx context.Context, tx *sql.Tx, stage rotatorStage) (string, error) {
-	item := PT(new(T))
-	if err := item.Initialize(); err != nil {
-		return "", err
+	item, err := d.newFn()
+	if err != nil {
+		return "", fmt.Errorf("creating new rotated item: %w", err)
 	}
 	if item.ID() == "" {
 		return "", errors.New("item cannot return empty ID")
@@ -284,7 +285,7 @@ func (d *dbRotator[T, PT]) GetPrevious(ctx context.Context) ([]PT, error) {
 func (d *dbRotator[T, PT]) getStage(ctx context.Context, stage rotatorStage) ([]PT, error) {
 	var items []PT
 
-	rows, err := d.db.QueryContext(ctx, `select id, data from rotatable where usage=$1 and stage=$2 expires > time('now')`, d.usage, stage)
+	rows, err := d.db.QueryContext(ctx, `select data from rotatable where usage=$1 and stage=$2 and expires_at > datetime('now')`, d.usage, stage)
 	if err != nil {
 		return nil, fmt.Errorf("looking up public keys: %v", err)
 	}
