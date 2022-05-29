@@ -20,7 +20,6 @@ type migration struct {
 
 // migrations are run in the order presented here
 var migrations = []migration{
-	// id, usage, stage, data, current_at, expires
 	{
 		Idx: 202205281754,
 		SQL: `
@@ -33,6 +32,17 @@ var migrations = []migration{
 				previous_at datetime, -- when this item was moved to the previous state
 				created_at datetime default current_timestamp not null,
 				expires_at datetime not null -- when the item should no longer be used
+			);
+		`,
+	},
+	{
+		Idx: 202205291345,
+		SQL: `
+			create table sessions (
+				id text primary key,
+				oidcstate text not null,
+				expires_at datetime not null,
+				created_att default current_timestamp not null
 			);
 		`,
 	},
