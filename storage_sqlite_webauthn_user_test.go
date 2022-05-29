@@ -22,6 +22,20 @@ func TestWebauthnUserStorage(t *testing.T) {
 	}
 	u.ID = id
 
+	_, ok, err := s.GetUserByID(ctx, u.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("inactive user should not be returned")
+	}
+
+	u.Activated = true
+
+	if err := s.UpdateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
 	randb := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, randb); err != nil {
 		t.Fatal(err)
@@ -32,8 +46,7 @@ func TestWebauthnUserStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var ok bool
-	u, ok, err = s.GetUserByID(ctx, u.ID)
+	u, ok, err = s.GetUserByID(ctx, u.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}

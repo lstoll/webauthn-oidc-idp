@@ -23,7 +23,7 @@ class WebAuthn {
     }
 
     register(data) {
-        return fetch('{{ pathFor "/registration/begin" }}?key_name=' + data.keyName + '&{{ .WebauthnQuery }}', {
+        return fetch('/registration/begin?key_name=' + data.keyName, {
             method: 'POST',
             body: JSON.stringify(data)
         })
@@ -41,7 +41,7 @@ class WebAuthn {
             })
             .then(res => navigator.credentials.create(res))
             .then(credential => {
-                return fetch('{{ pathFor "/registration/finish?" }}{{ .WebauthnQuery }}', {
+                return fetch('/registration/finish', {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',

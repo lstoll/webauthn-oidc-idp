@@ -1,0 +1,15 @@
+{{template "layout.tmpl.html" .}}
+
+{{define "title"}}Register key{{end}}
+
+{{define "body"}}
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="/public/webauthn_register.js"></script>
+<div>
+    <label for="keyName">Key Name:</label>
+    <input id="keyName" name="keyName" type="text">
+    <button onclick="doRegister()">Register Key</button>
+</div>
+
+{{end}}

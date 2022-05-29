@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
-	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
@@ -12,11 +12,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sync"
 
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
-	"github.com/gorilla/csrf"
 	oidcm "github.com/pardot/oidc/middleware"
 )
 
@@ -33,9 +31,10 @@ var _ = func() struct{} {
 var webauthnTemplateData embed.FS
 
 type WebauthnUserStore interface {
-	GetUserByID(ctx context.Context, id string) (*WebauthnUser, bool, error)
+	GetUserByID(ctx context.Context, id string, allowInactive bool) (*WebauthnUser, bool, error)
 	GetUserByEmail(ctx context.Context, email string) (*WebauthnUser, bool, error)
 	CreateUser(ctx context.Context, u *WebauthnUser) (id string, err error)
+	UpdateUser(ctx context.Context, u *WebauthnUser) error
 	UpdateCredential(ctx context.Context, userID string, cred webauthn.Credential) error
 	// AddCredentialToUser adds the credential to the user, returning the
 	// friendly ID
@@ -50,11 +49,6 @@ type webauthnManager struct {
 	store    WebauthnUserStore
 	webauthn *webauthn.WebAuthn
 
-	// httpPrefix is the prefix which the service is mounted under, so we can
-	// add this to path references we generate
-	httpPrefix  string
-	handler     http.Handler
-	initHandler sync.Once
 	// oidcMiddleware is used to gate access to the system. It should be
 	// configured with the right ACR.
 	oidcMiddleware *oidcm.Handler
@@ -70,16 +64,12 @@ type webauthnManager struct {
 	acrs []string
 }
 
-func (w *webauthnManager) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	w.initHandler.Do(func() {
-		mux := http.NewServeMux()
-		mux.Handle("/", w.csrfMiddleware(http.HandlerFunc(w.listKeys)))
-		mux.Handle("/users", w.csrfMiddleware(http.HandlerFunc(w.users)))
-		mux.HandleFunc("/registration/begin", w.beginRegistration)
-		mux.HandleFunc("/registration/finish", w.finishRegistration)
-		w.handler = w.oidcMiddleware.Wrap(mux)
-	})
-	w.handler.ServeHTTP(rw, req)
+func (w *webauthnManager) AddHandlers(mux *http.ServeMux) {
+	mux.Handle("/authenticators", w.oidcMiddleware.Wrap(w.csrfMiddleware(http.HandlerFunc(w.listKeys))))
+	mux.Handle("/users", w.oidcMiddleware.Wrap(w.csrfMiddleware(http.HandlerFunc(w.users))))
+	mux.HandleFunc("/registration/begin", w.beginRegistration)
+	mux.HandleFunc("/registration/finish", w.finishRegistration)
+	mux.HandleFunc("/registration", w.registration)
 }
 
 // listKeys is the "index" page for a users credentials. It can be used to add,
@@ -106,7 +96,7 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 		// TODO - we need to track this some other way, in case form doesn't include it?
-		http.Redirect(rw, req, w.pathFor(req.URL.Path)+"?"+req.URL.Query().Encode(), http.StatusSeeOther)
+		http.Redirect(rw, req, req.URL.Path+"?"+req.URL.Query().Encode(), http.StatusSeeOther)
 		return
 	}
 
@@ -165,7 +155,7 @@ func (w *webauthnManager) users(rw http.ResponseWriter, req *http.Request) {
 			w.httpErr(req.Context(), rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
 			return
 		}
-		http.Redirect(rw, req, w.pathFor(req.URL.Path), http.StatusSeeOther)
+		http.Redirect(rw, req, req.URL.Path, http.StatusSeeOther)
 		return
 	}
 
@@ -181,14 +171,15 @@ func (w *webauthnManager) users(rw http.ResponseWriter, req *http.Request) {
 // addUser handles POSTS to the user page, to create a user
 func (w *webauthnManager) addUser(ctx context.Context, form url.Values) error {
 	u := WebauthnUser{
-		Email:    form.Get("email"),
-		FullName: form.Get("fullName"),
+		Email:     form.Get("email"),
+		FullName:  form.Get("fullName"),
+		Activated: true, // always for direct creation. TODO - UI for enrollment?
 	}
 	if u.Email == "" || u.FullName == "" {
 		// TODO - more elegant than a 500
 		return fmt.Errorf("email and full name must be specified")
 	}
-	if _, err := w.store.CreateUser(ctx, &u); err != nil {
+	if _, err := w.store.CreateUser(ctx, &u); err != nil { // always active immediately in UI
 		return err
 	}
 	return nil
@@ -204,9 +195,78 @@ func (w *webauthnManager) deleteUser(ctx context.Context, form url.Values) error
 	return w.store.DeleteUser(ctx, id)
 }
 
+// registration is a page used to add a new key. It should handle either a user
+// in the session (from the logged in keys page), or a boostrap token and user
+// id as query params for an inactive user.
+func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		http.Error(rw, "Invalid Method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// first, check the URL for a registration token and user id. If it exists,
+	// check if we have the user and if they are active/with a matching token,
+	// embed it in the page.
+	uid := req.URL.Query().Get("user_id")
+	et := req.URL.Query().Get("enrollment_token")
+	if uid != "" && et != "" {
+		// we want to enroll a user. Find them, and match the token
+		u, ok, err := w.store.GetUserByID(req.Context(), uid, true)
+		if err != nil {
+			w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", uid, err))
+			return
+		}
+		if !ok {
+			w.httpNotFound(rw)
+			return
+		}
+		log.Printf("compare %s to %s", et, u.EnrollmentKey)
+		if u.Activated || subtle.ConstantTimeCompare([]byte(et), []byte(u.EnrollmentKey)) == 0 {
+			w.httpUnauth(rw, "invalid enrollment")
+			return
+		}
+		ss := sessionStoreFromContext(req.Context())
+		sess, err := ss.Get(req, webauthnmgrSessionName)
+		if err != nil {
+			w.httpErr(req.Context(), rw, err)
+			return
+		}
+
+		sess.Values["enroll_to_user_id"] = uid
+		if err := ss.Save(req, rw, sess); err != nil {
+			w.httpErr(req.Context(), rw, err)
+			return
+		}
+
+	} else {
+		// TODO - keys page needs to set something we can use, maybe the cookie values directly?
+		panic("TODO")
+	}
+
+	w.execTemplate(rw, req, "register_key.tmpl.html", map[string]interface{}{})
+}
+
 func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
-	responded, _, u := w.userForReq(rw, req)
-	if responded {
+	ss := sessionStoreFromContext(req.Context())
+	sess, err := ss.Get(req, webauthnmgrSessionName)
+	if err != nil {
+		w.httpErr(req.Context(), rw, err)
+		return
+	}
+
+	euid := sess.Values["enroll_to_user_id"].(string)
+	if euid == "" {
+		w.httpUnauth(rw, "no enroll to user id set in session")
+		return
+	}
+
+	u, ok, err := w.store.GetUserByID(req.Context(), euid, true) // TODO - guard the allow unactive for enrol only!
+	if err != nil {
+		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", euid, err))
+		return
+	}
+	if !ok {
+		w.httpNotFound(rw)
 		return
 	}
 
@@ -217,12 +277,6 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 	}
 
 	options, sessionData, err := w.webauthn.BeginRegistration(u)
-	if err != nil {
-		w.httpErr(req.Context(), rw, err)
-		return
-	}
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnmgrSessionName)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
@@ -242,17 +296,29 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 }
 
 func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
-	responded, _, u := w.userForReq(rw, req)
-	if responded {
-		return
-	}
-
 	ss := sessionStoreFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnmgrSessionName)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
 	}
+
+	euid := sess.Values["enroll_to_user_id"].(string)
+	if euid == "" {
+		w.httpUnauth(rw, "no enroll to user id set in session")
+		return
+	}
+
+	u, ok, err := w.store.GetUserByID(req.Context(), euid, true) // TODO - guard the allow unactive for enrol only!
+	if err != nil {
+		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", euid, err))
+		return
+	}
+	if !ok {
+		w.httpNotFound(rw)
+		return
+	}
+
 	sessionData, ok := sess.Values["registration"].(webauthn.SessionData)
 	if !ok {
 		w.httpErr(req.Context(), rw, fmt.Errorf("session data not in session"))
@@ -305,7 +371,7 @@ func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) 
 		overriden = true
 	}
 
-	u, ok, err := w.store.GetUserByID(req.Context(), uid)
+	u, ok, err := w.store.GetUserByID(req.Context(), uid, false)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return true, overriden, nil
@@ -316,10 +382,6 @@ func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	return false, overriden, u
-}
-
-func (w *webauthnManager) pathFor(path string) string {
-	return w.httpPrefix + path
 }
 
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
@@ -353,13 +415,7 @@ func (w *webauthnManager) isAdmin(sub string) bool {
 }
 
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
-	funcs := template.FuncMap{
-		"pathFor": w.pathFor,
-		csrf.TemplateTag: func() template.HTML {
-			return csrf.TemplateField(r)
-		},
-		"b64": base64.URLEncoding.EncodeToString,
-	}
+	funcs := template.FuncMap{}
 
 	lt, err := template.New("").Funcs(funcs).ParseFS(webauthnTemplateData, "web/templates/webauthn/layout.tmpl.html")
 	if err != nil {

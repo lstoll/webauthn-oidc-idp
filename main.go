@@ -45,6 +45,8 @@ func main() {
 	prevSecurePassphrases := app.Flag("prev-secure-passphrases", "Passphrase(s) previously used for DB encryption, to decrypt").Envar("SECURE_PASSPHRASES_PREV").Strings()
 
 	serveCmd, serveRun := serveCommand(app)
+	addUserCmd, addUserRun := addUserCommand(app)
+	activateUserCmd, activateUserRun := activateUserCommand(app)
 
 	cmdName := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -70,6 +72,10 @@ func main() {
 	// Register user
 	case serveCmd.FullCommand():
 		runErr = serveRun(ctx, gcfg)
+	case addUserCmd.FullCommand():
+		runErr = addUserRun(ctx, gcfg)
+	case activateUserCmd.FullCommand():
+		runErr = activateUserRun(ctx, gcfg)
 	default:
 		panic("should not happen, kingpin should handle this")
 	}

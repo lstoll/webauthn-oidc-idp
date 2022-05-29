@@ -54,6 +54,7 @@ var migrations = []migration{
 				id text primary key,
 				email text not null,
 				full_name text not null,
+				activated integer default 0,
 				enrollment_key text,
 				created_at default current_timestamp not null
 			);

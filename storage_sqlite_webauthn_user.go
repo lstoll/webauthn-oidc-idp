@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/gob"
+	"errors"
 	"fmt"
 
 	"github.com/duo-labs/webauthn/webauthn"
@@ -18,18 +19,22 @@ func init() {
 	gob.Register(webauthn.Credential{})
 }
 
-func (s *storage) GetUserByID(ctx context.Context, id string) (*WebauthnUser, bool, error) {
-	return s.getUserByQuery(ctx, `select id, email, full_name from users where id=$1`, id)
+func (s *storage) GetUserByID(ctx context.Context, id string, allowInactive bool) (*WebauthnUser, bool, error) {
+	if allowInactive {
+		return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where id=$1`, id)
+	} else {
+		return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where id=$1 and activated=1`, id)
+	}
 }
 
 func (s *storage) GetUserByEmail(ctx context.Context, email string) (*WebauthnUser, bool, error) {
-	return s.getUserByQuery(ctx, `select id, email, full_name from users where email=$1`, email)
+	return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where email=$1 and activated=1`, email)
 }
 
 func (s *storage) getUserByQuery(ctx context.Context, query string, args ...interface{}) (*WebauthnUser, bool, error) {
 	u := WebauthnUser{}
 	if err := s.db.QueryRowContext(ctx, query, args...).
-		Scan(&u.ID, &u.Email, &u.FullName); err != nil {
+		Scan(&u.ID, &u.Email, &u.FullName, &u.Activated, &u.EnrollmentKey); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, false, nil
 		}
@@ -64,10 +69,20 @@ func (s *storage) CreateUser(ctx context.Context, u *WebauthnUser) (id string, e
 	if u.ID == "" {
 		u.ID = uuid.NewString()
 	}
-	if _, err := s.db.ExecContext(ctx, `insert into users (id, email, full_name) values ($1, $2, $3)`, u.ID, u.Email, u.FullName); err != nil {
+	if _, err := s.db.ExecContext(ctx, `insert into users (id, email, full_name, activated, enrollment_key) values ($1, $2, $3, $4, $5)`, u.ID, u.Email, u.FullName, u.Activated, u.EnrollmentKey); err != nil {
 		return "", fmt.Errorf("inserting user %s: %w", u.ID, err)
 	}
 	return u.ID, nil
+}
+
+func (s *storage) UpdateUser(ctx context.Context, u *WebauthnUser) error {
+	if u.ID == "" {
+		return errors.New("user missing ID")
+	}
+	if _, err := s.db.ExecContext(ctx, `update users set email=$1, full_name=$2, activated=$3, enrollment_key=$4 where id=$5`, u.Email, u.FullName, u.Activated, u.EnrollmentKey, u.ID); err != nil {
+		return fmt.Errorf("updating user %s: %w", u.ID, err)
+	}
+	return nil
 }
 
 func (s *storage) AddCredentialToUser(ctx context.Context, userid string, credential webauthn.Credential, keyName string) (id string, err error) {
@@ -145,6 +160,10 @@ type WebauthnUser struct {
 	Email string
 	// FullName to refer to the user as
 	FullName string
+	// Activated if the user is valid to be used
+	Activated bool
+	// EnrollmentKey used for enrolling users first token
+	EnrollmentKey string
 	// Credentials for webauthn authenticators
 	Credentials []WebauthnUserCredential
 }

@@ -260,7 +260,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	u, ok, err := s.store.GetUserByID(req.Context(), login.UserID)
+	u, ok, err := s.store.GetUserByID(req.Context(), login.UserID, false)
 	if err != nil {
 		s.httpErr(rw, err)
 		return

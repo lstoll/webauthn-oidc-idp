@@ -143,16 +143,13 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		prefix := "/webauthn"
 		mgr := &webauthnManager{
-			store:      gcfg.storage,
-			webauthn:   wn,
-			httpPrefix: prefix,
-			// TODO - this needs a prefix
+			store:    gcfg.storage,
+			webauthn: wn,
 			oidcMiddleware: &oidcm.Handler{
 				Issuer:       *issuer,
 				ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
 				ClientSecret: uuid.New().String(),
 				BaseURL:      *issuer + prefix,
-				// Prefix:       prefix, // ????
 				RedirectURL:  *issuer + prefix + "/oidc-callback",
 				SessionStore: sessmgr,
 				SessionName:  "webauthn-manager",
@@ -174,11 +171,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			},
 		}, clients.sources...)
 
-		mux.HandleFunc(mgr.httpPrefix, func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("called")
-			http.Redirect(w, r, mgr.httpPrefix+"/", http.StatusMovedPermanently)
-		})
-		mux.Handle(mgr.httpPrefix+"/", http.StripPrefix(mgr.httpPrefix, mgr))
+		mgr.AddHandlers(mux)
 
 		svr := oidcServer{
 			issuer:          *issuer,
