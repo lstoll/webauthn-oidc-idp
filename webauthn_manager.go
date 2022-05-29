@@ -221,7 +221,6 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 			w.httpNotFound(rw)
 			return
 		}
-		log.Printf("compare %s to %s", et, u.EnrollmentKey)
 		if u.Activated || subtle.ConstantTimeCompare([]byte(et), []byte(u.EnrollmentKey)) == 0 {
 			w.httpUnauth(rw, "invalid enrollment")
 			return
@@ -271,13 +270,20 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
+	// postttttt this
 	keyName := req.URL.Query().Get("key_name")
 	if keyName == "" {
 		w.httpErr(req.Context(), rw, fmt.Errorf("key name required"))
 		return
 	}
 
-	options, sessionData, err := w.webauthn.BeginRegistration(u)
+	authSelect := protocol.AuthenticatorSelection{
+		RequireResidentKey: protocol.ResidentKeyRequired(),
+		UserVerification:   protocol.VerificationRequired,
+	}
+	conveyancePref := protocol.ConveyancePreference(protocol.PreferDirectAttestation)
+
+	options, sessionData, err := w.webauthn.BeginRegistration(u, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return

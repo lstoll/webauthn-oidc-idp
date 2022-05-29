@@ -168,6 +168,13 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
+	parsedResponse, err := protocol.ParseCredentialRequestResponseBody(req.Body)
+	if err != nil {
+		s.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
+		return
+	}
+	log.Printf("parsed response: %#v", err)
+
 	var (
 		email     = req.URL.Query().Get("email")
 		sessionID = req.URL.Query().Get("sessionID")
@@ -205,11 +212,12 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	}
 	delete(sess.Values, "login")
 
-	parsedResponse, err := protocol.ParseCredentialRequestResponseBody(req.Body)
-	if err != nil {
-		s.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
-		return
-	}
+	// parsedResponse, err := protocol.ParseCredentialRequestResponseBody(req.Body)
+	// if err != nil {
+	// 	s.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
+	// 	return
+	// }
+
 	credential, err := s.webauthn.ValidateLogin(u, sessionData, parsedResponse)
 	if err != nil {
 		s.httpErr(rw, fmt.Errorf("validating login: %v", err))

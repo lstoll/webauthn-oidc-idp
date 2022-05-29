@@ -19,3 +19,11 @@ Basically this takes [dex](github.com/dexidp/dex) and [crewjam/saml](crewjam/sam
 There's a tester saml/oidc client in cmd/example-client, and a simple implementation of a full idp in cmd/example-idp.
 
 See [Issues](/../../issues) for the closest thign we have to a roadmap.
+
+## Registering an initial user
+
+```
+go install . && idp adduser --user-id=username --email=user@domain --fullname="Users Name"
+# go to the url output
+go install . && idp activate-user --user-id=username
+```
