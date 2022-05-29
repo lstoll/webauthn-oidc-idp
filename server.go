@@ -217,8 +217,8 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// update the credential for the counter etc.
-	u.UpdateWebauthnCredential(credential)
-	if _, err := s.store.PutUser(req.Context(), u); err != nil {
+	panic("TODO")
+	if err := s.store.UpdateCredential(req.Context(), u.ID, *credential); err != nil {
 		s.httpErr(rw, err)
 		return
 	}

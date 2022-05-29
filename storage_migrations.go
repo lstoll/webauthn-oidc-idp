@@ -47,4 +47,29 @@ var migrations = []migration{
 			);
 		`,
 	},
+	{
+		Idx: 202205291500,
+		SQL: `
+			create table users (
+				id text primary key,
+				email text not null,
+				full_name text not null,
+				enrollment_key text,
+				created_at default current_timestamp not null
+			);
+		`,
+	},
+	{
+		Idx: 202205291510,
+		SQL: `
+			create table webauthn_credentials (
+				id text primary key,
+				user_id text not null,
+				name text not null,
+				credential blob not null, -- gob of the duo labs field
+				created_at default current_timestamp not null,
+				foreign key(user_id) REFERENCES users(id)
+			);
+		`,
+	},
 }

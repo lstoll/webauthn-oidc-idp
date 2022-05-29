@@ -33,10 +33,16 @@ var _ = func() struct{} {
 var webauthnTemplateData embed.FS
 
 type WebauthnUserStore interface {
-	GetUserByID(ctx context.Context, id string) (*DynamoWebauthnUser, bool, error)
-	GetUserByEmail(ctx context.Context, email string) (*DynamoWebauthnUser, bool, error)
-	PutUser(ctx context.Context, u *DynamoWebauthnUser) (id string, err error)
-	ListUsers(ctx context.Context) ([]*DynamoWebauthnUser, error)
+	GetUserByID(ctx context.Context, id string) (*WebauthnUser, bool, error)
+	GetUserByEmail(ctx context.Context, email string) (*WebauthnUser, bool, error)
+	CreateUser(ctx context.Context, u *WebauthnUser) (id string, err error)
+	UpdateCredential(ctx context.Context, userID string, cred webauthn.Credential) error
+	// AddCredentialToUser adds the credential to the user, returning the
+	// friendly ID
+	AddCredentialToUser(ctx context.Context, userid string, credential webauthn.Credential, keyName string) (id string, err error)
+	// DeleteCredentialFromuser takes the friendly ID for the credential
+	DeleteCredentialFromuser(ctx context.Context, userid string, credentialID string) error
+	ListUsers(ctx context.Context) ([]*WebauthnUser, error)
 	DeleteUser(ctx context.Context, id string) error
 }
 
@@ -117,24 +123,14 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 	})
 }
 
-func (w *webauthnManager) deleteKey(ctx context.Context, u *DynamoWebauthnUser, form url.Values) error {
+func (w *webauthnManager) deleteKey(ctx context.Context, u *WebauthnUser, form url.Values) error {
 	id := form.Get("keyID")
 	if id == "" {
 		// TODO - more elegant
 		return fmt.Errorf("keyID not provided")
 	}
-	k, err := base64.StdEncoding.DecodeString(id)
-	if err != nil {
-		return fmt.Errorf("decoding key: %w", err)
-	}
 
-	u.DeleteWebauthnCredential(k)
-
-	if _, err := w.store.PutUser(ctx, u); err != nil {
-		return fmt.Errorf("putting user: %w", err)
-	}
-
-	return w.store.DeleteUser(ctx, id)
+	return w.store.DeleteCredentialFromuser(ctx, u.ID, id)
 }
 
 // users is an admin that lists users, allowing for them to be added, deleted etc.
@@ -184,7 +180,7 @@ func (w *webauthnManager) users(rw http.ResponseWriter, req *http.Request) {
 
 // addUser handles POSTS to the user page, to create a user
 func (w *webauthnManager) addUser(ctx context.Context, form url.Values) error {
-	u := DynamoWebauthnUser{
+	u := WebauthnUser{
 		Email:    form.Get("email"),
 		FullName: form.Get("fullName"),
 	}
@@ -192,7 +188,7 @@ func (w *webauthnManager) addUser(ctx context.Context, form url.Values) error {
 		// TODO - more elegant than a 500
 		return fmt.Errorf("email and full name must be specified")
 	}
-	if _, err := w.store.PutUser(ctx, &u); err != nil {
+	if _, err := w.store.CreateUser(ctx, &u); err != nil {
 		return err
 	}
 	return nil
@@ -281,9 +277,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	u.AddWebauthnCredential(keyName, credential)
-
-	if _, err := w.store.PutUser(req.Context(), u); err != nil {
+	if _, err := w.store.AddCredentialToUser(req.Context(), u.ID, *credential, keyName); err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
 	}
@@ -294,7 +288,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 // userForReq gets the user for a given request, accounting for the override_uid
 // / admin params. it will handle reponse to user, indicating if it does via the
 // return. If it has, the caller should simply return
-func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overriden bool, u *DynamoWebauthnUser) {
+func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overriden bool, u *WebauthnUser) {
 	overriden = false
 
 	claims := oidcm.ClaimsFromContext(req.Context())
@@ -364,7 +358,7 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		csrf.TemplateTag: func() template.HTML {
 			return csrf.TemplateField(r)
 		},
-		"b64": base64.StdEncoding.EncodeToString,
+		"b64": base64.URLEncoding.EncodeToString,
 	}
 
 	lt, err := template.New("").Funcs(funcs).ParseFS(webauthnTemplateData, "web/templates/webauthn/layout.tmpl.html")

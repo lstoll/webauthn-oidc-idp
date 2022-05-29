@@ -117,7 +117,7 @@
                 <form method="POST" onsubmit="return confirm('Really remove key {{ $v.Name }}?');">
                     {{ csrfField }}
                     <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="keyID" value="{{ b64 $v.ID }}">
+                    <input type="hidden" name="keyID" value="{{ $v.ID }}">
                     <input type="submit" value="Delete">
                 </form>
             </td>
