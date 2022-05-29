@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -23,6 +25,9 @@ import (
 type serveConfig struct {
 	addr string
 }
+
+//go:embed web/public/*
+var staticFiles embed.FS
 
 func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func(context.Context, *globalCfg) error) {
 	serve := app.Command("serve", "Run the IDP as a server")
@@ -49,6 +54,9 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				return newRotatableRSAKey(encryptor)
 			},
 		}
+		if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
+			return err
+		}
 
 		sessionrotator := &dbRotator[rotatableSecurecookie, *rotatableSecurecookie]{
 			db:  gcfg.storage.db,
@@ -63,6 +71,10 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				return newRotatableSecureCookie(encryptor)
 			},
 		}
+		if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
+			return err
+		}
+
 		sessmgr := &secureCookieManager{
 			rotator:   sessionrotator,
 			encryptor: encryptor,
@@ -180,6 +192,13 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			storage:  gcfg.storage,
 		}
 
+		pubContent, err := fs.Sub(fs.FS(staticFiles), "web")
+		if err != nil {
+			return fmt.Errorf("creating public subfs: %w", err)
+		}
+		fs := http.FileServer(http.FS(pubContent))
+		mux.Handle("/public/", fs)
+
 		svr.AddHandlers(mux)
 
 		var g run.Group
@@ -193,7 +212,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			Handler: hh,
 		}
 		g.Add(func() error {
-			ctxLog(ctx).Info("Listing on %s", *addr)
+			ctxLog(ctx).Infof("Listing on %s", *addr)
 			if err := hs.ListenAndServe(); err != nil {
 				return fmt.Errorf("serving http: %v", err)
 			}
@@ -203,6 +222,29 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			_ = hs.Shutdown(ctx)
+		})
+
+		rotInt := make(chan struct{}, 1)
+		g.Add(func() error {
+			ctxLog(ctx).Info("Starting rotator")
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
+						return err
+					}
+					if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
+						return err
+					}
+				case <-rotInt:
+					return nil
+				}
+			}
+		}, func(error) {
+			rotInt <- struct{}{}
 		})
 
 		return g.Run()
