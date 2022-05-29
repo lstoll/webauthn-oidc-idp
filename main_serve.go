@@ -12,6 +12,7 @@ import (
 
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
@@ -35,7 +36,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		encryptor := newEncryptor[[]byte](gcfg.keyset.dbCurr, gcfg.keyset.dbPrev...)
 
-		dbr := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
+		oidcrotator := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
 			db:  gcfg.storage.db,
 			log: ctxLog(ctx),
 
@@ -49,8 +50,26 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			},
 		}
 
+		sessionrotator := &dbRotator[rotatableSecurecookie, *rotatableSecurecookie]{
+			db:  gcfg.storage.db,
+			log: ctxLog(ctx),
+
+			usage: rotatorUsageOIDC,
+
+			rotateInterval: *oidcRotateInterval,
+			maxAge:         *oidMaxAge,
+
+			newFn: func() (*rotatableSecurecookie, error) {
+				return newRotatableSecureCookie(encryptor)
+			},
+		}
+		sessmgr := &secureCookieManager{
+			rotator:   sessionrotator,
+			encryptor: encryptor,
+		}
+
 		oidcSigner := &oidcSigner{
-			rotator:   dbr,
+			rotator:   oidcrotator,
 			encryptor: encryptor,
 		}
 
@@ -117,16 +136,16 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			httpPrefix: prefix,
 			// TODO - this needs a prefix
 			oidcMiddleware: &oidcm.Handler{
-				Issuer: *issuer,
-				// ClientID:     p.Webauthn.ClientID,
-				// ClientSecret: p.Webauthn.ClientSecret,
-				BaseURL: *issuer + prefix,
-				// Prefix:       prefix,
-				RedirectURL: *issuer + prefix + "/oidc-callback",
-				// SessionStore: sessions.NewCookieStore(scHashKey, scEncryptKey),
-				SessionName: "webauthn-manager",
+				Issuer:       *issuer,
+				ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
+				ClientSecret: uuid.New().String(),
+				BaseURL:      *issuer + prefix,
+				// Prefix:       prefix, // ????
+				RedirectURL:  *issuer + prefix + "/oidc-callback",
+				SessionStore: sessmgr,
+				SessionName:  "webauthn-manager",
 			},
-			// csrfMiddleware: csrfh,
+			csrfMiddleware: sessmgr.CSRFHandler(ctx, heh),
 			// admins: p.Webauthn.AdminSubjects, // TODO - google account id
 			acrs: nil,
 		}
@@ -167,7 +186,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		g.Add(run.SignalHandler(ctx, os.Interrupt))
 
-		hh := baseMiddleware(mux, ctxLog(ctx), nil, nil) // scHashKey, scEncryptKey
+		hh := baseMiddleware(mux, ctxLog(ctx), sessmgr)
 
 		hs := &http.Server{
 			Addr:    *addr,

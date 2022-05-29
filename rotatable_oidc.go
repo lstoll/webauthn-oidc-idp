@@ -29,13 +29,20 @@ const rotatorUsageOIDC = "oidc-signer"
 // var _ jose.OpaqueVerifier = (*JOSESigner)(nil) // TODO - do we want this?
 
 type rotatableRSAKey struct {
-	KeyID      string `json:"key_id`
+	KeyID      string `json:"key_id"`
 	PrivateKey []byte `json:"private,omitempty"`
 	PublicKey  []byte `json:"public"`
 
-	privparsed *rsa.PrivateKey    `json:"-"`
-	pubparsed  *rsa.PublicKey     `json:"-"`
-	encryptor  *encryptor[[]byte] `json:"-"`
+	privparsed *rsa.PrivateKey `json:"-"`
+	pubparsed  *rsa.PublicKey  `json:"-"`
+	// TODO - could this just be on the external implementation, and we move the
+	// unpacking logic there? nothing consumes the keys directly, the rotator
+	// doesn't care. We only care when actually signing. This would solve the
+	// circular dependency, and then we could restore the older (and nicer)
+	// initialization routine. Could even just extract signer to a method that
+	// takes an encryptor, and returns a signer.
+	// - nm - I think it does to create the initial key, so think about that more.
+	encryptor *encryptor[[]byte] `json:"-"`
 }
 
 func (r *rotatableRSAKey) ID() string {

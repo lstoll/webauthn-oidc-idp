@@ -16,8 +16,7 @@ type sessionStoreCtxKey struct{}
 // baseMiddleware should wrap all requests to the service
 func baseMiddleware(wrapped http.Handler,
 	logger logrus.FieldLogger,
-	scHashKey []byte,
-	scEncryptKey []byte,
+	sess sessions.Store,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -34,8 +33,7 @@ func baseMiddleware(wrapped http.Handler,
 		l := logger.WithField("request_id", rid)
 		ctx = contextWithLogger(ctx, l)
 
-		store := sessions.NewCookieStore(scHashKey, scEncryptKey)
-		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, store)
+		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, sess)
 
 		ww := &wrapResponseWriter{ResponseWriter: w}
 
