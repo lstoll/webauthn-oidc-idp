@@ -15,6 +15,7 @@ import (
 
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/gorilla/csrf"
 	oidcm "github.com/pardot/oidc/middleware"
 )
 
@@ -415,7 +416,11 @@ func (w *webauthnManager) isAdmin(sub string) bool {
 }
 
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
-	funcs := template.FuncMap{}
+	funcs := template.FuncMap{
+		csrf.TemplateTag: func() template.HTML {
+			return csrf.TemplateField(r)
+		},
+	}
 
 	lt, err := template.New("").Funcs(funcs).ParseFS(webauthnTemplateData, "web/templates/webauthn/layout.tmpl.html")
 	if err != nil {

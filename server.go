@@ -217,7 +217,6 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// update the credential for the counter etc.
-	panic("TODO")
 	if err := s.store.UpdateCredential(req.Context(), u.ID, *credential); err != nil {
 		s.httpErr(rw, err)
 		return
@@ -288,7 +287,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 	// our custom storage type, so diff to oidc?
 	// https://github.com/lstoll/idp/blob/bc90facd5b6ea40d95f4f71c255f74d0a3bb5f83/storage_dynamo_sessions.go#L195-L247
 	if err := s.storage.Authenticate(req.Context(), login.SessionID, auth); err != nil {
-		s.httpErr(rw, fmt.Errorf("no user found"))
+		s.httpErr(rw, fmt.Errorf("authenticating user for session id %s: %w", login.SessionID, err))
 		return
 	}
 	// TODO - we need to fill this. This is likely going to need information
@@ -303,7 +302,8 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
-	panic("TODO - replace me with the error handler")
+	// TODO - replace me with the error handler
+	log.Printf("(TODO improve this handler) error in server: %v", err)
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
 }
 

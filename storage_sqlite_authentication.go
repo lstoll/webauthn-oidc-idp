@@ -15,11 +15,9 @@ func (s *storage) Authenticate(ctx context.Context, sessionID string, auth Authe
 		return fmt.Errorf("marshaling authentication %s: %w", sessionID, err)
 	}
 	if _, err := s.db.ExecContext(ctx,
-		`insert into sessions(id, authentication) values ($1, $2)
-		on conflict(id) do update
-		set authentication=$4`,
-		sessionID, b, b); err != nil {
-		return fmt.Errorf("upserting authentication %s: %w", sessionID, err)
+		`update sessions set authentication=$1 where id=$2`,
+		b, sessionID); err != nil {
+		return fmt.Errorf("updating authentication %s: %w", sessionID, err)
 	}
 	return nil
 }

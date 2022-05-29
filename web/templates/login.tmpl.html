@@ -44,7 +44,7 @@
                     return;
                 }
 
-                return fetch('/start?email=' + email + '&sessionID={{ SessionID }}', {
+                return fetch('/start?email=' + email + '&sessionID={{ .SessionID }}', {
                     method: 'POST',
                     body: JSON.stringify({}) // TODO - better than query string
                 })
@@ -61,7 +61,7 @@
                     })
                     .then(res => navigator.credentials.get(res))
                     .then(credential => {
-                        return fetch('/finish?email=' + email + '&sessionID={{ SessionID }}', {
+                        return fetch('/finish?email=' + email + '&sessionID={{ .SessionID }}', {
                             method: 'POST',
                             headers: {
                                 'Accept': 'application/json',

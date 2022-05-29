@@ -33,7 +33,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	serve := app.Command("serve", "Run the IDP as a server")
 
 	issuer := serve.Flag("issuer", "OIDC issuer for this service").Envar("ISSUER").Required().String()
-	addr := serve.Flag("addr", "Address to listen on").Envar("ADDR").Default("127.0.0.1:5556").String()
+	addr := serve.Flag("addr", "Address to listen on").Envar("ADDR").Default("127.0.0.1:8085").String()
 	oidcRotateInterval := serve.Flag("oidc-rotate-interval", "Interval we should rotate out OIDC signing keys").Envar("OIDC_ROTATE_INTERVAL").Default("24h").Duration()
 	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
 
@@ -140,8 +140,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		}
 
 		// start configuration of webauthn manager
-
-		prefix := "/webauthn"
 		mgr := &webauthnManager{
 			store:    gcfg.storage,
 			webauthn: wn,
@@ -149,8 +147,8 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				Issuer:       *issuer,
 				ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
 				ClientSecret: uuid.New().String(),
-				BaseURL:      *issuer + prefix,
-				RedirectURL:  *issuer + prefix + "/oidc-callback",
+				BaseURL:      *issuer,
+				RedirectURL:  *issuer + "/local-oidc-callback",
 				SessionStore: sessmgr,
 				SessionName:  "webauthn-manager",
 			},
@@ -158,6 +156,11 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			// admins: p.Webauthn.AdminSubjects, // TODO - google account id
 			acrs: nil,
 		}
+		// this is a dumb hack, because we use the middleware super
+		// restrictively but it needs to catch it's callback.
+		mux.Handle("/local-oidc-callback", mgr.oidcMiddleware.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte("should never get here?"))
+		})))
 
 		clients.sources = append([]core.ClientSource{
 			&staticClients{
