@@ -41,6 +41,7 @@ var migrations = []migration{
 			create table sessions (
 				id text primary key,
 				oidcstate text not null,
+				authentication text,
 				expires_at datetime not null,
 				created_att default current_timestamp not null
 			);
