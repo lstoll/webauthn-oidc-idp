@@ -54,10 +54,10 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			db:  gcfg.storage.db,
 			log: ctxLog(ctx),
 
-			usage: rotatorUsageOIDC,
+			usage: rotatorUsageSessions,
 
-			rotateInterval: *oidcRotateInterval,
-			maxAge:         *oidMaxAge,
+			rotateInterval: 24 * time.Hour, // config
+			maxAge:         168 * time.Hour,
 
 			newFn: func() (*rotatableSecurecookie, error) {
 				return newRotatableSecureCookie(encryptor)

@@ -13,6 +13,8 @@ import (
 	"github.com/gorilla/sessions"
 )
 
+const rotatorUsageSessions = "sessions"
+
 var _ sessions.Store = (*secureCookieManager)(nil)
 
 type rotatableSecurecookie struct {
