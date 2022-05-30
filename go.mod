@@ -1,4 +1,4 @@
-module github.com/lstoll/idp
+module github.com/lstoll/webauthn-oidc-idp
 
 go 1.18
 
