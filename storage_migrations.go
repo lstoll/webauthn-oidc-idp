@@ -80,7 +80,7 @@ var migrations = []migration{
 				key text primary key,
 				data blob not null,
 				created_at default current_timestamp not null,
-				created_at default current_timestamp not null,
+				updated_at default current_timestamp not null
 			);
 		`,
 	},

@@ -43,7 +43,7 @@ func (a *autocertStore) Put(ctx context.Context, key string, data []byte) error 
 	}
 	if _, err := a.db.ExecContext(ctx,
 		`insert into autocert_cache (key, data, updated_at) values ($1, $2, $3)
-		on conflict(key) do update set data=$3, updated_at=$5
+		on conflict(key) do update set data=$4, updated_at=$5
 		`, key, enc, time.Now(), enc, time.Now()); err != nil {
 		return fmt.Errorf("putting data for %s: %w", key, err)
 	}
