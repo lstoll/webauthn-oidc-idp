@@ -15,6 +15,6 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y ca-certificates
 
-COPY --from=build /go/bin/idp /usr/bin/
+COPY --from=build /go/bin/webauthn-oidc-idp /usr/bin/
 
-CMD ["/usr/bin/idp"]
+CMD ["/usr/bin/webauthn-oidc-idp"]
