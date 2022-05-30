@@ -1,7 +1,13 @@
 name: Go
 on:
-  - push
-  - pull_request
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - 'main'
 jobs:
 
   build:
@@ -31,7 +37,6 @@ jobs:
           ghcr.io/lstoll/webauthn-oidc-idp
         # generate Docker tags based on the following events/attributes
         tags: |
-          type=schedule
           type=ref,event=branch
           type=ref,event=pr
           type=semver,pattern={{version}}
@@ -57,6 +62,7 @@ jobs:
       uses: docker/build-push-action@v3
       with:
         context: .
+        platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
