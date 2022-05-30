@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -19,6 +20,7 @@ import (
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
 	oidcm "github.com/pardot/oidc/middleware"
+	"golang.org/x/crypto/acme/autocert"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -36,8 +38,13 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	addr := serve.Flag("addr", "Address to listen on").Envar("ADDR").Default("127.0.0.1:8085").String()
 	oidcRotateInterval := serve.Flag("oidc-rotate-interval", "Interval we should rotate out OIDC signing keys").Envar("OIDC_ROTATE_INTERVAL").Default("24h").Duration()
 	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
+	serveAutocert := serve.Flag("serve-autocert", "if set, serve using TLS + letsencrypt. If set, implies acceptance of their TOS").Default("false").Bool()
+	autocertEmail := serve.Flag("autocert-email", "E-mail address to register with letsencrypt.").String()
 
 	return serve, func(ctx context.Context, gcfg *globalCfg) error {
+		if *serveAutocert && *autocertEmail == "" {
+			return errors.New("autocert-email needs to be provided when serving with autocert")
+		}
 
 		encryptor := newEncryptor[[]byte](gcfg.keyset.dbCurr, gcfg.keyset.dbPrev...)
 
@@ -207,10 +214,29 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			Addr:    *addr,
 			Handler: hh,
 		}
+
 		g.Add(func() error {
-			ctxLog(ctx).Infof("Listing on %s", *addr)
-			if err := hs.ListenAndServe(); err != nil {
-				return fmt.Errorf("serving http: %v", err)
+			if *serveAutocert {
+				acc := &autocertStore{
+					db:        gcfg.storage.db,
+					encryptor: encryptor,
+				}
+				m := &autocert.Manager{
+					Cache:      acc,
+					Prompt:     autocert.AcceptTOS,
+					Email:      *autocertEmail,
+					HostPolicy: autocert.HostWhitelist(issHost),
+				}
+				hs.TLSConfig = m.TLSConfig()
+				ctxLog(ctx).Infof("Listing on https://%s", *addr)
+				if err := hs.ListenAndServeTLS("", ""); err != nil {
+					return fmt.Errorf("serving http: %v", err)
+				}
+			} else {
+				ctxLog(ctx).Infof("Listing on http://%s", *addr)
+				if err := hs.ListenAndServe(); err != nil {
+					return fmt.Errorf("serving http: %v", err)
+				}
 			}
 			return nil
 		}, func(error) {

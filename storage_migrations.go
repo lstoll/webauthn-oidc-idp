@@ -73,4 +73,15 @@ var migrations = []migration{
 			);
 		`,
 	},
+	{
+		Idx: 202205291510,
+		SQL: `
+			create table autocert_cache (
+				key text primary key,
+				data blob not null,
+				created_at default current_timestamp not null,
+				created_at default current_timestamp not null,
+			);
+		`,
+	},
 }

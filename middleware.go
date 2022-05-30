@@ -107,6 +107,8 @@ func (w *wrapResponseWriter) Write(b []byte) (int, error) {
 	// us to automatically handle the write, without habving each thing have to
 	// do it manually. This would allow us to hook in to the last possible
 	// moment for it
+	//
+	// lmao already done once in session/middleware.go, must be from the old code.
 	if w.Header().Get("content-type") == "" {
 		w.Header().Set("content-type", http.DetectContentType(b))
 	}
