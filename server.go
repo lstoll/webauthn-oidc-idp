@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -83,6 +84,20 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// stash in session, so we can pull it out in the login handler without
+	// threading it through the user code. make sure to clear it though!
+	ss := sessionStoreFromContext(req.Context())
+	sess, err := ss.Get(req, webauthnSessionName)
+	if err != nil {
+		s.httpErr(w, err)
+		return
+	}
+	sess.Values["login_session_id"] = ar.SessionID
+	if err := ss.Save(req, w, sess); err != nil {
+		s.httpErr(w, err)
+		return
+	}
+
 	template.Must(template.New("login").Parse(webauthnLoginTemplate)).Execute(w, struct {
 		SessionID string
 	}{
@@ -128,26 +143,52 @@ func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 }
 
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
-	email := req.URL.Query().Get("email")
+	// email := req.URL.Query().Get("email")
 
-	log.Printf("start for %s", email)
+	// log.Printf("start for %s", email)
 
-	u, ok, err := s.store.GetUserByEmail(req.Context(), email)
+	// u, ok, err := s.store.GetUserByEmail(req.Context(), email)
+	// if err != nil {
+	// 	s.httpErr(rw, err)
+	// 	return
+	// }
+	// if !ok {
+	// 	// TODO - better response
+	// 	s.httpErr(rw, fmt.Errorf("no user for email"))
+	// 	return
+	// }
+
+	// options, sessionData, err := s.webauthn.BeginLogin(u)
+	// if err != nil {
+	// 	s.httpErr(rw, err)
+	// 	return
+	// }
+
+	// A lot of this is lifted from the webauthn.BeginLogin message, but doing it
+	// directly because we aren't hinting the user.
+
+	challenge, err := protocol.CreateChallenge()
 	if err != nil {
 		s.httpErr(rw, err)
 		return
 	}
-	if !ok {
-		// TODO - better response
-		s.httpErr(rw, fmt.Errorf("no user for email"))
-		return
+
+	requestOptions := protocol.PublicKeyCredentialRequestOptions{
+		Challenge:        challenge,
+		Timeout:          s.webauthn.Config.Timeout,
+		RelyingPartyID:   s.webauthn.Config.RPID,
+		UserVerification: s.webauthn.Config.AuthenticatorSelection.UserVerification,
+		// AllowedCredentials: allowedCredentials, // this is what we don't send for resident/usernameless
 	}
 
-	options, sessionData, err := s.webauthn.BeginLogin(u)
-	if err != nil {
-		s.httpErr(rw, err)
-		return
+	sessionData := webauthn.SessionData{
+		Challenge: base64.RawURLEncoding.EncodeToString(challenge),
+		// UserID:               user.WebAuthnID(),
+		AllowedCredentialIDs: requestOptions.GetAllowedCredentialIDs(),
+		UserVerification:     requestOptions.UserVerification,
 	}
+
+	response := protocol.CredentialAssertion{Response: requestOptions}
 
 	ss := sessionStoreFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnSessionName)
@@ -155,13 +196,13 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 		s.httpErr(rw, err)
 		return
 	}
-	sess.Values["login"] = *sessionData
+	sess.Values["login"] = sessionData
 	if err := ss.Save(req, rw, sess); err != nil {
 		s.httpErr(rw, err)
 		return
 	}
 
-	if err := json.NewEncoder(rw).Encode(options); err != nil {
+	if err := json.NewEncoder(rw).Encode(response); err != nil {
 		s.httpErr(rw, err)
 		return
 	}
@@ -173,21 +214,17 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 		s.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
 		return
 	}
-	log.Printf("parsed response: %#v", err)
 
-	var (
-		email     = req.URL.Query().Get("email")
-		sessionID = req.URL.Query().Get("sessionID")
-	)
+	userID := string(parsedResponse.Response.UserHandle) // user handle is the webauthn.User#ID we registered with
 
-	u, ok, err := s.store.GetUserByEmail(req.Context(), email)
+	u, ok, err := s.store.GetUserByID(req.Context(), userID, false)
 	if err != nil {
 		s.httpErr(rw, err)
 		return
 	}
 	if !ok {
 		// TODO - better response
-		s.httpErr(rw, fmt.Errorf("no user for email"))
+		s.httpErr(rw, fmt.Errorf("no user for id"))
 		return
 	}
 
@@ -217,7 +254,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// 	s.httpErr(rw, fmt.Errorf("parsing credential creation response: %v", err))
 	// 	return
 	// }
-
+	sessionData.UserID = parsedResponse.Response.UserHandle // need this for the validation
 	credential, err := s.webauthn.ValidateLogin(u, sessionData, parsedResponse)
 	if err != nil {
 		s.httpErr(rw, fmt.Errorf("validating login: %v", err))
@@ -232,9 +269,10 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 
 	sess.Values["authd_user"] = webauthnLogin{
 		UserID:      u.ID,
-		SessionID:   sessionID,
+		SessionID:   sess.Values["login_session_id"].(string),
 		ValidBefore: time.Now().Add(15 * time.Second),
 	}
+	delete(sess.Values, "login_session_id")
 
 	if err := ss.Save(req, rw, sess); err != nil {
 		s.httpErr(rw, err)

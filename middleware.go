@@ -33,6 +33,8 @@ func baseMiddleware(wrapped http.Handler,
 		l := logger.WithField("request_id", rid)
 		ctx = contextWithLogger(ctx, l)
 
+		// TODO - actually load a session here too, have a global session type
+		// to make it "typed"
 		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, sess)
 
 		ww := &wrapResponseWriter{ResponseWriter: w}
@@ -101,6 +103,10 @@ func (w *wrapResponseWriter) WriteHeader(code int) {
 }
 
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
+	// TODO - could always save session here on the first run. This would allow
+	// us to automatically handle the write, without habving each thing have to
+	// do it manually. This would allow us to hook in to the last possible
+	// moment for it
 	if w.Header().Get("content-type") == "" {
 		w.Header().Set("content-type", http.DetectContentType(b))
 	}
