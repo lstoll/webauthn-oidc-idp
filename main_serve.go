@@ -22,6 +22,7 @@ import (
 	oidcm "github.com/pardot/oidc/middleware"
 	"golang.org/x/crypto/acme/autocert"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type serveConfig struct {
@@ -38,8 +39,9 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	addr := serve.Flag("addr", "Address to listen on").Envar("ADDR").Default("127.0.0.1:8085").String()
 	oidcRotateInterval := serve.Flag("oidc-rotate-interval", "Interval we should rotate out OIDC signing keys").Envar("OIDC_ROTATE_INTERVAL").Default("24h").Duration()
 	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
-	serveAutocert := serve.Flag("serve-autocert", "if set, serve using TLS + letsencrypt. If set, implies acceptance of their TOS").Default("false").Bool()
-	autocertEmail := serve.Flag("autocert-email", "E-mail address to register with letsencrypt.").String()
+	serveAutocert := serve.Flag("serve-autocert", "if set, serve using TLS + letsencrypt. If set, implies acceptance of their TOS").Envar("SERVE_AUTOCERT").Default("false").Bool()
+	autocertEmail := serve.Flag("autocert-email", "E-mail address to register with letsencrypt.").Envar("AUTOCERT_EMAIL").String()
+	clientsFile := serve.Flag("clients", "Path to file containing oauth2/oidc clients config").Envar("CLIENTS_FILE").File()
 
 	return serve, func(ctx context.Context, gcfg *globalCfg) error {
 		if *serveAutocert && *autocertEmail == "" {
@@ -92,8 +94,14 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			encryptor: encryptor,
 		}
 
-		clients := &multiClients{
-			// sources: []core.ClientSource{cfgClients}, // TODO - load from file
+		clients := &multiClients{}
+
+		if clientsFile != nil {
+			sc := &staticClients{}
+			if err := yaml.NewDecoder(*clientsFile).Decode(&sc.clients); err != nil {
+				return fmt.Errorf("decoding clients file %s: %w", (*clientsFile).Name(), err)
+			}
+			clients.sources = append(clients.sources, sc)
 		}
 
 		oidcmd := discovery.ProviderMetadata{
