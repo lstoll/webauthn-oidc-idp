@@ -3,11 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 
 	"github.com/pardot/oidc/core"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -81,54 +79,6 @@ func (s *staticClients) ValidateClientRedirectURI(clientID, redirectURI string) 
 	}
 
 	return false, nil
-}
-
-// fsClients extends the static source to load the static list from a given
-// reader on each invocation
-//
-// TODO - consider caching at this level
-type fsClients struct {
-	readerFn func() (io.ReadCloser, error)
-}
-
-func (f *fsClients) load() (*staticClients, error) {
-	r, err := f.readerFn()
-	if err != nil {
-		return nil, fmt.Errorf("getting reader: %v", err)
-	}
-	sc := &staticClients{}
-	if err := yaml.NewDecoder(r).Decode(&sc.clients); err != nil {
-		return nil, fmt.Errorf("decoding clients: %v", err)
-	}
-	return sc, nil
-}
-
-func (f *fsClients) IsValidClientID(clientID string) (ok bool, err error) {
-	sc, err := f.load()
-	if err != nil {
-		return false, err
-	}
-	return sc.IsValidClientID(clientID)
-}
-
-func (f *fsClients) IsUnauthenticatedClient(clientID string) (ok bool, err error) {
-	return false, nil
-}
-
-func (f *fsClients) ValidateClientSecret(clientID, clientSecret string) (ok bool, err error) {
-	sc, err := f.load()
-	if err != nil {
-		return false, err
-	}
-	return sc.ValidateClientSecret(clientID, clientSecret)
-}
-
-func (f *fsClients) ValidateClientRedirectURI(clientID, redirectURI string) (ok bool, err error) {
-	sc, err := f.load()
-	if err != nil {
-		return false, err
-	}
-	return sc.ValidateClientRedirectURI(clientID, redirectURI)
 }
 
 // errSourceNotFound is returned by multiClients when no source handles the

@@ -7,18 +7,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/sessions"
-	"go.uber.org/zap"
+	"github.com/sirupsen/logrus"
 )
 
-type loggerCtxKey struct{}
 type requestIDCtxKey struct{}
 type sessionStoreCtxKey struct{}
 
 // baseMiddleware should wrap all requests to the service
 func baseMiddleware(wrapped http.Handler,
-	logger *zap.SugaredLogger,
-	scHashKey []byte,
-	scEncryptKey []byte,
+	logger logrus.FieldLogger,
+	sess sessions.Store,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -32,11 +30,12 @@ func baseMiddleware(wrapped http.Handler,
 		}
 		ctx = context.WithValue(ctx, requestIDCtxKey{}, rid)
 
-		sl := logger.With("request_id", rid)
-		ctx = context.WithValue(ctx, loggerCtxKey{}, sl)
+		l := logger.WithField("request_id", rid)
+		ctx = contextWithLogger(ctx, l)
 
-		store := sessions.NewCookieStore(scHashKey, scEncryptKey)
-		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, store)
+		// TODO - actually load a session here too, have a global session type
+		// to make it "typed"
+		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, sess)
 
 		ww := &wrapResponseWriter{ResponseWriter: w}
 
@@ -53,21 +52,13 @@ func baseMiddleware(wrapped http.Handler,
 			ww.WriteHeader(http.StatusOK)
 		}
 
-		sl.With(
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", ww.st,
-			"duration", time.Since(st),
-		).Info()
+		l.WithFields(logrus.Fields{
+			"method":   r.Method,
+			"path":     r.URL.Path,
+			"status":   ww.st,
+			"duration": time.Since(st),
+		}).Info()
 	})
-}
-
-func loggerFromContext(ctx context.Context) *zap.SugaredLogger {
-	l, ok := ctx.Value(loggerCtxKey{}).(*zap.SugaredLogger)
-	if ok {
-		return l
-	}
-	return zap.NewNop().Sugar()
 }
 
 func sessionStoreFromContext(ctx context.Context) sessions.Store {
@@ -79,7 +70,7 @@ type httpErrHandler struct {
 }
 
 func (h *httpErrHandler) Error(w http.ResponseWriter, r *http.Request, err error) {
-	l := loggerFromContext(r.Context())
+	l := ctxLog(r.Context())
 	l.Error(err)
 	http.Error(w, "Internal Error", http.StatusInternalServerError)
 }
@@ -112,6 +103,12 @@ func (w *wrapResponseWriter) WriteHeader(code int) {
 }
 
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
+	// TODO - could always save session here on the first run. This would allow
+	// us to automatically handle the write, without habving each thing have to
+	// do it manually. This would allow us to hook in to the last possible
+	// moment for it
+	//
+	// lmao already done once in session/middleware.go, must be from the old code.
 	if w.Header().Get("content-type") == "" {
 		w.Header().Set("content-type", http.DetectContentType(b))
 	}
