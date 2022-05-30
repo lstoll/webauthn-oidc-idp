@@ -74,7 +74,7 @@ var migrations = []migration{
 		`,
 	},
 	{
-		Idx: 202205291510,
+		Idx: 202205301500,
 		SQL: `
 			create table autocert_cache (
 				key text primary key,
