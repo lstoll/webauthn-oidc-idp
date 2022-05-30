@@ -22,7 +22,7 @@ import (
 	oidcm "github.com/pardot/oidc/middleware"
 	"golang.org/x/crypto/acme/autocert"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v2"
 )
 
 type serveConfig struct {
@@ -41,7 +41,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
 	serveAutocert := serve.Flag("serve-autocert", "if set, serve using TLS + letsencrypt. If set, implies acceptance of their TOS").Envar("SERVE_AUTOCERT").Default("false").Bool()
 	autocertEmail := serve.Flag("autocert-email", "E-mail address to register with letsencrypt.").Envar("AUTOCERT_EMAIL").String()
-	clientsFile := serve.Flag("clients", "Path to file containing oauth2/oidc clients config").Envar("CLIENTS_FILE").File()
+	clientsFile := serve.Flag("clients", "Path to file containing oauth2/oidc clients config").Envar("CLIENTS_FILE").ExistingFile()
 
 	return serve, func(ctx context.Context, gcfg *globalCfg) error {
 		if *serveAutocert && *autocertEmail == "" {
@@ -96,10 +96,14 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		clients := &multiClients{}
 
-		if clientsFile != nil {
+		if *clientsFile != "" {
+			b, err := os.ReadFile(*clientsFile)
+			if err != nil {
+				return fmt.Errorf("reading file %s: %v", *clientsFile, err)
+			}
 			sc := &staticClients{}
-			if err := yaml.NewDecoder(*clientsFile).Decode(&sc.clients); err != nil {
-				return fmt.Errorf("decoding clients file %s: %w", (*clientsFile).Name(), err)
+			if err := yaml.Unmarshal(b, &sc.clients); err != nil {
+				return fmt.Errorf("decoding clients file %s: %w", *clientsFile, err)
 			}
 			clients.sources = append(clients.sources, sc)
 		}
