@@ -214,6 +214,15 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		fs := http.FileServer(http.FS(pubContent))
 		mux.Handle("/public/", fs)
 
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+			if err := gcfg.storage.db.Ping(); err != nil {
+				ctxLog(ctx).WithError(err).Error("failed to ping database in health check")
+				http.Error(w, "unhealthy", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte("OK"))
+		})
+
 		svr.AddHandlers(mux)
 
 		var g run.Group
