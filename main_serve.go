@@ -41,6 +41,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
 	serveAutocert := serve.Flag("serve-autocert", "if set, serve using TLS + letsencrypt. If set, implies acceptance of their TOS").Envar("SERVE_AUTOCERT").Default("false").Bool()
 	autocertEmail := serve.Flag("autocert-email", "E-mail address to register with letsencrypt.").Envar("AUTOCERT_EMAIL").String()
+	autocertAdditionalHosts := serve.Flag("autocert-additional-hosts", "Additional hostnames (aside from the issuer) we should enable cert provisioning for.").Envar("AUTOCERT_ADDITIONAL_HOSTNAMES").Strings()
 	clientsFile := serve.Flag("clients", "Path to file containing oauth2/oidc clients config").Envar("CLIENTS_FILE").ExistingFile()
 
 	return serve, func(ctx context.Context, gcfg *globalCfg) error {
@@ -246,7 +247,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 					Cache:      acc,
 					Prompt:     autocert.AcceptTOS,
 					Email:      *autocertEmail,
-					HostPolicy: autocert.HostWhitelist(issHost),
+					HostPolicy: autocert.HostWhitelist(append([]string{issHost}, (*autocertAdditionalHosts)...)...),
 				}
 				hs.TLSConfig = m.TLSConfig()
 				ctxLog(ctx).Infof("Listing on https://%s", *addr)
