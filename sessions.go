@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/gorilla/sessions"
 )
 
 type webSession struct {
 	// SessionID is the unique ID that should be used to track this session,
 	// likely via setting a cookie.
 	SessionID string `json:"-"`
+
+	GorillaSessions map[string]*sessions.Session `json:"gorilla_sessions"`
 }
 
 const sessionIDCookie = "session-id"
@@ -74,5 +78,30 @@ func (s *sessionManager) saveSession(ctx context.Context, w http.ResponseWriter,
 		Expires: time.Now().Add(s.sessionValidityTime - 1*time.Minute), // fudge the cookie to be valid slightly less than the DB
 		Secure:  true,                                                  // we should aleways serve tls
 	})
+	return nil
+}
+
+var _ sessions.Store = (*webSession)(nil)
+
+// Get is a gorilla sessions.Store compat method
+//
+// This just hits the cache
+func (w *webSession) Get(r *http.Request, name string) (*sessions.Session, error) {
+	return sessions.GetRegistry(r).Get(w, name)
+}
+
+// New is a gorilla sessions.Store compat method
+//
+// this should load it, or create a new one
+func (w *webSession) New(r *http.Request, name string) (*sessions.Session, error) {
+	s, ok := w.GorillaSessions[name]
+	if ok {
+		return s, nil
+	}
+	return sessions.NewSession(w, name), nil
+}
+
+func (w *webSession) Save(r *http.Request, rw http.ResponseWriter, session *sessions.Session) error {
+	w.GorillaSessions[session.Name()] = session
 	return nil
 }
