@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -13,11 +12,6 @@ import (
 type storage struct {
 	db  *sql.DB
 	log logrus.FieldLogger
-
-	// TODO - weird to have this here. Maybe decompose the massive storage
-	// struct into something that manages and migrates the DB, then smaller ones
-	// that consume the DB for a task?
-	webSessionValidityTime time.Duration
 }
 
 func newStorage(ctx context.Context, logger logrus.FieldLogger, connStr string) (*storage, error) {

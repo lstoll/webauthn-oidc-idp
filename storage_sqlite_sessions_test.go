@@ -14,7 +14,6 @@ func TestSessionID(t *testing.T) {
 func TestWebSessions(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStorage(t)
-	st.webSessionValidityTime = 5 * time.Second
 
 	_, ok, err := st.GetWebSession(ctx, "aaaaa")
 	if err != nil {
@@ -29,7 +28,7 @@ func TestWebSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := st.PutWebSession(ctx, ws); err != nil {
+	if err := st.PutWebSession(ctx, ws, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,11 +12,7 @@ import (
 	"time"
 )
 
-type webSession struct {
-	// SessionID is the unique ID that should be used to track this session,
-	// likely via setting a cookie.
-	SessionID string `json:"-"`
-}
+var _ webSessionStore = (*storage)(nil)
 
 // mustNewSessionID generates a new 256bit random ID, base62 encoded. It will
 // panic if the random read fails.
@@ -58,7 +54,7 @@ func (s *storage) CreateWebSession(ctx context.Context) (*webSession, error) {
 }
 
 // PutWebSession persists the given session
-func (s *storage) PutWebSession(ctx context.Context, sess *webSession) error {
+func (s *storage) PutWebSession(ctx context.Context, sess *webSession, validFor time.Duration) error {
 	if sess.SessionID == "" {
 		return errors.New("cannot persist a session with no ID")
 	}
@@ -69,8 +65,8 @@ func (s *storage) PutWebSession(ctx context.Context, sess *webSession) error {
 	if _, err := s.db.ExecContext(ctx,
 		`insert into web_sessions (key, data, expires_at, updated_at) values ($1, $2, $3, $4)
 		on conflict(key) do update set data=$5, expires_at=$6, updated_at=$7
-		`, sess.SessionID, data, time.Now().Add(s.webSessionValidityTime), time.Now(),
-		data, time.Now().Add(s.webSessionValidityTime), time.Now()); err != nil {
+		`, sess.SessionID, data, time.Now().Add(validFor), time.Now(),
+		data, time.Now().Add(validFor), time.Now()); err != nil {
 		return fmt.Errorf("putting data for %s: %w", sess.SessionID, err)
 	}
 	return nil
