@@ -53,6 +53,13 @@ func baseMiddleware(wrapped http.Handler,
 
 		wrapped.ServeHTTP(ww, r.WithContext(ctx))
 
+		// run a save here to make sure we always save it, responses that write
+		// nothing will miss the hook in `Write`
+		if err := ww.saveSession(); err != nil {
+			// the method handles user response etc.
+			return
+		}
+
 		l.WithFields(logrus.Fields{
 			"method":   r.Method,
 			"path":     r.URL.Path,
@@ -101,28 +108,29 @@ type wrapResponseWriter struct {
 }
 
 func (w *wrapResponseWriter) WriteHeader(code int) {
-	if !w.sessSaved {
-		// we can't really handle errors here so just try, if it fails hope
-		// there's a write.
-		if err := w.smgr.saveSession(w.ctx, w, w.sess); err == nil {
-			w.sessSaved = true
-		}
-	}
 	w.st = code
 	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
+	// we can't save the session after we write, so make sure it's saved.
+	if err := w.saveSession(); err != nil {
+		return 0, err
+	}
+
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *wrapResponseWriter) saveSession() error {
 	if !w.sessSaved {
 		if err := w.smgr.saveSession(w.ctx, w, w.sess); err != nil {
 			w.sessSaved = true // avoid looping on continual writes
 			ctxLog(w.ctx).WithError(err).Error("saving session")
 			http.Error(w, "Failed to save session", http.StatusInternalServerError)
 			// TODO - would an EOF or connection closed error be better here, to make the failure final?
-			return 0, fmt.Errorf("error saving session in hooked writer: %w", err)
+			return fmt.Errorf("error saving session in hooked writer: %w", err)
 		}
 	}
 	w.sessSaved = true
-
-	return w.ResponseWriter.Write(b)
+	return nil
 }

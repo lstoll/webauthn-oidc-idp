@@ -287,6 +287,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		s.httpErr(rw, err)
 		return
 	}
+	log.Printf("sess values %#v", sess.Values)
 	login, ok := sess.Values["authd_user"].(webauthnLogin)
 	if !ok {
 		s.httpErr(rw, fmt.Errorf("can't find authd_user in session"))

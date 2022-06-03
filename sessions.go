@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -103,7 +102,6 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 			sess = dbsess
 		}
 	}
-	log.Printf("got session %#v", sess)
 
 	return sess, nil
 }
