@@ -7,25 +7,24 @@ replace github.com/pardot/oidc => github.com/lstoll/oidc v0.0.0-20211017044517-5
 require (
 	github.com/aws/aws-sdk-go v1.36.24
 	github.com/google/uuid v1.3.0
-	github.com/gorilla/securecookie v1.1.1
+	github.com/gorilla/securecookie v1.1.1 // indirect
 	github.com/gorilla/sessions v1.2.1
 	github.com/oklog/run v1.1.0
 	github.com/open-policy-agent/opa v0.24.0
 	github.com/pardot/oidc v0.0.0-20200518180338-f8645300dfbf
 	github.com/pkg/errors v0.9.1
-	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
 	github.com/duo-labs/webauthn v0.0.0-20220330035159-03696f3d4499
-	github.com/gorilla/csrf v1.7.1
 	github.com/joho/godotenv v1.4.0
+	github.com/justinas/nosurf v1.1.1
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/sirupsen/logrus v1.8.1
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/square/go-jose.v2 v2.5.1
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -67,7 +66,6 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
-	github.com/justinas/nosurf v1.1.1 // indirect
 	github.com/mattn/go-runewidth v0.0.12 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
@@ -115,5 +113,6 @@ require (
 	google.golang.org/grpc v1.37.0 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
