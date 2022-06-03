@@ -16,6 +16,7 @@ import (
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/google/uuid"
+	"github.com/justinas/nosurf"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
@@ -83,11 +84,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		}
 		if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
 			return err
-		}
-
-		sessmgr := &secureCookieManager{
-			rotator:   sessionrotator,
-			encryptor: encryptor,
 		}
 
 		oidcSigner := &oidcSigner{
@@ -177,7 +173,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				SessionStore: &sessionShim{},
 				SessionName:  "webauthn-manager",
 			},
-			csrfMiddleware: sessmgr.CSRFHandler(ctx, heh),
+			csrfMiddleware: nosurf.NewPure,
 			// admins: p.Webauthn.AdminSubjects, // TODO - google account id
 			acrs: nil,
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/csrf"
+	"github.com/justinas/nosurf"
 	oidcm "github.com/pardot/oidc/middleware"
 )
 
@@ -424,7 +425,7 @@ func (w *webauthnManager) isAdmin(sub string) bool {
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
 	funcs := template.FuncMap{
 		csrf.TemplateTag: func() template.HTML {
-			return csrf.TemplateField(r)
+			return template.HTML(fmt.Sprintf(`<input type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
 		},
 	}
 
