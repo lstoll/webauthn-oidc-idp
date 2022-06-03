@@ -9,10 +9,55 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/gorilla/sessions"
 )
 
 const webSessionIDCookieName = "session-id"
+
+// pendingWebauthnEnrollment tracks enrollment info across an authenticator
+// registration.
+type pendingWebauthnEnrollment struct {
+	ForUserID           string                `json:"for_user_id,omitempty"`
+	KeyName             string                `json:"key_name,omitempty"`
+	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
+	// ReturnTo redirects the user here after the key is registered.
+	ReturnTo string `json:"return_to,omitempty"`
+}
+
+// webauthnLogin tracks data for a login session
+type webauthnLoginData struct {
+	// LoginSessionID is the current OIDC session ID for the flow
+	LoginSessionID      string                `json:"login_session_id`
+	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
+	// AuthdUser tracks information about the user we just authenticated, for
+	// when we send the user to the login finished page.
+	AuthdUser *webauthnLogin `json:"authd_user,omitempty"`
+}
+
+type webSession struct {
+	// SessionID is the unique ID that should be used to track this session,
+	// likely via setting a cookie.
+	SessionID string `json:"-"`
+
+	GorillaSessions map[string]*gorillaSession `json:"gorilla_sessions,omitempty"`
+
+	PendingWebauthnEnrollment *pendingWebauthnEnrollment `json:"pending_webauthn_enrollment,omitempty"`
+
+	WebauthnLogin *webauthnLoginData `json:"webauthn_login,omitempty"`
+
+	// TODO - make this a generic or something so we can have a test object?
+	TestCounter int `json:"test_counter,omitempty"`
+}
+
+// Empty return true if the session contains no data, if this is the case the
+// session should not be saved
+func (w *webSession) Empty() bool {
+	return len(w.GorillaSessions) == 0 &&
+		w.TestCounter == 0 &&
+		w.PendingWebauthnEnrollment == nil &&
+		w.WebauthnLogin == nil
+}
 
 func init() {
 	gob.Register(sessions.Session{})
@@ -44,26 +89,6 @@ func (g *gorillaSession) UnmarshalJSON(b []byte) error {
 	}
 	return nil
 }
-
-type webSession struct {
-	// SessionID is the unique ID that should be used to track this session,
-	// likely via setting a cookie.
-	SessionID string `json:"-"`
-
-	GorillaSessions map[string]*gorillaSession `json:"gorilla_sessions,omitempty"`
-
-	// TODO - make this a generic or something so we can have a test object?
-	TestCounter int `json:"test_counter,omitempty"`
-}
-
-// Empty return true if the session contains no data, if this is the case the
-// session should not be saved
-func (w *webSession) Empty() bool {
-	return len(w.GorillaSessions) == 0 &&
-		w.TestCounter == 0
-}
-
-const sessionIDCookie = "session-id"
 
 type webSessionStore interface {
 	// GetWebSession returns the session for the given ID. if no session, ok will be
