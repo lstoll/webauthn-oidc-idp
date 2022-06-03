@@ -7,9 +7,11 @@
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 <script src="/public/webauthn.js"></script>
 <div>
-    <label for="keyName">Key Name:</label>
-    <input id="keyName" name="keyName" type="text">
-    <button onclick="doRegister()">Register Key</button>
+    <form method="POST">
+        {{ csrfField }}
+        <input type="hidden" name="action" value="registerKey">
+        <input type="submit" value="Register new key">
+    </form>
 </div>
 
 <div>

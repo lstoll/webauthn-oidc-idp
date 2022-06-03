@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"embed"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,18 +14,9 @@ import (
 
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
-	"github.com/gorilla/csrf"
+	"github.com/justinas/nosurf"
 	oidcm "github.com/pardot/oidc/middleware"
 )
-
-const (
-	webauthnmgrSessionName = "wamgr"
-)
-
-var _ = func() struct{} {
-	gob.Register(webauthn.SessionData{})
-	return struct{}{}
-}()
 
 //go:embed web/templates/webauthn/*
 var webauthnTemplateData embed.FS
@@ -92,6 +82,13 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 				w.httpErr(req.Context(), rw, err)
 				return
 			}
+		case "registerKey":
+			sess := sessionFromContext(req.Context())
+			sess.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
+				ForUserID: u.ID,
+				ReturnTo:  "/authenticators",
+			}
+			http.Redirect(rw, req, "/registration", http.StatusSeeOther)
 		default:
 			w.httpErr(req.Context(), rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
 			return
@@ -225,44 +222,27 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 			w.httpUnauth(rw, "invalid enrollment")
 			return
 		}
-		ss := sessionStoreFromContext(req.Context())
-		sess, err := ss.Get(req, webauthnmgrSessionName)
-		if err != nil {
-			w.httpErr(req.Context(), rw, err)
-			return
+		ss := sessionFromContext(req.Context())
+		ss.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
+			ForUserID: uid,
 		}
-
-		sess.Values["enroll_to_user_id"] = uid
-		if err := ss.Save(req, rw, sess); err != nil {
-			w.httpErr(req.Context(), rw, err)
-			return
-		}
-
-	} else {
-		// TODO - keys page needs to set something we can use, maybe the cookie values directly?
-		panic("TODO")
 	}
+	// list keys will send the pending enrollment ID
 
 	w.execTemplate(rw, req, "register_key.tmpl.html", map[string]interface{}{})
 }
 
 func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnmgrSessionName)
-	if err != nil {
-		w.httpErr(req.Context(), rw, err)
-		return
-	}
+	sess := sessionFromContext(req.Context())
 
-	euid := sess.Values["enroll_to_user_id"].(string)
-	if euid == "" {
+	if sess.PendingWebauthnEnrollment == nil || sess.PendingWebauthnEnrollment.ForUserID == "" {
 		w.httpUnauth(rw, "no enroll to user id set in session")
 		return
 	}
 
-	u, ok, err := w.store.GetUserByID(req.Context(), euid, true) // TODO - guard the allow unactive for enrol only!
+	u, ok, err := w.store.GetUserByID(req.Context(), sess.PendingWebauthnEnrollment.ForUserID, true)
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", euid, err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
 		return
 	}
 	if !ok {
@@ -289,12 +269,8 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	sess.Values["keyname"] = keyName
-	sess.Values["registration"] = *sessionData
-	if err := ss.Save(req, rw, sess); err != nil {
-		w.httpErr(req.Context(), rw, err)
-		return
-	}
+	sess.PendingWebauthnEnrollment.KeyName = keyName
+	sess.PendingWebauthnEnrollment.WebauthnSessionData = sessionData
 
 	if err := json.NewEncoder(rw).Encode(options); err != nil {
 		w.httpErr(req.Context(), rw, err)
@@ -303,22 +279,16 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 }
 
 func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnmgrSessionName)
-	if err != nil {
-		w.httpErr(req.Context(), rw, err)
-		return
-	}
+	sess := sessionFromContext(req.Context())
 
-	euid := sess.Values["enroll_to_user_id"].(string)
-	if euid == "" {
+	if sess.PendingWebauthnEnrollment == nil || sess.PendingWebauthnEnrollment.ForUserID == "" {
 		w.httpUnauth(rw, "no enroll to user id set in session")
 		return
 	}
 
-	u, ok, err := w.store.GetUserByID(req.Context(), euid, true) // TODO - guard the allow unactive for enrol only!
+	u, ok, err := w.store.GetUserByID(req.Context(), sess.PendingWebauthnEnrollment.ForUserID, true) // TODO - guard the allow unactive for enrol only!
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", euid, err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
 		return
 	}
 	if !ok {
@@ -326,18 +296,16 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	sessionData, ok := sess.Values["registration"].(webauthn.SessionData)
-	if !ok {
+	if sess.PendingWebauthnEnrollment.WebauthnSessionData == nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("session data not in session"))
 		return
 	}
-	delete(sess.Values, "registration")
-	keyName := sess.Values["keyname"].(string)
-	delete(sess.Values, "keyname")
-	if err := ss.Save(req, rw, sess); err != nil {
-		w.httpErr(req.Context(), rw, err)
-		return
-	}
+	sessionData := *sess.PendingWebauthnEnrollment.WebauthnSessionData
+	keyName := sess.PendingWebauthnEnrollment.KeyName
+
+	// purge the data from the session
+	returnTo := sess.PendingWebauthnEnrollment.ReturnTo
+	sess.PendingWebauthnEnrollment = nil
 
 	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(req.Body)
 	if err != nil {
@@ -356,6 +324,8 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 	}
 
 	// OK
+	_ = returnTo
+	// TODO - return the next URL in the response, make the JS follow it.
 }
 
 // userForReq gets the user for a given request, accounting for the override_uid
@@ -423,8 +393,8 @@ func (w *webauthnManager) isAdmin(sub string) bool {
 
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
 	funcs := template.FuncMap{
-		csrf.TemplateTag: func() template.HTML {
-			return csrf.TemplateField(r)
+		`csrfField`: func() template.HTML {
+			return template.HTML(fmt.Sprintf(`<input type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
 		},
 	}
 

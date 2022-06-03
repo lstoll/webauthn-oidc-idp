@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -18,11 +19,7 @@ import (
 )
 
 const (
-	sessIDCookie = "sessID"
-
 	upstreamAllowQuery = "data.upstream.allow"
-
-	webauthnSessionName = "wa"
 )
 
 /* keeping this around as some context betweet a oidc/session, and an authentication
@@ -86,16 +83,9 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 
 	// stash in session, so we can pull it out in the login handler without
 	// threading it through the user code. make sure to clear it though!
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnSessionName)
-	if err != nil {
-		s.httpErr(w, err)
-		return
-	}
-	sess.Values["login_session_id"] = ar.SessionID
-	if err := ss.Save(req, w, sess); err != nil {
-		s.httpErr(w, err)
-		return
+	sess := sessionFromContext(req.Context())
+	sess.WebauthnLogin = &webauthnLoginData{
+		LoginSessionID: ar.SessionID,
 	}
 
 	template.Must(template.New("login").Parse(webauthnLoginTemplate)).Execute(w, struct {
@@ -190,17 +180,12 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 
 	response := protocol.CredentialAssertion{Response: requestOptions}
 
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnSessionName)
-	if err != nil {
-		s.httpErr(rw, err)
+	sess := sessionFromContext(req.Context())
+	if sess.WebauthnLogin == nil {
+		s.httpErr(rw, errors.New("no active login session"))
 		return
 	}
-	sess.Values["login"] = sessionData
-	if err := ss.Save(req, rw, sess); err != nil {
-		s.httpErr(rw, err)
-		return
-	}
+	sess.WebauthnLogin.WebauthnSessionData = &sessionData
 
 	if err := json.NewEncoder(rw).Encode(response); err != nil {
 		s.httpErr(rw, err)
@@ -236,18 +221,17 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// }
 	// log.Printf("car: %#v", car)
 
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnSessionName)
-	if err != nil {
-		s.httpErr(rw, err)
+	sess := sessionFromContext(req.Context())
+	if sess.WebauthnLogin == nil || sess.WebauthnLogin.WebauthnSessionData == nil {
+		s.httpErr(rw, errors.New("no valid webauthn login in session"))
 		return
 	}
-	sessionData, ok := sess.Values["login"].(webauthn.SessionData)
+	sessionData := *sess.WebauthnLogin.WebauthnSessionData
 	if !ok {
 		s.httpErr(rw, fmt.Errorf("session data not in session"))
 		return
 	}
-	delete(sess.Values, "login")
+	sess.WebauthnLogin.WebauthnSessionData = nil
 
 	// parsedResponse, err := protocol.ParseCredentialRequestResponseBody(req.Body)
 	// if err != nil {
@@ -267,45 +251,36 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	sess.Values["authd_user"] = webauthnLogin{
+	// TODO inline the session authentication, and send the user directly to the
+	// finalize page. Having this extra step was a result of the providers
+	// interface iirc. Or maybe it's an OIDC library limitation, either way we
+	// should look at how to flatten it.
+	sess.WebauthnLogin.AuthdUser = &webauthnLogin{
 		UserID:      u.ID,
-		SessionID:   sess.Values["login_session_id"].(string),
-		ValidBefore: time.Now().Add(15 * time.Second),
+		SessionID:   sess.WebauthnLogin.LoginSessionID,
+		ValidBefore: time.Now().Add(15 * time.Second), // TODO - policy etc.
 	}
-	delete(sess.Values, "login_session_id")
-
-	if err := ss.Save(req, rw, sess); err != nil {
-		s.httpErr(rw, err)
-		return
-	}
+	sess.WebauthnLogin.LoginSessionID = ""
 
 	// OK (respond with URL here)
 }
 
 func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
-	ss := sessionStoreFromContext(req.Context())
-	sess, err := ss.Get(req, webauthnSessionName)
-	if err != nil {
-		s.httpErr(rw, err)
-		return
-	}
-	login, ok := sess.Values["authd_user"].(webauthnLogin)
-	if !ok {
+	sess := sessionFromContext(req.Context())
+
+	if sess.WebauthnLogin == nil || sess.WebauthnLogin.AuthdUser == nil {
 		s.httpErr(rw, fmt.Errorf("can't find authd_user in session"))
 		return
 	}
-	delete(sess.Values, "authd_user")
-	if err := ss.Save(req, rw, sess); err != nil {
-		s.httpErr(rw, err)
-		return
-	}
+	authdUser := *sess.WebauthnLogin.AuthdUser
+	sess.WebauthnLogin = nil
 
-	if login.ValidBefore.Before(time.Now()) {
+	if authdUser.ValidBefore.Before(time.Now()) {
 		s.httpErr(rw, fmt.Errorf("login expired"))
 		return
 	}
 
-	u, ok, err := s.store.GetUserByID(req.Context(), login.UserID, false)
+	u, ok, err := s.store.GetUserByID(req.Context(), authdUser.UserID, false)
 	if err != nil {
 		s.httpErr(rw, err)
 		return
@@ -332,8 +307,8 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 	// todo - what is/was this actually doing? It's on
 	// our custom storage type, so diff to oidc?
 	// https://github.com/lstoll/idp/blob/bc90facd5b6ea40d95f4f71c255f74d0a3bb5f83/storage_dynamo_sessions.go#L195-L247
-	if err := s.storage.Authenticate(req.Context(), login.SessionID, auth); err != nil {
-		s.httpErr(rw, fmt.Errorf("authenticating user for session id %s: %w", login.SessionID, err))
+	if err := s.storage.Authenticate(req.Context(), authdUser.SessionID, auth); err != nil {
+		s.httpErr(rw, fmt.Errorf("authenticating user for session id %s: %w", authdUser.SessionID, err))
 		return
 	}
 	// TODO - we need to fill this. This is likely going to need information
@@ -344,7 +319,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		// ACR:    a.provider.ACR(), TODO - acr?
 		// AMR:    []string{a.provider.AMR()}, // TODO - amr?
 	}
-	s.oidcsvr.FinishAuthorization(rw, req, login.SessionID, az)
+	s.oidcsvr.FinishAuthorization(rw, req, authdUser.SessionID, az)
 }
 
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {

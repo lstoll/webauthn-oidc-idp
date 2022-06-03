@@ -36,7 +36,7 @@ func (s *storage) GetSession(ctx context.Context, sessionID string, into core.Se
 	}
 
 	if err := json.Unmarshal(sessdata, into); err != nil {
-		return false, fmt.Errorf("unmarshaling session %s: %w", sessionID, err)
+		return false, fmt.Errorf("unmarshaling db session %s: %w", sessionID, err)
 	}
 
 	return true, nil

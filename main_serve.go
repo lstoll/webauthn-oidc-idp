@@ -16,6 +16,7 @@ import (
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/google/uuid"
+	"github.com/justinas/nosurf"
 	"github.com/oklog/run"
 	"github.com/pardot/oidc/core"
 	"github.com/pardot/oidc/discovery"
@@ -41,6 +42,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	oidMaxAge := serve.Flag("oidc-max-age", "Maximum age OIDC keys should be considered valid").Envar("OIDC_MAX_AGE").Default("168h").Duration()
 	serveAutocert := serve.Flag("serve-autocert", "if set, serve using TLS + letsencrypt. If set, implies acceptance of their TOS").Envar("SERVE_AUTOCERT").Default("false").Bool()
 	autocertEmail := serve.Flag("autocert-email", "E-mail address to register with letsencrypt.").Envar("AUTOCERT_EMAIL").String()
+	autocertAdditionalHosts := serve.Flag("autocert-additional-hosts", "Additional hostnames (aside from the issuer) we should enable cert provisioning for.").Envar("AUTOCERT_ADDITIONAL_HOSTNAMES").Strings()
 	clientsFile := serve.Flag("clients", "Path to file containing oauth2/oidc clients config").Envar("CLIENTS_FILE").ExistingFile()
 
 	return serve, func(ctx context.Context, gcfg *globalCfg) error {
@@ -65,28 +67,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		}
 		if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
 			return err
-		}
-
-		sessionrotator := &dbRotator[rotatableSecurecookie, *rotatableSecurecookie]{
-			db:  gcfg.storage.db,
-			log: ctxLog(ctx),
-
-			usage: rotatorUsageSessions,
-
-			rotateInterval: 24 * time.Hour, // config
-			maxAge:         168 * time.Hour,
-
-			newFn: func() (*rotatableSecurecookie, error) {
-				return newRotatableSecureCookie(encryptor)
-			},
-		}
-		if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
-			return err
-		}
-
-		sessmgr := &secureCookieManager{
-			rotator:   sessionrotator,
-			encryptor: encryptor,
 		}
 
 		oidcSigner := &oidcSigner{
@@ -126,6 +106,11 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		}, gcfg.storage, clients, oidcSigner)
 		if err != nil {
 			log.Fatalf("Failed to create OIDC server instance: %v", err)
+		}
+
+		webSessMgr := &sessionManager{
+			st:                  gcfg.storage,
+			sessionValidityTime: 24 * time.Hour, // TODO - configure
 		}
 
 		mux := http.NewServeMux()
@@ -168,10 +153,10 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				ClientSecret: uuid.New().String(),
 				BaseURL:      *issuer,
 				RedirectURL:  *issuer + "/local-oidc-callback",
-				SessionStore: sessmgr,
+				SessionStore: &sessionShim{},
 				SessionName:  "webauthn-manager",
 			},
-			csrfMiddleware: sessmgr.CSRFHandler(ctx, heh),
+			csrfMiddleware: nosurf.NewPure,
 			// admins: p.Webauthn.AdminSubjects, // TODO - google account id
 			acrs: nil,
 		}
@@ -229,7 +214,11 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		g.Add(run.SignalHandler(ctx, os.Interrupt))
 
-		hh := baseMiddleware(mux, ctxLog(ctx), sessmgr)
+		// this will always try and create a session for discovery and stuff,
+		// but we shouldn't save it. but, we need it for logging and stuff. TODO
+		// at some point consider splitting the middleware, but then we might
+		// need to dup the middleware wrap or something.
+		hh := baseMiddleware(mux, ctxLog(ctx), webSessMgr)
 
 		hs := &http.Server{
 			Addr:    *addr,
@@ -246,7 +235,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 					Cache:      acc,
 					Prompt:     autocert.AcceptTOS,
 					Email:      *autocertEmail,
-					HostPolicy: autocert.HostWhitelist(issHost),
+					HostPolicy: autocert.HostWhitelist(append([]string{issHost}, (*autocertAdditionalHosts)...)...),
 				}
 				hs.TLSConfig = m.TLSConfig()
 				ctxLog(ctx).Infof("Listing on https://%s", *addr)
@@ -277,9 +266,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				select {
 				case <-ticker.C:
 					if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
-						return err
-					}
-					if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
 						return err
 					}
 				case <-rotInt:

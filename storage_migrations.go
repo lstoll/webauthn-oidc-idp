@@ -84,4 +84,22 @@ var migrations = []migration{
 			);
 		`,
 	},
+	{
+		Idx: 202206012218,
+		SQL: `
+			create table web_sessions (
+				key text primary key,
+				data blob not null,
+				expires_at datetime not null,
+				created_at default current_timestamp not null,
+				updated_at default current_timestamp not null
+			);
+		`,
+	},
+	{
+		Idx: 202206031901,
+		SQL: `
+			delete from rotatable where usage = 'sessions';
+		`,
+	},
 }

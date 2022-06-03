@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/sessions"
 	"github.com/sirupsen/logrus"
 )
 
@@ -16,11 +16,9 @@ type sessionStoreCtxKey struct{}
 // baseMiddleware should wrap all requests to the service
 func baseMiddleware(wrapped http.Handler,
 	logger logrus.FieldLogger,
-	sess sessions.Store,
+	sess *sessionManager,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
 		st := time.Now()
 
 		// TODO - determine if we're in a place to trust this
@@ -28,28 +26,36 @@ func baseMiddleware(wrapped http.Handler,
 		if rid == "" {
 			rid = uuid.NewString()
 		}
-		ctx = context.WithValue(ctx, requestIDCtxKey{}, rid)
+		r = r.WithContext(context.WithValue(r.Context(), requestIDCtxKey{}, rid))
 
 		l := logger.WithField("request_id", rid)
-		ctx = contextWithLogger(ctx, l)
+		r = r.WithContext(contextWithLogger(r.Context(), l))
 
-		// TODO - actually load a session here too, have a global session type
-		// to make it "typed"
-		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, sess)
+		s, err := sess.sessionForRequest(r)
+		if err != nil {
+			// TODO - nice errors here
+			l.WithError(err).Error("getting session")
+			http.Error(w, "getting session", http.StatusInternalServerError)
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), sessionStoreCtxKey{}, s))
 
-		ww := &wrapResponseWriter{ResponseWriter: w}
+		ww := &wrapResponseWriter{
+			ctx: r.Context(),
 
-		wrapped.ServeHTTP(ww, r.WithContext(ctx))
+			ResponseWriter: w,
 
-		// in lambda mode, handlers that write no repsonse return a status code
-		// of 0 and no data which breaks things. Normal go has handlers for that:
-		// * https://github.com/golang/go/blob/b59467e0365776761c3787a4d541b5e74fe24b24/src/net/http/server.go#L1971
-		// * https://github.com/golang/gofrontend/blob/33f65dce43bd01c1fa38cd90a78c9aea6ca6dd59/libgo/go/net/http/server.go#L1603-L1624
-		// mimic the bare minimum we need here to maybe lambda happy.
+			smgr: sess,
+			sess: s,
+		}
 
-		if ww.st == 0 {
-			// nothing has written to it. write a status
-			ww.WriteHeader(http.StatusOK)
+		wrapped.ServeHTTP(ww, r)
+
+		// run a save here to make sure we always save it, responses that write
+		// nothing will miss the hook in `Write`
+		if err := ww.saveSession(); err != nil {
+			// the method handles user response etc.
+			return
 		}
 
 		l.WithFields(logrus.Fields{
@@ -61,8 +67,12 @@ func baseMiddleware(wrapped http.Handler,
 	})
 }
 
-func sessionStoreFromContext(ctx context.Context) sessions.Store {
-	return ctx.Value(sessionStoreCtxKey{}).(sessions.Store)
+// sessionFromContext will return a reference to the HTTP session from the given
+// (request, usually) context. it is guaranteed to return a session, either the
+// current one or a fresh session. This session will be saved when the request
+// closes.
+func sessionFromContext(ctx context.Context) *webSession {
+	return ctx.Value(sessionStoreCtxKey{}).(*webSession)
 }
 
 // httpErrHandler renders out nicer errors
@@ -83,37 +93,42 @@ func (h *httpErrHandler) Forbidden(w http.ResponseWriter, r *http.Request, messa
 	http.Error(w, message, http.StatusForbidden)
 }
 
-// wrapResponseWriter is our response writer we pass to callers. We hook in here
-// to be able to log things, and set content type to work around the lack of
-// detection on
-// lambda(https://github.com/apex/gateway/blob/46d1104cd6db3bb9e0c0dcde71ddf15db8d87cf1/response.go#L54-L56)
 type wrapResponseWriter struct {
+	// ctx for this request cycle, as we don't have access to it later.
+	ctx context.Context
+
 	http.ResponseWriter
 	st int
-	wh bool
+
+	sessSaved bool
+	smgr      *sessionManager
+	sess      *webSession
 }
 
 func (w *wrapResponseWriter) WriteHeader(code int) {
-	if w.wh {
-		return
-	}
 	w.st = code
 	w.ResponseWriter.WriteHeader(code)
-	w.wh = true
 }
 
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
-	// TODO - could always save session here on the first run. This would allow
-	// us to automatically handle the write, without habving each thing have to
-	// do it manually. This would allow us to hook in to the last possible
-	// moment for it
-	//
-	// lmao already done once in session/middleware.go, must be from the old code.
-	if w.Header().Get("content-type") == "" {
-		w.Header().Set("content-type", http.DetectContentType(b))
+	// we can't save the session after we write, so make sure it's saved.
+	if err := w.saveSession(); err != nil {
+		return 0, err
 	}
-	if w.st == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
+
 	return w.ResponseWriter.Write(b)
+}
+
+func (w *wrapResponseWriter) saveSession() error {
+	if !w.sessSaved {
+		if err := w.smgr.saveSession(w.ctx, w, w.sess); err != nil {
+			w.sessSaved = true // avoid looping on continual writes
+			ctxLog(w.ctx).WithError(err).Error("saving session")
+			http.Error(w, "Failed to save session", http.StatusInternalServerError)
+			// TODO - would an EOF or connection closed error be better here, to make the failure final?
+			return fmt.Errorf("error saving session in hooked writer: %w", err)
+		}
+	}
+	w.sessSaved = true
+	return nil
 }
