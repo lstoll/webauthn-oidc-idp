@@ -1,20 +1,60 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/sessions"
 )
 
+const webSessionIDCookieName = "session-id"
+
+func init() {
+	gob.Register(sessions.Session{})
+}
+
+type gorillaSession struct {
+	sessions.Session
+}
+
+func (g *gorillaSession) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(g.Session); err != nil {
+		return nil, fmt.Errorf("encoding session: %w", err)
+	}
+	b, err := json.Marshal(buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("json marshaling gob session: %w", err)
+	}
+	return b, nil
+}
+
+func (g *gorillaSession) UnmarshalJSON(b []byte) error {
+	var db []byte
+	if err := json.Unmarshal(b, &db); err != nil {
+		return fmt.Errorf("unmarshaling json %s: %v", string(b), err)
+	}
+	if err := gob.NewDecoder(bytes.NewReader(db)).Decode(&g.Session); err != nil {
+		return fmt.Errorf("gob decoding session: %w", err)
+	}
+	return nil
+}
+
 type webSession struct {
 	// SessionID is the unique ID that should be used to track this session,
 	// likely via setting a cookie.
 	SessionID string `json:"-"`
 
-	GorillaSessions map[string]*sessions.Session `json:"gorilla_sessions"`
+	GorillaSessions map[string]*gorillaSession `json:"gorilla_sessions,omitempty"`
+
+	// TODO - make this a generic or something so we can have a test object?
+	TestCounter int `json:"test_counter,omitempty"`
 }
 
 const sessionIDCookie = "session-id"
@@ -39,12 +79,12 @@ type sessionManager struct {
 
 func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error) {
 	var sess *webSession
-	c, err := r.Cookie(sessIDCookie)
+	c, err := r.Cookie(webSessionIDCookieName)
 	if err == http.ErrNoCookie {
 		// start a new session
 		nsess, err := s.st.CreateWebSession(r.Context())
 		if err != nil {
-			return nil, fmt.Errorf("getting cookie %s: %v", sessIDCookie, err)
+			return nil, fmt.Errorf("getting cookie %s: %v", webSessionIDCookieName, err)
 		}
 		sess = nsess
 	} else {
@@ -63,6 +103,7 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 			sess = dbsess
 		}
 	}
+	log.Printf("got session %#v", sess)
 
 	return sess, nil
 }
@@ -72,7 +113,7 @@ func (s *sessionManager) saveSession(ctx context.Context, w http.ResponseWriter,
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:  sessIDCookie,
+		Name:  webSessionIDCookieName,
 		Value: sess.SessionID,
 
 		Expires: time.Now().Add(s.sessionValidityTime - 1*time.Minute), // fudge the cookie to be valid slightly less than the DB
@@ -93,15 +134,43 @@ func (w *webSession) Get(r *http.Request, name string) (*sessions.Session, error
 // New is a gorilla sessions.Store compat method
 //
 // this should load it, or create a new one
-func (w *webSession) New(r *http.Request, name string) (*sessions.Session, error) {
+func (w *webSession) New(_ *http.Request, name string) (*sessions.Session, error) {
 	s, ok := w.GorillaSessions[name]
 	if ok {
-		return s, nil
+		return &s.Session, nil
 	}
 	return sessions.NewSession(w, name), nil
 }
 
-func (w *webSession) Save(r *http.Request, rw http.ResponseWriter, session *sessions.Session) error {
-	w.GorillaSessions[session.Name()] = session
+func (w *webSession) Save(_ *http.Request, _ http.ResponseWriter, session *sessions.Session) error {
+	if w.GorillaSessions == nil {
+		w.GorillaSessions = map[string]*gorillaSession{}
+	}
+	w.GorillaSessions[session.Name()] = &gorillaSession{*session}
 	return nil
+}
+
+var _ sessions.Store = (*sessionShim)(nil)
+
+// sessionShim can be passed in to things that require a session store outside
+// the request context. It will just use what's in the contex.
+type sessionShim struct{}
+
+// Get is a gorilla sessions.Store compat method
+//
+// This just hits the cache
+func (s *sessionShim) Get(r *http.Request, name string) (*sessions.Session, error) {
+	return sessionFromContext(r.Context()).Get(r, name)
+}
+
+// New is a gorilla sessions.Store compat method
+//
+// this should load it, or create a new one
+func (s *sessionShim) New(r *http.Request, name string) (*sessions.Session, error) {
+	return sessionFromContext(r.Context()).New(r, name)
+
+}
+
+func (s *sessionShim) Save(r *http.Request, rw http.ResponseWriter, session *sessions.Session) error {
+	return sessionFromContext(r.Context()).Save(r, rw, session)
 }

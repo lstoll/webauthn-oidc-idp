@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	sessIDCookie = "sessID"
-
 	upstreamAllowQuery = "data.upstream.allow"
 
 	webauthnSessionName = "wa"
@@ -86,7 +84,7 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 
 	// stash in session, so we can pull it out in the login handler without
 	// threading it through the user code. make sure to clear it though!
-	ss := sessionStoreFromContext(req.Context())
+	ss := sessionFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnSessionName)
 	if err != nil {
 		s.httpErr(w, err)
@@ -190,7 +188,7 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 
 	response := protocol.CredentialAssertion{Response: requestOptions}
 
-	ss := sessionStoreFromContext(req.Context())
+	ss := sessionFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnSessionName)
 	if err != nil {
 		s.httpErr(rw, err)
@@ -236,7 +234,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// }
 	// log.Printf("car: %#v", car)
 
-	ss := sessionStoreFromContext(req.Context())
+	ss := sessionFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnSessionName)
 	if err != nil {
 		s.httpErr(rw, err)
@@ -283,7 +281,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
-	ss := sessionStoreFromContext(req.Context())
+	ss := sessionFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnSessionName)
 	if err != nil {
 		s.httpErr(rw, err)

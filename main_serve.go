@@ -129,6 +129,11 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			log.Fatalf("Failed to create OIDC server instance: %v", err)
 		}
 
+		webSessMgr := &sessionManager{
+			st:                  gcfg.storage,
+			sessionValidityTime: 24 * time.Hour, // TODO - configure
+		}
+
 		mux := http.NewServeMux()
 
 		mux.Handle("/keys", keysh)
@@ -169,7 +174,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				ClientSecret: uuid.New().String(),
 				BaseURL:      *issuer,
 				RedirectURL:  *issuer + "/local-oidc-callback",
-				SessionStore: sessmgr,
+				SessionStore: &sessionShim{},
 				SessionName:  "webauthn-manager",
 			},
 			csrfMiddleware: sessmgr.CSRFHandler(ctx, heh),
@@ -230,7 +235,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		g.Add(run.SignalHandler(ctx, os.Interrupt))
 
-		hh := baseMiddleware(mux, ctxLog(ctx), sessmgr)
+		hh := baseMiddleware(mux, ctxLog(ctx), webSessMgr)
 
 		hs := &http.Server{
 			Addr:    *addr,

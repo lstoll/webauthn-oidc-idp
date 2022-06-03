@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,17 +52,6 @@ func baseMiddleware(wrapped http.Handler,
 		}
 
 		wrapped.ServeHTTP(ww, r.WithContext(ctx))
-
-		// in lambda mode, handlers that write no repsonse return a status code
-		// of 0 and no data which breaks things. Normal go has handlers for that:
-		// * https://github.com/golang/go/blob/b59467e0365776761c3787a4d541b5e74fe24b24/src/net/http/server.go#L1971
-		// * https://github.com/golang/gofrontend/blob/33f65dce43bd01c1fa38cd90a78c9aea6ca6dd59/libgo/go/net/http/server.go#L1603-L1624
-		// mimic the bare minimum we need here to maybe lambda happy.
-
-		if ww.st == 0 {
-			// nothing has written to it. write a status
-			ww.WriteHeader(http.StatusOK)
-		}
 
 		l.WithFields(logrus.Fields{
 			"method":   r.Method,
@@ -112,6 +101,13 @@ type wrapResponseWriter struct {
 }
 
 func (w *wrapResponseWriter) WriteHeader(code int) {
+	if !w.sessSaved {
+		// we can't really handle errors here so just try, if it fails hope
+		// there's a write.
+		if err := w.smgr.saveSession(w.ctx, w, w.sess); err == nil {
+			w.sessSaved = true
+		}
+	}
 	w.st = code
 	w.ResponseWriter.WriteHeader(code)
 }
@@ -119,8 +115,11 @@ func (w *wrapResponseWriter) WriteHeader(code int) {
 func (w *wrapResponseWriter) Write(b []byte) (int, error) {
 	if !w.sessSaved {
 		if err := w.smgr.saveSession(w.ctx, w, w.sess); err != nil {
+			w.sessSaved = true // avoid looping on continual writes
+			ctxLog(w.ctx).WithError(err).Error("saving session")
 			http.Error(w, "Failed to save session", http.StatusInternalServerError)
-			return 0, errors.Wrap(err, "Error saving session in hooked writer")
+			// TODO - would an EOF or connection closed error be better here, to make the failure final?
+			return 0, fmt.Errorf("error saving session in hooked writer: %w", err)
 		}
 	}
 	w.sessSaved = true

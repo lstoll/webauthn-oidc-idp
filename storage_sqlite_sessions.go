@@ -43,6 +43,8 @@ func (s *storage) GetWebSession(ctx context.Context, key string) (sess *webSessi
 	if err := json.Unmarshal(data, &w); err != nil {
 		return nil, false, fmt.Errorf("unmarshaling session %s: %w", key, err)
 	}
+	w.SessionID = key
+	// TODO - expires at?
 	return &w, true, nil
 }
 

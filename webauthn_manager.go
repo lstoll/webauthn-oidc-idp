@@ -225,7 +225,7 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 			w.httpUnauth(rw, "invalid enrollment")
 			return
 		}
-		ss := sessionStoreFromContext(req.Context())
+		ss := sessionFromContext(req.Context())
 		sess, err := ss.Get(req, webauthnmgrSessionName)
 		if err != nil {
 			w.httpErr(req.Context(), rw, err)
@@ -247,7 +247,7 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 }
 
 func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
-	ss := sessionStoreFromContext(req.Context())
+	ss := sessionFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnmgrSessionName)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
@@ -303,7 +303,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 }
 
 func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
-	ss := sessionStoreFromContext(req.Context())
+	ss := sessionFromContext(req.Context())
 	sess, err := ss.Get(req, webauthnmgrSessionName)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)

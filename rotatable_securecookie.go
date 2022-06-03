@@ -15,8 +15,6 @@ import (
 
 const rotatorUsageSessions = "sessions"
 
-var _ sessions.Store = (*secureCookieManager)(nil)
-
 type rotatableSecurecookie struct {
 	KeyID string `json:"key_id"`
 
@@ -107,36 +105,6 @@ func (s *secureCookieManager) buildStore(ctx context.Context) (sessions.Store, e
 			MaxAge: 6 * 24 * 60 * 60, // 6 days, we keep keys around for about that.
 		},
 	}, nil
-}
-
-// Get should return a cached session.
-func (s *secureCookieManager) Get(r *http.Request, name string) (*sessions.Session, error) {
-	st, err := s.buildStore(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return st.Get(r, name)
-}
-
-// New should create and return a new session.
-//
-// Note that New should never return a nil session, even in the case of
-// an error if using the Registry infrastructure to cache the session.
-func (s *secureCookieManager) New(r *http.Request, name string) (*sessions.Session, error) {
-	st, err := s.buildStore(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return st.New(r, name)
-}
-
-// Save should persist session to the underlying store implementation.
-func (s *secureCookieManager) Save(r *http.Request, w http.ResponseWriter, sess *sessions.Session) error {
-	st, err := s.buildStore(context.Background())
-	if err != nil {
-		return err
-	}
-	return st.Save(r, w, sess)
 }
 
 // CSRFHandler wraps a handler, adding csrf protection. It dynamically looks up
