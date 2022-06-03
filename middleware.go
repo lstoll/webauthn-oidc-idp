@@ -19,8 +19,6 @@ func baseMiddleware(wrapped http.Handler,
 	sess *sessionManager,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
 		st := time.Now()
 
 		// TODO - determine if we're in a place to trust this
@@ -28,10 +26,10 @@ func baseMiddleware(wrapped http.Handler,
 		if rid == "" {
 			rid = uuid.NewString()
 		}
-		ctx = context.WithValue(ctx, requestIDCtxKey{}, rid)
+		r = r.WithContext(context.WithValue(r.Context(), requestIDCtxKey{}, rid))
 
 		l := logger.WithField("request_id", rid)
-		ctx = contextWithLogger(ctx, l)
+		r = r.WithContext(contextWithLogger(r.Context(), l))
 
 		s, err := sess.sessionForRequest(r)
 		if err != nil {
@@ -40,10 +38,10 @@ func baseMiddleware(wrapped http.Handler,
 			http.Error(w, "getting session", http.StatusInternalServerError)
 			return
 		}
-		ctx = context.WithValue(ctx, sessionStoreCtxKey{}, s)
+		r = r.WithContext(context.WithValue(r.Context(), sessionStoreCtxKey{}, s))
 
 		ww := &wrapResponseWriter{
-			ctx: ctx,
+			ctx: r.Context(),
 
 			ResponseWriter: w,
 
@@ -51,7 +49,7 @@ func baseMiddleware(wrapped http.Handler,
 			sess: s,
 		}
 
-		wrapped.ServeHTTP(ww, r.WithContext(ctx))
+		wrapped.ServeHTTP(ww, r)
 
 		// run a save here to make sure we always save it, responses that write
 		// nothing will miss the hook in `Write`

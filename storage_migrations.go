@@ -96,4 +96,10 @@ var migrations = []migration{
 			);
 		`,
 	},
+	{
+		Idx: 202206031901,
+		SQL: `
+			delete from rotatable where usage = 'sessions';
+		`,
+	},
 }

@@ -77,7 +77,6 @@ type sessionManager struct {
 }
 
 func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error) {
-	var sess *webSession
 	c, err := r.Cookie(webSessionIDCookieName)
 	if err == http.ErrNoCookie {
 		// start a new session
@@ -85,34 +84,42 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 		if err != nil {
 			return nil, fmt.Errorf("getting cookie %s: %v", webSessionIDCookieName, err)
 		}
-		sess = nsess
-	} else {
-		// we have the cookie
-		dbsess, ok, err := s.st.GetWebSession(r.Context(), c.Value)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			// couldn't find the session, start new
-			sess, err = s.st.CreateWebSession(r.Context())
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			sess = dbsess
-		}
+		return nsess, nil
 	}
+
+	ctxLog(r.Context()).Debugf("got cookie %#v", c)
+
+	// we have the cookie
+	dbsess, ok, err := s.st.GetWebSession(r.Context(), c.Value)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		ctxLog(r.Context()).Debugf("return DB sess %s", dbsess.SessionID)
+		return dbsess, nil
+	}
+
+	// couldn't find the session, start new
+	sess, err := s.st.CreateWebSession(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	ctxLog(r.Context()).Debugf("return new sess ID %s", sess.SessionID)
 
 	return sess, nil
 }
 
 func (s *sessionManager) saveSession(ctx context.Context, w http.ResponseWriter, sess *webSession) error {
+	// TODO - only save if the session has data?
+	ctxLog(ctx).Debugf("saving session %s to DB", sess.SessionID)
+
 	if err := s.st.PutWebSession(ctx, sess, s.sessionValidityTime); err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:  webSessionIDCookieName,
 		Value: sess.SessionID,
+		Path:  "/",
 
 		Expires: time.Now().Add(s.sessionValidityTime - 1*time.Minute), // fudge the cookie to be valid slightly less than the DB
 		Secure:  true,                                                  // we should aleways serve tls

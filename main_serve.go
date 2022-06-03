@@ -69,23 +69,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			return err
 		}
 
-		sessionrotator := &dbRotator[rotatableSecurecookie, *rotatableSecurecookie]{
-			db:  gcfg.storage.db,
-			log: ctxLog(ctx),
-
-			usage: rotatorUsageSessions,
-
-			rotateInterval: 24 * time.Hour, // config
-			maxAge:         168 * time.Hour,
-
-			newFn: func() (*rotatableSecurecookie, error) {
-				return newRotatableSecureCookie(encryptor)
-			},
-		}
-		if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
-			return err
-		}
-
 		oidcSigner := &oidcSigner{
 			rotator:   oidcrotator,
 			encryptor: encryptor,
@@ -131,9 +114,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		}
 
 		mux := http.NewServeMux()
-
-		mux.Handle("/keys", keysh)
-		mux.Handle("/.well-known/openid-configuration", discoh)
 
 		heh := &httpErrHandler{}
 
@@ -231,11 +211,16 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		g.Add(run.SignalHandler(ctx, os.Interrupt))
 
-		hh := baseMiddleware(mux, ctxLog(ctx), webSessMgr)
+		// keep this outside our middleware
+		serveMux := http.NewServeMux()
+		serveMux.Handle("/keys", keysh)
+		serveMux.Handle("/.well-known/openid-configuration", discoh)
+		// but wrap the rest
+		serveMux.Handle("/", baseMiddleware(mux, ctxLog(ctx), webSessMgr))
 
 		hs := &http.Server{
 			Addr:    *addr,
-			Handler: hh,
+			Handler: serveMux,
 		}
 
 		g.Add(func() error {
@@ -279,9 +264,6 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 				select {
 				case <-ticker.C:
 					if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
-						return err
-					}
-					if err := sessionrotator.RotateIfNeeded(ctx); err != nil {
 						return err
 					}
 				case <-rotInt:

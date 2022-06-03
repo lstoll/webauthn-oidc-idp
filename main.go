@@ -43,12 +43,18 @@ func main() {
 	dbPath := app.Flag("db-path", "Path to database file").Envar("DB_PATH").Default("db/idp.db").String()
 	securePassphrase := app.Flag("secure-passphrase", "Passphrase for DB encryption").Envar("SECURE_PASSPHRASE").Required().String()
 	prevSecurePassphrases := app.Flag("prev-secure-passphrases", "Passphrase(s) previously used for DB encryption, to decrypt").Envar("SECURE_PASSPHRASES_PREV").Strings()
+	debug := app.Flag("debug", "Debug logging output").Envar("DEBUG").Bool()
 
 	serveCmd, serveRun := serveCommand(app)
 	addUserCmd, addUserRun := addUserCommand(app)
 	activateUserCmd, activateUserRun := activateUserCommand(app)
 
 	cmdName := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	if *debug {
+		l.SetLevel(logrus.DebugLevel)
+	}
+	ctx = contextWithLogger(ctx, l)
 
 	// common initialization
 	ks, err := newDerivedKeyset(*securePassphrase, *prevSecurePassphrases...)
