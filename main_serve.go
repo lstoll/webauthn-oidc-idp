@@ -115,6 +115,9 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		mux := http.NewServeMux()
 
+		mux.Handle("/keys", keysh)
+		mux.Handle("/.well-known/openid-configuration", discoh)
+
 		heh := &httpErrHandler{}
 
 		// start webauthn provider-level config
@@ -211,16 +214,15 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		g.Add(run.SignalHandler(ctx, os.Interrupt))
 
-		// keep this outside our middleware
-		serveMux := http.NewServeMux()
-		serveMux.Handle("/keys", keysh)
-		serveMux.Handle("/.well-known/openid-configuration", discoh)
-		// but wrap the rest
-		serveMux.Handle("/", baseMiddleware(mux, ctxLog(ctx), webSessMgr))
+		// this will always try and create a session for discovery and stuff,
+		// but we shouldn't save it. but, we need it for logging and stuff. TODO
+		// at some point consider splitting the middleware, but then we might
+		// need to dup the middleware wrap or something.
+		hh := baseMiddleware(mux, ctxLog(ctx), webSessMgr)
 
 		hs := &http.Server{
 			Addr:    *addr,
-			Handler: serveMux,
+			Handler: hh,
 		}
 
 		g.Add(func() error {

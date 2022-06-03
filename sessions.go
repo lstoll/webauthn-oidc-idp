@@ -56,6 +56,13 @@ type webSession struct {
 	TestCounter int `json:"test_counter,omitempty"`
 }
 
+// Empty return true if the session contains no data, if this is the case the
+// session should not be saved
+func (w *webSession) Empty() bool {
+	return len(w.GorillaSessions) == 0 &&
+		w.TestCounter == 0
+}
+
 const sessionIDCookie = "session-id"
 
 type webSessionStore interface {
@@ -110,7 +117,10 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 }
 
 func (s *sessionManager) saveSession(ctx context.Context, w http.ResponseWriter, sess *webSession) error {
-	// TODO - only save if the session has data?
+	if sess.Empty() {
+		ctxLog(ctx).Debugf("not saving session %s to DB, it is empty", sess.SessionID)
+		return nil
+	}
 	ctxLog(ctx).Debugf("saving session %s to DB", sess.SessionID)
 
 	if err := s.st.PutWebSession(ctx, sess, s.sessionValidityTime); err != nil {
@@ -122,7 +132,7 @@ func (s *sessionManager) saveSession(ctx context.Context, w http.ResponseWriter,
 		Path:  "/",
 
 		Expires: time.Now().Add(s.sessionValidityTime - 1*time.Minute), // fudge the cookie to be valid slightly less than the DB
-		Secure:  true,                                                  // we should aleways serve tls
+		Secure:  true,                                                  // we should always serve tls
 	})
 	return nil
 }
