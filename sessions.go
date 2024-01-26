@@ -28,7 +28,7 @@ type pendingWebauthnEnrollment struct {
 // webauthnLogin tracks data for a login session
 type webauthnLoginData struct {
 	// LoginSessionID is the current OIDC session ID for the flow
-	LoginSessionID      string                `json:"login_session_id`
+	LoginSessionID      string                `json:"login_session_id"`
 	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
 	// AuthdUser tracks information about the user we just authenticated, for
 	// when we send the user to the login finished page.
@@ -208,7 +208,6 @@ func (s *sessionShim) Get(r *http.Request, name string) (*sessions.Session, erro
 // this should load it, or create a new one
 func (s *sessionShim) New(r *http.Request, name string) (*sessions.Session, error) {
 	return sessionFromContext(r.Context()).New(r, name)
-
 }
 
 func (s *sessionShim) Save(r *http.Request, rw http.ResponseWriter, session *sessions.Session) error {

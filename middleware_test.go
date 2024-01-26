@@ -27,7 +27,7 @@ func TestMiddlewareSessions(t *testing.T) {
 			testHandlerRun(r)
 		}
 		// TODO - can the handler work if nothing is written?
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	m := baseMiddleware(wr, log, smgr)

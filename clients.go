@@ -8,15 +8,13 @@ import (
 	"github.com/lstoll/oidc/core"
 )
 
-var (
-	// reValidPublicRedirectUri is a fairly strict regular expression that must
-	// match against the redirect URI for a Public client. It intentionally may
-	// not match all URLs that are technically valid, but is it meant to match
-	// all commonly constructed ones, without inadvertently falling victim to
-	// parser bugs or parser inconsistencies (e.g.,
-	// https://www.blackhat.com/docs/us-17/thursday/us-17-Tsai-A-New-Era-Of-SSRF-Exploiting-URL-Parser-In-Trending-Programming-Languages.pdf)
-	reValidPublicRedirectURI = regexp.MustCompile(`\Ahttp://(?:localhost|127\.0\.0\.1)(?::[0-9]{1,5})?(?:|/[A-Za-z0-9./_-]{0,1000})\z`)
-)
+// reValidPublicRedirectUri is a fairly strict regular expression that must
+// match against the redirect URI for a Public client. It intentionally may
+// not match all URLs that are technically valid, but is it meant to match
+// all commonly constructed ones, without inadvertently falling victim to
+// parser bugs or parser inconsistencies (e.g.,
+// https://www.blackhat.com/docs/us-17/thursday/us-17-Tsai-A-New-Era-Of-SSRF-Exploiting-URL-Parser-In-Trending-Programming-Languages.pdf)
+var reValidPublicRedirectURI = regexp.MustCompile(`\Ahttp://(?:localhost|127\.0\.0\.1)(?::[0-9]{1,5})?(?:|/[A-Za-z0-9./_-]{0,1000})\z`)
 
 type Client struct {
 	ClientID      string   `json:"client_id" yaml:"client_id"`
@@ -39,7 +37,7 @@ func (s *staticClients) IsValidClientID(clientID string) (ok bool, err error) {
 	return false, nil
 }
 
-func (s *staticClients) IsUnauthenticatedClient(clientID string) (ok bool, err error) {
+func (s *staticClients) IsUnauthenticatedClient(_ string) (ok bool, err error) {
 	return false, nil
 }
 
@@ -83,7 +81,7 @@ func (s *staticClients) ValidateClientRedirectURI(clientID, redirectURI string) 
 
 // errSourceNotFound is returned by multiClients when no source handles the
 // client.
-var errSourceNotFound = errors.New("No source found for client ID")
+var errSourceNotFound = errors.New("no source found for client ID")
 
 // multiClients is a clientsource that acts on a series of underlying client
 // sources. these are iterated in order, with the first client indicating a
@@ -126,7 +124,6 @@ func (m *multiClients) ValidateClientRedirectURI(clientID, redirectURI string) (
 		return false, err
 	}
 	return s.ValidateClientRedirectURI(clientID, redirectURI)
-
 }
 
 // sourceForID finds the first source for which the client ID is valid, and

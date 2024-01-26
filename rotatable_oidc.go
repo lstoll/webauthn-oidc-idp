@@ -19,10 +19,12 @@ import (
 
 const rsaKeyBits = 2048
 
-var _ rotatable = (*rotatableRSAKey)(nil)
-var _ crypto.Signer = (*rotatableRSAKey)(nil)
-var _ core.Signer = (*oidcSigner)(nil)
-var _ discovery.KeySource = (*oidcSigner)(nil)
+var (
+	_ rotatable           = (*rotatableRSAKey)(nil)
+	_ crypto.Signer       = (*rotatableRSAKey)(nil)
+	_ core.Signer         = (*oidcSigner)(nil)
+	_ discovery.KeySource = (*oidcSigner)(nil)
+)
 
 const rotatorUsageOIDC = "oidc-signer"
 
@@ -94,7 +96,6 @@ func (r *rotatableRSAKey) Sign(rand io.Reader, digest []byte, opts crypto.Signer
 		r.privparsed = priv
 	}
 	return r.privparsed.Sign(rand, digest, opts)
-
 }
 
 func (r *rotatableRSAKey) Public() crypto.PublicKey {
@@ -114,12 +115,12 @@ type oidcSigner struct {
 	encryptor *encryptor[[]byte]
 }
 
-func (o *oidcSigner) SignerAlg(ctx context.Context) (jose.SignatureAlgorithm, error) {
+func (o *oidcSigner) SignerAlg(_ context.Context) (jose.SignatureAlgorithm, error) {
 	return jose.RS256, nil
 }
 
 func (o *oidcSigner) Sign(ctx context.Context, data []byte) (signed []byte, err error) {
-	ck, err := o.rotator.GetCurrent(context.Background())
+	ck, err := o.rotator.GetCurrent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting current signing key: %w", err)
 	}
