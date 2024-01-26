@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,14 +50,10 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		encryptor := newEncryptor[[]byte](gcfg.keyset.dbCurr, gcfg.keyset.dbPrev...)
 
 		oidcrotator := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
-			db:  gcfg.storage.db,
-			log: ctxLog(ctx),
-
-			usage: rotatorUsageOIDC,
-
+			db:             gcfg.storage.db,
+			usage:          rotatorUsageOIDC,
 			rotateInterval: *oidcRotateInterval,
 			maxAge:         *oidMaxAge,
-
 			newFn: func() (*rotatableRSAKey, error) {
 				return newRotatableRSAKey(encryptor)
 			},
@@ -197,7 +194,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			if err := gcfg.storage.db.Ping(); err != nil {
-				ctxLog(ctx).WithError(err).Error("failed to ping database in health check")
+				slog.Error("health check: ping database", logErr(err))
 				http.Error(w, "unhealthy", http.StatusInternalServerError)
 				return
 			}
@@ -214,7 +211,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		// but we shouldn't save it. but, we need it for logging and stuff. TODO
 		// at some point consider splitting the middleware, but then we might
 		// need to dup the middleware wrap or something.
-		hh := baseMiddleware(mux, ctxLog(ctx), webSessMgr)
+		hh := baseMiddleware(mux, webSessMgr)
 
 		hs := &http.Server{
 			Addr:    *addr,
@@ -234,12 +231,12 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 					HostPolicy: autocert.HostWhitelist(append([]string{issHost}, (*autocertAdditionalHosts)...)...),
 				}
 				hs.TLSConfig = m.TLSConfig()
-				ctxLog(ctx).Infof("Listing on https://%s", *addr)
+				slog.Info("server listing", slog.String("addr", "https://"+*addr))
 				if err := hs.ListenAndServeTLS("", ""); err != nil {
 					return fmt.Errorf("serving http: %v", err)
 				}
 			} else {
-				ctxLog(ctx).Infof("Listing on http://%s", *addr)
+				slog.Info("server listing", slog.String("addr", "http://"+*addr))
 				if err := hs.ListenAndServe(); err != nil {
 					return fmt.Errorf("serving http: %v", err)
 				}
@@ -254,7 +251,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		rotInt := make(chan struct{}, 1)
 		g.Add(func() error {
-			ctxLog(ctx).Info("Starting rotator")
+			slog.Info("starting rotator", slog.Duration("interval", time.Minute))
 			ticker := time.NewTicker(1 * time.Minute)
 			defer ticker.Stop()
 

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 )
 
 type testRotatable struct {
@@ -36,14 +35,10 @@ func TestRotator(t *testing.T) {
 	s := newTestStorage(t)
 
 	dbr := &dbRotator[testRotatable, *testRotatable]{
-		db:  s.db,
-		log: logrus.New(),
-
-		usage: "test",
-
+		db:             s.db,
+		usage:          "test",
 		rotateInterval: 1 * time.Minute,
 		maxAge:         10 * time.Minute,
-
 		newFn: func() (*testRotatable, error) {
 			return &testRotatable{
 				ObjID: uuid.NewString(),

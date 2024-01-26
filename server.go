@@ -89,7 +89,7 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := loginTemplate.Execute(w, struct{ SessionID string }{SessionID: ar.SessionID}); err != nil {
-		slog.Error("execute login.html.tmpl", slog.Any("error", err))
+		slog.Error("execute login.html.tmpl", logErr(err))
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 }

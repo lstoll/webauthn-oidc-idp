@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime/debug"
 
@@ -54,7 +55,6 @@ func main() {
 	if *debug {
 		l.SetLevel(logrus.DebugLevel)
 	}
-	ctx = contextWithLogger(ctx, l)
 
 	// common initialization
 	ks, err := newDerivedKeyset(*securePassphrase, *prevSecurePassphrases...)
@@ -115,4 +115,8 @@ func getVersion() string {
 	verStr += ")"
 
 	return verStr
+}
+
+func logErr(err error) slog.Attr {
+	return slog.Any("error", err)
 }

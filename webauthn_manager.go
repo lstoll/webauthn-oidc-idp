@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 
@@ -358,15 +358,14 @@ func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) 
 }
 
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
-	log.Printf("error %#v", err)
-	l := ctxLog(ctx)
-	var pErr *protocol.Error
+	var (
+		pErr    *protocol.Error
+		devinfo string
+	)
 	if errors.As(err, &pErr) {
-		if pErr.DevInfo != "" {
-			l = l.WithField("webauthnDevInfo", pErr.DevInfo)
-		}
+		devinfo = pErr.DevInfo
 	}
-	l.Error(err)
+	slog.ErrorContext(ctx, "webauthn manager error", logErr(err), slog.String("dev-info", devinfo))
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
 }
 
