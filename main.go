@@ -23,11 +23,6 @@ var (
 	ErrNon200Response = errors.New("non 200 response found")
 )
 
-type globalCfg struct {
-	storage *storage
-	keyset  *derivedKeyset
-}
-
 func main() {
 	ctx := context.Background()
 
@@ -67,20 +62,15 @@ func main() {
 		kingpin.Fatalf("open database at %s: %w", *dbPath, err)
 	}
 
-	gcfg := &globalCfg{
-		keyset:  ks,
-		storage: st,
-	}
-
 	var runErr error
 	switch cmdName {
 	// Register user
 	case serveCmd.FullCommand():
-		runErr = serveRun(ctx, gcfg)
+		runErr = serveRun(ctx, st, ks)
 	case addUserCmd.FullCommand():
-		runErr = addUserRun(ctx, gcfg)
+		runErr = addUserRun(ctx, st)
 	case activateUserCmd.FullCommand():
-		runErr = activateUserRun(ctx, gcfg)
+		runErr = activateUserRun(ctx, st)
 	default:
 		panic("should not happen, kingpin should handle this")
 	}
