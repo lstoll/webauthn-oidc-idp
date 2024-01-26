@@ -30,7 +30,7 @@ import (
 //go:embed web/public/*
 var staticFiles embed.FS
 
-func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func(context.Context, *globalCfg) error) {
+func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func(context.Context, *storage, *derivedKeyset) error) {
 	serve := app.Command("serve", "Run the IDP as a server")
 
 	issuer := serve.Flag("issuer", "OIDC issuer for this service").Envar("ISSUER").Required().String()
@@ -42,15 +42,15 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 	autocertAdditionalHosts := serve.Flag("autocert-additional-hosts", "Additional hostnames (aside from the issuer) we should enable cert provisioning for.").Envar("AUTOCERT_ADDITIONAL_HOSTNAMES").Strings()
 	clientsFile := serve.Flag("clients", "Path to file containing oauth2/oidc clients config").Envar("CLIENTS_FILE").ExistingFile()
 
-	return serve, func(ctx context.Context, gcfg *globalCfg) error {
+	return serve, func(ctx context.Context, storage *storage, keyset *derivedKeyset) error {
 		if *serveAutocert && *autocertEmail == "" {
 			return errors.New("autocert-email needs to be provided when serving with autocert")
 		}
 
-		encryptor := newEncryptor[[]byte](gcfg.keyset.dbCurr, gcfg.keyset.dbPrev...)
+		encryptor := newEncryptor[[]byte](keyset.dbCurr, keyset.dbPrev...)
 
 		oidcrotator := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
-			db:             gcfg.storage.db,
+			db:             storage.db,
 			usage:          rotatorUsageOIDC,
 			rotateInterval: *oidcRotateInterval,
 			maxAge:         *oidMaxAge,
@@ -96,13 +96,13 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		oidcsvr, err := core.New(&core.Config{
 			AuthValidityTime: 5 * time.Minute,
 			CodeValidityTime: 5 * time.Minute,
-		}, gcfg.storage, clients, oidcSigner)
+		}, storage, clients, oidcSigner)
 		if err != nil {
 			log.Fatalf("Failed to create OIDC server instance: %v", err)
 		}
 
 		webSessMgr := &sessionManager{
-			st:                  gcfg.storage,
+			st:                  storage,
 			sessionValidityTime: 24 * time.Hour, // TODO - configure
 		}
 
@@ -138,7 +138,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		// start configuration of webauthn manager
 		mgr := &webauthnManager{
-			store:    gcfg.storage,
+			store:    storage,
 			webauthn: wn,
 			oidcMiddleware: &oidcm.Handler{
 				Issuer:       *issuer,
@@ -181,8 +181,8 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			refreshValidFor: 12 * time.Hour,
 			// upstreamPolicy:  []byte(ucp),
 			webauthn: wn,
-			store:    gcfg.storage,
-			storage:  gcfg.storage,
+			store:    storage,
+			storage:  storage,
 		}
 
 		pubContent, err := fs.Sub(fs.FS(staticFiles), "web")
@@ -193,7 +193,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		mux.Handle("/public/", fs)
 
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-			if err := gcfg.storage.db.Ping(); err != nil {
+			if err := storage.db.Ping(); err != nil {
 				slog.Error("health check: ping database", logErr(err))
 				http.Error(w, "unhealthy", http.StatusInternalServerError)
 				return
@@ -221,7 +221,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		g.Add(func() error {
 			if *serveAutocert {
 				acc := &autocertStore{
-					db:        gcfg.storage.db,
+					db:        storage.db,
 					encryptor: encryptor,
 				}
 				m := &autocert.Manager{
