@@ -1,0 +1,32 @@
+run:
+  deadline: 5m
+  modules-download-mode: readonly
+
+output:
+  format: colored-line-number
+  sort-results: true
+
+issues:
+  exclude-use-default: true
+
+linters-settings:
+  sloglint:
+    attr-only: true
+    static-msg: true
+
+linters:
+  enable:
+    - errcheck
+    - revive
+    - goimports
+    - govet
+    - misspell
+    - unused
+    - unparam
+    - staticcheck
+    - gosimple
+    - stylecheck
+    - sloglint
+    - nilerr
+    - tenv
+    - thelper

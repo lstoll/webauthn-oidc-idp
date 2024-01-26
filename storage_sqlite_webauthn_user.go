@@ -22,9 +22,8 @@ func init() {
 func (s *storage) GetUserByID(ctx context.Context, id string, allowInactive bool) (*WebauthnUser, bool, error) {
 	if allowInactive {
 		return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where id=$1`, id)
-	} else {
-		return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where id=$1 and activated=1`, id)
 	}
+	return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where id=$1 and activated=1`, id)
 }
 
 func (s *storage) GetUserByEmail(ctx context.Context, email string) (*WebauthnUser, bool, error) {
@@ -117,7 +116,7 @@ func (s *storage) DeleteCredentialFromuser(ctx context.Context, userID string, c
 	return nil
 }
 
-func (s *storage) ListUsers(ctx context.Context) ([]*WebauthnUser, error) {
+func (s *storage) ListUsers(_ context.Context) ([]*WebauthnUser, error) {
 	// TODO - do we ever need credentials here? Skipping for convenience
 	var ret []*WebauthnUser
 	rows, err := s.db.Query(`select id, email, full_name from users`)

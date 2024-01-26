@@ -17,10 +17,10 @@ var (
 	DefaultHTTPGetAddress = "https://checkip.amazonaws.com"
 
 	// ErrNoIP No IP found in response
-	ErrNoIP = errors.New("No IP in HTTP response")
+	ErrNoIP = errors.New("no IP in HTTP response")
 
 	// ErrNon200Response non 200 status code in response
-	ErrNon200Response = errors.New("Non 200 Response found")
+	ErrNon200Response = errors.New("non 200 response found")
 )
 
 type globalCfg struct {
@@ -71,7 +71,6 @@ func main() {
 		keyset:  ks,
 		storage: st,
 	}
-	_ = gcfg
 
 	var runErr error
 	switch cmdName {

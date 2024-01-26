@@ -1,7 +1,7 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
@@ -9,17 +9,13 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"time"
-
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/lstoll/oidc/core"
-)
-
-const (
-	upstreamAllowQuery = "data.upstream.allow"
 )
 
 /* keeping this around as some context betweet a oidc/session, and an authentication
@@ -51,8 +47,12 @@ type AuthSessionManager interface {
 	GetAuthentication(ctx context.Context, sessionID string) (Authentication, bool, error)
 } */
 
-//go:embed web/templates/login.tmpl.html
-var webauthnLoginTemplate string
+var (
+	//go:embed web/templates
+	templates embed.FS
+
+	loginTemplate = template.Must(template.ParseFS(templates, "web/templates/login.tmpl.html"))
+)
 
 type oidcServer struct {
 	issuer  string
@@ -88,11 +88,10 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 		LoginSessionID: ar.SessionID,
 	}
 
-	template.Must(template.New("login").Parse(webauthnLoginTemplate)).Execute(w, struct {
-		SessionID string
-	}{
-		SessionID: ar.SessionID,
-	})
+	if err := loginTemplate.Execute(w, struct{ SessionID string }{SessionID: ar.SessionID}); err != nil {
+		slog.Error("execute login.html.tmpl", slog.Any("error", err))
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+	}
 }
 
 func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
@@ -319,7 +318,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		// ACR:    a.provider.ACR(), TODO - acr?
 		// AMR:    []string{a.provider.AMR()}, // TODO - amr?
 	}
-	s.oidcsvr.FinishAuthorization(rw, req, authdUser.SessionID, az)
+	_ = s.oidcsvr.FinishAuthorization(rw, req, authdUser.SessionID, az)
 }
 
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
@@ -334,12 +333,6 @@ type webauthnLogin struct {
 	SessionID   string
 }
 
-var _ = func() struct{} {
+func init() {
 	gob.Register(webauthnLogin{})
-	return struct{}{}
-}()
-
-var _ = func() struct{} {
-	gob.Register(webauthnLogin{})
-	return struct{}{}
-}()
+}

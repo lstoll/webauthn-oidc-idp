@@ -24,6 +24,8 @@ func (t *testRotatable) ID() string {
 // Rotate is called on each rotation, with the stage the key is being
 // rotated in to.
 // TODO - call consistently, not called for previous
+//
+//nolint:unparam
 func (t *testRotatable) Rotate(stage rotatorStage) error {
 	t.Stage = stage
 	return nil
@@ -32,8 +34,6 @@ func (t *testRotatable) Rotate(stage rotatorStage) error {
 func TestRotator(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStorage(t)
-
-	const testUsage = "test"
 
 	dbr := &dbRotator[testRotatable, *testRotatable]{
 		db:  s.db,
@@ -103,6 +103,7 @@ func TestRotator(t *testing.T) {
 	}
 }
 
+//nolint:revive
 func dbShift(t *testing.T, ctx context.Context, db *sql.DB, amount time.Duration) {
 	t.Helper()
 

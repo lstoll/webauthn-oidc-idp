@@ -47,11 +47,9 @@ type dbRotator[T any, PT interface {
 	maxAge time.Duration
 
 	// newFn is called to instantiate a T. It should set up the item
-	// appropriatly, populate the ID etc.
+	// appropriately, populate the ID etc.
 	newFn func() (PT, error)
 }
-
-const defaultRotateTxTimeout = 30000 // 30s, leave plenty of time for key generation
 
 // RotateIfNeeded checks if a rotation is required, and if it is rotates keys
 // using the result of keygen. rotateAt specifies at what age a generated
@@ -269,11 +267,6 @@ func (d *dbRotator[T, PT]) GetCurrent(ctx context.Context) (PT, error) {
 	return current, nil
 }
 
-type dbPubKey struct {
-	KeyID    string
-	PEMBytes []byte
-}
-
 func (d *dbRotator[T, PT]) GetUpcoming(ctx context.Context) ([]PT, error) {
 	return d.getStage(ctx, rotatorStageNext)
 }
@@ -292,9 +285,7 @@ func (d *dbRotator[T, PT]) getStage(ctx context.Context, stage rotatorStage) ([]
 	defer rows.Close()
 
 	for rows.Next() {
-		var (
-			data []byte
-		)
+		var data []byte
 		if err := rows.Scan(&data); err != nil {
 			return nil, fmt.Errorf("scanning data key: %v", err)
 		}

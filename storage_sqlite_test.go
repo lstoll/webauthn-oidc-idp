@@ -42,7 +42,7 @@ func logTable(t *testing.T, db *sql.DB, tableName string) {
 	sb := &strings.Builder{}
 	w := tabwriter.NewWriter(sb, 0, 2, 1, ' ', 0)
 
-	w.Write([]byte(strings.Join(cols, "\t") + "\n"))
+	_, _ = w.Write([]byte(strings.Join(cols, "\t") + "\n"))
 
 	for rows.Next() {
 		row := make([][]byte, len(cols))
@@ -53,8 +53,8 @@ func logTable(t *testing.T, db *sql.DB, tableName string) {
 		if err := rows.Scan(rowPtr...); err != nil {
 			t.Fatal(err)
 		}
-		w.Write(bytes.Join(row, []byte("\t")))
-		w.Write([]byte("\n"))
+		_, _ = w.Write(bytes.Join(row, []byte("\t")))
+		_, _ = w.Write([]byte("\n"))
 	}
 
 	if err := rows.Close(); err != nil {

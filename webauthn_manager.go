@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/subtle"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +16,6 @@ import (
 	"github.com/justinas/nosurf"
 	oidcm "github.com/lstoll/oidc/middleware"
 )
-
-//go:embed web/templates/webauthn/*
-var webauthnTemplateData embed.FS
 
 type WebauthnUserStore interface {
 	GetUserByID(ctx context.Context, id string, allowInactive bool) (*WebauthnUser, bool, error)
@@ -70,7 +66,7 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	responded, overriden, u := w.userForReq(rw, req)
+	responded, overridden, u := w.userForReq(rw, req)
 	if responded {
 		return
 	}
@@ -98,10 +94,10 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// need to propogate this to the JS callbacks. TODO - This is janky,
+	// need to propagate this to the JS callbacks. TODO - This is janky,
 	// consider putting it in the session or something
 	waq := ""
-	if overriden {
+	if overridden {
 		waq = fmt.Sprintf("override_uid=" + u.ID)
 	}
 
@@ -329,15 +325,15 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 }
 
 // userForReq gets the user for a given request, accounting for the override_uid
-// / admin params. it will handle reponse to user, indicating if it does via the
+// / admin params. it will handle response to user, indicating if it does via the
 // return. If it has, the caller should simply return
-func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overriden bool, u *WebauthnUser) {
-	overriden = false
+func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overridden bool, u *WebauthnUser) {
+	overridden = false
 
 	claims := oidcm.ClaimsFromContext(req.Context())
 	if claims == nil {
 		w.httpUnauth(rw, "")
-		return true, overriden, nil
+		return true, overridden, nil
 	}
 
 	uid := claims.Subject
@@ -345,20 +341,20 @@ func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) 
 		// impersonation path = we allow user to override the user ID to perform
 		// actions as the targeted user
 		uid = req.URL.Query().Get("override_uid")
-		overriden = true
+		overridden = true
 	}
 
 	u, ok, err := w.store.GetUserByID(req.Context(), uid, false)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
-		return true, overriden, nil
+		return true, overridden, nil
 	}
 	if !ok {
 		w.httpNotFound(rw)
-		return true, overriden, nil
+		return true, overridden, nil
 	}
 
-	return false, overriden, u
+	return false, overridden, u
 }
 
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
@@ -393,16 +389,19 @@ func (w *webauthnManager) isAdmin(sub string) bool {
 
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
 	funcs := template.FuncMap{
-		`csrfField`: func() template.HTML {
+		"csrfField": func() template.HTML {
 			return template.HTML(fmt.Sprintf(`<input type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
+		},
+		"pathFor": func(s string) string {
+			return "TODO"
 		},
 	}
 
-	lt, err := template.New("").Funcs(funcs).ParseFS(webauthnTemplateData, "web/templates/webauthn/layout.tmpl.html")
+	lt, err := template.New("").Funcs(funcs).ParseFS(templates, "web/templates/webauthn/layout.tmpl.html")
 	if err != nil {
 		w.httpErr(r.Context(), rw, err)
 	}
-	t, err := lt.ParseFS(webauthnTemplateData, "web/templates/webauthn/"+templateName)
+	t, err := lt.ParseFS(templates, "web/templates/webauthn/"+templateName)
 	if err != nil {
 		w.httpErr(r.Context(), rw, err)
 		return

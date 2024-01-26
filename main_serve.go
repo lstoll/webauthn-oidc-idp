@@ -26,10 +26,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type serveConfig struct {
-	addr string
-}
-
 //go:embed web/public/*
 var staticFiles embed.FS
 
@@ -163,7 +159,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		// this is a dumb hack, because we use the middleware super
 		// restrictively but it needs to catch it's callback.
 		mux.Handle("/local-oidc-callback", mgr.oidcMiddleware.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte("should never get here?"))
+			_, _ = w.Write([]byte("should never get here?"))
 		})))
 
 		clients.sources = append([]core.ClientSource{

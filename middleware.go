@@ -10,8 +10,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type requestIDCtxKey struct{}
-type sessionStoreCtxKey struct{}
+type (
+	requestIDCtxKey    struct{}
+	sessionStoreCtxKey struct{}
+)
 
 // baseMiddleware should wrap all requests to the service
 func baseMiddleware(wrapped http.Handler,
@@ -76,8 +78,7 @@ func sessionFromContext(ctx context.Context) *webSession {
 }
 
 // httpErrHandler renders out nicer errors
-type httpErrHandler struct {
-}
+type httpErrHandler struct{}
 
 func (h *httpErrHandler) Error(w http.ResponseWriter, r *http.Request, err error) {
 	l := ctxLog(r.Context())
@@ -85,11 +86,11 @@ func (h *httpErrHandler) Error(w http.ResponseWriter, r *http.Request, err error
 	http.Error(w, "Internal Error", http.StatusInternalServerError)
 }
 
-func (h *httpErrHandler) BadRequest(w http.ResponseWriter, r *http.Request, message string) {
+func (h *httpErrHandler) BadRequest(w http.ResponseWriter, _ *http.Request, message string) {
 	http.Error(w, message, http.StatusBadRequest)
 }
 
-func (h *httpErrHandler) Forbidden(w http.ResponseWriter, r *http.Request, message string) {
+func (h *httpErrHandler) Forbidden(w http.ResponseWriter, _ *http.Request, message string) {
 	http.Error(w, message, http.StatusForbidden)
 }
 

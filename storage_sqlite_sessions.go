@@ -49,7 +49,7 @@ func (s *storage) GetWebSession(ctx context.Context, key string) (sess *webSessi
 }
 
 // CreateWebSession returns a new, unpersisted session for use
-func (s *storage) CreateWebSession(ctx context.Context) (*webSession, error) {
+func (s *storage) CreateWebSession(_ context.Context) (*webSession, error) {
 	return &webSession{
 		SessionID: mustNewSessionID(),
 	}, nil
