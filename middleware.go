@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 )
 
 type (
@@ -16,10 +16,7 @@ type (
 )
 
 // baseMiddleware should wrap all requests to the service
-func baseMiddleware(wrapped http.Handler,
-	logger logrus.FieldLogger,
-	sess *sessionManager,
-) http.Handler {
+func baseMiddleware(wrapped http.Handler, sess *sessionManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		st := time.Now()
 
@@ -30,13 +27,12 @@ func baseMiddleware(wrapped http.Handler,
 		}
 		r = r.WithContext(context.WithValue(r.Context(), requestIDCtxKey{}, rid))
 
-		l := logger.WithField("request_id", rid)
-		r = r.WithContext(contextWithLogger(r.Context(), l))
+		logger := slog.With(slog.String("request_id", rid))
 
 		s, err := sess.sessionForRequest(r)
 		if err != nil {
 			// TODO - nice errors here
-			l.WithError(err).Error("getting session")
+			logger.ErrorContext(r.Context(), "getting session", logErr(err))
 			http.Error(w, "getting session", http.StatusInternalServerError)
 			return
 		}
@@ -60,12 +56,11 @@ func baseMiddleware(wrapped http.Handler,
 			return
 		}
 
-		l.WithFields(logrus.Fields{
-			"method":   r.Method,
-			"path":     r.URL.Path,
-			"status":   ww.st,
-			"duration": time.Since(st),
-		}).Info()
+		logger.Info("http request",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.Int("status", ww.st),
+			slog.Duration("duration", time.Since(st)))
 	})
 }
 
@@ -81,8 +76,7 @@ func sessionFromContext(ctx context.Context) *webSession {
 type httpErrHandler struct{}
 
 func (h *httpErrHandler) Error(w http.ResponseWriter, r *http.Request, err error) {
-	l := ctxLog(r.Context())
-	l.Error(err)
+	slog.ErrorContext(r.Context(), "http error", logErr(err))
 	http.Error(w, "Internal Error", http.StatusInternalServerError)
 }
 
@@ -124,7 +118,7 @@ func (w *wrapResponseWriter) saveSession() error {
 	if !w.sessSaved {
 		if err := w.smgr.saveSession(w.ctx, w, w.sess); err != nil {
 			w.sessSaved = true // avoid looping on continual writes
-			ctxLog(w.ctx).WithError(err).Error("saving session")
+			slog.ErrorContext(w.ctx, "saving session", logErr(err))
 			http.Error(w, "Failed to save session", http.StatusInternalServerError)
 			// TODO - would an EOF or connection closed error be better here, to make the failure final?
 			return fmt.Errorf("error saving session in hooked writer: %w", err)

@@ -16,7 +16,6 @@ func addUserCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner fu
 	fullname := adduser.Flag("fullname", "Full name of the user").Required().String()
 
 	return adduser, func(ctx context.Context, gcfg *globalCfg) error {
-
 		ekey := uuid.NewString()
 
 		if _, err := gcfg.storage.CreateUser(ctx, &WebauthnUser{
@@ -29,8 +28,8 @@ func addUserCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner fu
 			return fmt.Errorf("adding user: %w", err)
 		}
 
-		ctxLog(ctx).Infof("User enrollment key: %s", ekey)
-		ctxLog(ctx).Infof("Enroll at: /registration?user_id=%s&enrollment_token=%s", *id, ekey)
+		fmt.Printf("user enrollment key: %s\n", ekey)
+		fmt.Printf("Enroll at: /registration?user_id=%s&enrollment_token=%s\n", *id, ekey)
 
 		return nil
 	}
@@ -42,7 +41,6 @@ func activateUserCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runn
 	id := activateUser.Flag("user-id", "Unique ID for this user, immutable").Required().String()
 
 	return activateUser, func(ctx context.Context, gcfg *globalCfg) error {
-
 		u, ok, err := gcfg.storage.GetUserByID(ctx, *id, true)
 		if err != nil {
 			return fmt.Errorf("getting user %s: %w", *id, err)
@@ -58,7 +56,7 @@ func activateUserCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runn
 			return fmt.Errorf("updaing user %s: %w", *id, err)
 		}
 
-		ctxLog(ctx).Info("Done.")
+		fmt.Println("Done.")
 
 		return nil
 	}

@@ -6,9 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type rotatorStage string
@@ -32,8 +31,7 @@ type dbRotator[T any, PT interface {
 	rotatable
 	*T
 }] struct {
-	log logrus.FieldLogger
-	db  *sql.DB
+	db *sql.DB
 
 	// usage is a unique value to identify this instance of the rotator, all
 	// related items are grouped under this
@@ -59,7 +57,8 @@ type dbRotator[T any, PT interface {
 // 3x the rotation window to have a upcoming key, a current key, and a previous
 // key to validate still-issued certs.
 func (d *dbRotator[T, PT]) RotateIfNeeded(ctx context.Context) error {
-	l := d.log.WithFields(logrus.Fields{"fn": "dbRotate", "usage": d.usage})
+	// TODO(sr) Replace use of "fn" attribute by enabling source on the logger.
+	logger := slog.With(slog.String("fn", "dbRotate"), slog.String("usage", d.usage))
 
 	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
@@ -70,7 +69,7 @@ func (d *dbRotator[T, PT]) RotateIfNeeded(ctx context.Context) error {
 	defer func() {
 		if shouldRollback {
 			if err := tx.Rollback(); err != nil {
-				l.WithError(err).Warn("rollback failed")
+				slog.ErrorContext(ctx, "rollback transaction", logErr(err))
 			}
 		}
 	}()
@@ -85,7 +84,7 @@ func (d *dbRotator[T, PT]) RotateIfNeeded(ctx context.Context) error {
 		return fmt.Errorf("getting affected deletion rows: %w", err)
 	}
 	if ra > 0 {
-		l.Infof("Deleted %d old items", ra)
+		logger.Info("deleted old items", slog.Int64("rows", ra))
 	}
 
 	// We should always have an upcoming key. If we do not, insert one. This is
@@ -235,7 +234,7 @@ func (d *dbRotator[T, PT]) newItem(ctx context.Context, tx *sql.Tx, stage rotato
 		return "", fmt.Errorf("marshaling item: %w", err)
 	}
 
-	d.log.Infof("Inserting new %s %s key %s", stage, d.usage, item.ID())
+	slog.Info("inserting new item", slog.String("stage", string(stage)), slog.String("usage", d.usage), slog.String("id", item.ID()))
 
 	_, err = tx.ExecContext(ctx,
 		`insert into rotatable (id, usage, stage, data, expires_at) values ($1, $2, $3, $4, $5)`,

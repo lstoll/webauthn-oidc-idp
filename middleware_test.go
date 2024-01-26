@@ -6,13 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 func TestMiddlewareSessions(t *testing.T) {
 	ctx := context.Background()
-	log := logrus.New()
 	st := newTestStorage(t)
 	smgr := &sessionManager{
 		st:                  st,
@@ -30,7 +27,7 @@ func TestMiddlewareSessions(t *testing.T) {
 		_, _ = w.Write([]byte("OK"))
 	})
 
-	m := baseMiddleware(wr, log, smgr)
+	m := baseMiddleware(wr, smgr)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

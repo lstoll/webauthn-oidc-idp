@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -119,7 +120,7 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 		return nsess, nil
 	}
 
-	ctxLog(r.Context()).Debugf("got cookie %#v", c)
+	slog.DebugContext(r.Context(), "got cookie", slog.Any("cookie", c))
 
 	// we have the cookie
 	dbsess, ok, err := s.st.GetWebSession(r.Context(), c.Value)
@@ -127,7 +128,7 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 		return nil, err
 	}
 	if ok {
-		ctxLog(r.Context()).Debugf("return DB sess %s", dbsess.SessionID)
+		slog.DebugContext(r.Context(), "got session from DB", slog.String("id", dbsess.SessionID))
 		return dbsess, nil
 	}
 
@@ -136,17 +137,17 @@ func (s *sessionManager) sessionForRequest(r *http.Request) (*webSession, error)
 	if err != nil {
 		return nil, err
 	}
-	ctxLog(r.Context()).Debugf("return new sess ID %s", sess.SessionID)
+	slog.DebugContext(r.Context(), "return new session ID", slog.String("id", sess.SessionID))
 
 	return sess, nil
 }
 
 func (s *sessionManager) saveSession(ctx context.Context, w http.ResponseWriter, sess *webSession) error {
 	if sess.Empty() {
-		ctxLog(ctx).Debugf("not saving session %s to DB, it is empty", sess.SessionID)
+		slog.DebugContext(ctx, "not saving empty session to DB", slog.String("id", sess.SessionID))
 		return nil
 	}
-	ctxLog(ctx).Debugf("saving session %s to DB", sess.SessionID)
+	slog.DebugContext(ctx, "saving session to DB", slog.String("id", sess.SessionID))
 
 	if err := s.st.PutWebSession(ctx, sess, s.sessionValidityTime); err != nil {
 		return err

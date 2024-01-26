@@ -5,8 +5,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 func TestRotatableOIDCSigner(t *testing.T) {
@@ -18,14 +16,10 @@ func TestRotatableOIDCSigner(t *testing.T) {
 	encryptor := newEncryptor[[]byte](newKey())
 
 	dbr := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
-		db:  s.db,
-		log: logrus.New(),
-
-		usage: testUsage,
-
+		db:             s.db,
+		usage:          testUsage,
 		rotateInterval: 1 * time.Minute,
 		maxAge:         10 * time.Minute,
-
 		newFn: func() (*rotatableRSAKey, error) {
 			return newRotatableRSAKey(encryptor)
 		},
