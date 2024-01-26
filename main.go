@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 
 	"github.com/joho/godotenv"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -31,11 +30,10 @@ type globalCfg struct {
 
 func main() {
 	ctx := context.Background()
-	l := logrus.New()
 
 	// this is optional, ignore when it doesn't exist
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		l.WithError(err).Fatal("Error loading .env file")
+		kingpin.Fatalf("load .env file: %w", err)
 	}
 
 	kingpin.Version(getVersion())
@@ -52,19 +50,21 @@ func main() {
 
 	cmdName := kingpin.MustParse(app.Parse(os.Args[1:]))
 
+	var level slog.Leveler
 	if *debug {
-		l.SetLevel(logrus.DebugLevel)
+		level = slog.LevelDebug
 	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	// common initialization
 	ks, err := newDerivedKeyset(*securePassphrase, *prevSecurePassphrases...)
 	if err != nil {
-		l.WithError(err).Fatal("failed deriving keyset")
+		kingpin.Fatalf("derive keyset: %w", err)
 	}
 
-	st, err := newStorage(ctx, l, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", *dbPath))
+	st, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", *dbPath))
 	if err != nil {
-		l.WithError(err).Fatal("failed to create storage")
+		kingpin.Fatalf("open database at %s: %w", *dbPath, err)
 	}
 
 	gcfg := &globalCfg{
@@ -85,7 +85,7 @@ func main() {
 		panic("should not happen, kingpin should handle this")
 	}
 	if runErr != nil {
-		l.WithError(runErr).Fatal()
+		kingpin.Fatalf("webauthn-oidc-idp: %w", err)
 	}
 }
 
