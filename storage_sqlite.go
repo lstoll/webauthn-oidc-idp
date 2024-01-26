@@ -6,15 +6,13 @@ import (
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/sirupsen/logrus"
 )
 
 type storage struct {
-	db  *sql.DB
-	log logrus.FieldLogger
+	db *sql.DB
 }
 
-func newStorage(ctx context.Context, logger logrus.FieldLogger, connStr string) (*storage, error) {
+func newStorage(ctx context.Context, connStr string) (*storage, error) {
 	db, err := sql.Open("sqlite3", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("opening DB: %v", err)
@@ -24,10 +22,7 @@ func newStorage(ctx context.Context, logger logrus.FieldLogger, connStr string) 
 		return nil, fmt.Errorf("ping database: %v", err)
 	}
 
-	s := &storage{
-		db:  db,
-		log: logger,
-	}
+	s := &storage{db: db}
 
 	if err := s.migrate(ctx); err != nil {
 		return nil, err

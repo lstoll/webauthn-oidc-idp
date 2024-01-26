@@ -8,14 +8,12 @@ import (
 	"strings"
 	"testing"
 	"text/tabwriter"
-
-	"github.com/sirupsen/logrus"
 )
 
 func newTestStorage(t *testing.T) *storage {
 	t.Helper()
 
-	s, err := newStorage(context.Background(), logrus.New(), "file::memory:?cache=shared")
+	s, err := newStorage(context.Background(), "file::memory:?cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
