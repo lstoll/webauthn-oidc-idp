@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"log/slog"
 	"net/http"
 	"time"
@@ -77,7 +76,7 @@ type oidcServer struct {
 func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 	ar, err := s.oidcsvr.StartAuthorization(w, req)
 	if err != nil {
-		log.Printf("error starting authorization: %v", err)
+		slog.ErrorContext(req.Context(), "start authorization", logErr(err))
 		return
 	}
 
@@ -323,7 +322,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
 	// TODO - replace me with the error handler
-	log.Printf("(TODO improve this handler) error in server: %v", err)
+	slog.Error("(TODO improve this handler) error in server", logErr(err))
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
 }
 
