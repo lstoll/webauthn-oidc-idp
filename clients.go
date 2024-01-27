@@ -83,7 +83,7 @@ func (s *staticClients) ValidateClientRedirectURI(clientID, redirectURI string) 
 // client.
 var errSourceNotFound = errors.New("no source found for client ID")
 
-// multiClients is a clientsource that acts on a series of underlying client
+// multiClients is a core.ClientSource that acts on a series of underlying client
 // sources. these are iterated in order, with the first client indicating a
 // client ID is valid being the source responsible for said client.
 type multiClients struct {
