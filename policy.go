@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/lstoll/oidc"
 	"github.com/open-policy-agent/opa/rego"
-	"github.com/pardot/oidc"
 )
 
 // evalClaimsPolicy evaluates the upstream claims against the given policy,

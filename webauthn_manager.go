@@ -15,7 +15,7 @@ import (
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/justinas/nosurf"
-	oidcm "github.com/pardot/oidc/middleware"
+	oidcm "github.com/lstoll/oidc/middleware"
 )
 
 //go:embed web/templates/webauthn/*

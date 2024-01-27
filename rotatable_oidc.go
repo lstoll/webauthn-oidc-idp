@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-jose/go-jose/v3"
+	"github.com/go-jose/go-jose/v3/cryptosigner"
 	"github.com/google/uuid"
-	"github.com/pardot/oidc/core"
-	"github.com/pardot/oidc/discovery"
-	"gopkg.in/square/go-jose.v2"
-	"gopkg.in/square/go-jose.v2/cryptosigner"
+	"github.com/lstoll/oidc/core"
+	"github.com/lstoll/oidc/discovery"
 )
 
 const rsaKeyBits = 2048

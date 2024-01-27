@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/pardot/oidc/core"
+	"github.com/lstoll/oidc/core"
 )
 
 // Authentication are the details flagged for an authenticated user of the
