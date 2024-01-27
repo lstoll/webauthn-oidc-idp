@@ -13,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/google/uuid"
+	"github.com/gorilla/sessions"
 	"github.com/justinas/nosurf"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/discovery"
@@ -108,10 +110,10 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 			log.Fatalf("Failed to create OIDC server instance: %v", err)
 		}
 
-		webSessMgr := &sessionManager{
-			st:                  gcfg.storage,
-			sessionValidityTime: 24 * time.Hour, // TODO - configure
-		}
+		// TODO - sqlite storage
+		webSessMgr := scs.New()
+		// TODO - wrap the scs session manager for gorilla?
+		gorillaSessMgr := sessions.NewCookieStore()
 
 		mux := http.NewServeMux()
 
@@ -145,15 +147,16 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 
 		// start configuration of webauthn manager
 		mgr := &webauthnManager{
-			store:    gcfg.storage,
-			webauthn: wn,
+			store:          gcfg.storage,
+			webauthn:       wn,
+			sessionManager: webSessMgr,
 			oidcMiddleware: &oidcm.Handler{
 				Issuer:       *issuer,
 				ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
 				ClientSecret: uuid.New().String(),
 				BaseURL:      *issuer,
 				RedirectURL:  *issuer + "/local-oidc-callback",
-				SessionStore: &sessionShim{},
+				SessionStore: gorillaSessMgr,
 				SessionName:  "webauthn-manager",
 			},
 			csrfMiddleware: nosurf.NewPure,
@@ -218,7 +221,7 @@ func serveCommand(app *kingpin.Application) (cmd *kingpin.CmdClause, runner func
 		// but we shouldn't save it. but, we need it for logging and stuff. TODO
 		// at some point consider splitting the middleware, but then we might
 		// need to dup the middleware wrap or something.
-		hh := baseMiddleware(mux, ctxLog(ctx), webSessMgr)
+		hh := baseMiddleware(mux, webSessMgr)
 
 		hs := &http.Server{
 			Addr:    *addr,

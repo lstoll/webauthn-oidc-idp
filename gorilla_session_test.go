@@ -6,18 +6,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/alexedwards/scs/v2"
 )
 
-func TestMiddlewareSessions(t *testing.T) {
+func TestGorillaSessions(t *testing.T) {
 	smgr := scs.New()
-	smgr.Lifetime = 1 * time.Minute
+	gsmgr := &gorillaSCSStore{
+		sm: smgr,
+	}
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/set", func(_ http.ResponseWriter, req *http.Request) {
+	mux.HandleFunc("/set", func(rw http.ResponseWriter, req *http.Request) {
 		key := req.URL.Query().Get("key")
 		if key == "" {
 			t.Fatal("query with no key")
@@ -28,7 +29,18 @@ func TestMiddlewareSessions(t *testing.T) {
 			t.Fatal("query with no value")
 		}
 
-		smgr.Put(req.Context(), key, value)
+		gsess, err := gsmgr.New(req, "tester")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		gsess.Values[key] = value
+
+		t.Logf("set: %#v", gsess)
+
+		if err := gsess.Save(req, rw); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	mux.HandleFunc("/get", func(rw http.ResponseWriter, req *http.Request) {
@@ -37,17 +49,28 @@ func TestMiddlewareSessions(t *testing.T) {
 			t.Fatal("query with no key")
 		}
 
-		val := smgr.GetString(req.Context(), key)
+		gsess, err := gsmgr.New(req, "tester")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		if val == "" {
+		t.Logf("get: %#v", gsess)
+
+		value, ok := gsess.Values[key]
+		if !ok {
 			http.Error(rw, fmt.Sprintf("key %s has no value", key), http.StatusNotFound)
 			return
 		}
+		vstr, ok := value.(string)
+		if !ok {
+			http.Error(rw, fmt.Sprintf("key %s value is not a string", key), http.StatusInternalServerError)
+			return
+		}
 
-		rw.Write([]byte(val))
+		rw.Write([]byte(vstr))
 	})
 
-	svr := baseMiddleware(mux, smgr)
+	svr := smgr.LoadAndSave(mux)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/set?key=test1&value=value1", nil)

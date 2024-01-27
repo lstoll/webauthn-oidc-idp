@@ -3,6 +3,7 @@ module github.com/lstoll/webauthn-oidc-idp
 go 1.21
 
 require (
+	github.com/alexedwards/scs/v2 v2.7.0
 	github.com/aws/aws-sdk-go v1.36.24
 	github.com/duo-labs/webauthn v0.0.0-20220330035159-03696f3d4499
 	github.com/go-jose/go-jose/v3 v3.0.1
