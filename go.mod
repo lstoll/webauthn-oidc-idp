@@ -22,14 +22,11 @@ require (
 	github.com/lstoll/oidc v0.0.0-20240127125306-6e8dc9c51120
 	github.com/mattn/go-sqlite3 v1.14.13
 	golang.org/x/crypto v0.16.0
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
 require (
 	cloud.google.com/go v0.81.0 // indirect
 	github.com/OneOfOne/xxhash v1.2.7 // indirect
-	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
-	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.3.0 // indirect

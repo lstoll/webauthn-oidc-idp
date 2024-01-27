@@ -7,7 +7,16 @@ See [Issues](/../../issues) for the closest thign we have to a roadmap.
 ## Registering an initial user
 
 ```
-go install . && webauthn-oidc-idp adduser --user-id=username --email=user@domain --fullname="Users Name"
+PASSPHRASE="$(openssl rand -hex 32)"
+go run ./ --enroll --email=user@domain --fullname="Users Name" --secure-passphrase "${PASSPHRASE}"
 # go to the url output
-go install . && webauthn-oidc-idp activate-user --user-id=username
+go run ./ --activate --user-id=<uuid> --secure-passphrase "${PASSPHRASE}"
+```
+
+## Run the server
+
+```
+go run ./ --issuer http://localhost:8085 --http 127.0.0.1:8085 --secure-passphrase "${PASSPHRASE}"
+# test the auth flow:
+go run github.com/lstoll/oidc/cmd/oidc-example-rp@latest
 ```
