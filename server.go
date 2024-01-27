@@ -15,7 +15,7 @@ import (
 
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/duo-labs/webauthn/webauthn"
-	"github.com/pardot/oidc/core"
+	"github.com/lstoll/oidc/core"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 // AuthSessionManager is responsible for managing an auth session throughout
 // it's lifecycle, from the moment a user decides to authenticate via us until
 // the credentials expire or are revoked. This is essentially a companion of
-// github.com/pardot/oidc/core/SessionManager , for tracking our application
+// github.com/lstoll/oidc/core/SessionManager , for tracking our application
 // specific items. It can associate and retrieve relevant metadata with a
 // session. In addition, it can mark a session as authenticated, moving it from
 // the gathering user info stage in to the tokens issued/refreshed stage.

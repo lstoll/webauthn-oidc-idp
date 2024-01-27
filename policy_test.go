@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/pardot/oidc"
+	"github.com/lstoll/oidc"
 )
 
 var policyOK = []byte(`

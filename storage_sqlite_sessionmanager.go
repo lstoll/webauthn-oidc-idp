@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/pardot/oidc/core"
+	"github.com/lstoll/oidc/core"
 )
 
 /* This file contains the implementation of the oidc core library session manager interface */

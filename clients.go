@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/pardot/oidc/core"
+	"github.com/lstoll/oidc/core"
 )
 
 var (
