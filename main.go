@@ -7,12 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"log"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/duo-labs/webauthn/protocol"
@@ -24,8 +21,6 @@ import (
 	"github.com/lstoll/oidc/discovery"
 	oidcm "github.com/lstoll/oidc/middleware"
 	"github.com/oklog/run"
-	"golang.org/x/crypto/acme/autocert"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -48,35 +43,25 @@ func main() {
 		fatalf("load .env file: %v", err)
 	}
 
-	dbPath := flag.String("db-path", "db/idp.db", "Path to the SQLite database file.")
-	securePassphrase := flag.String("secure-passphrase", "", "Passphrase for DB encryption")
-	// TODO: It should be a slice.
-	prevSecurePassphrases := flag.String("prev-secure-passphrases", "", "Comma-separated list of passphrase(s) previously used for DB encryption, to decrypt.")
 	debug := flag.Bool("debug", false, "Enable debug logging")
 
 	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
-	issuer := flag.String("issuer", "https://example.com", "OIDC issuer.")
-	clientsFile := flag.String("clients", "config/clients.yaml", "Path to file containing oauth2/oidc clients config.")
-	oidcRotateInterval := flag.Duration("oidc-rotate-interval", 24*time.Hour, "Rotation interval for OIDC signing keys.")
-	oidcMaxAge := flag.Duration("oidc-max-age", 168*time.Hour, "Maximum age OIDC keys should be considered valid for.")
-	serveAutocert := flag.Bool("serve-autocert", false, "if set, serve using TLS + letsencrypt. Implies acceptance of their TOS")
-	autocertEmail := flag.String("autocert-email", "", "E-mail address to register with letsencrypt.")
-	autocertAdditionalHosts := flag.String("autocert-additional-hosts", "", "Comma-separated additional hostnames (aside from the issuer) to enable autocert for.")
-
+	configFile := flag.String("config", "config.json", "Path to the config file.")
 	enroll := flag.Bool("enroll", false, "Enroll a user into the system.")
 	email := flag.String("email", "", "Email address for the user.")
 	fullname := flag.String("fullname", "", "Full name of the user.")
-
 	activate := flag.Bool("activate", false, "Activate an enrolled user.")
 	userID := flag.String("user-id", uuid.NewString(), "Immutable and unique user identifier to enroll or activate.")
 
 	flag.Parse()
 
-	if *dbPath == "" {
-		fatal("required flag missing: db-path")
+	b, err := os.ReadFile(*configFile)
+	if err != nil {
+		fatalf("read config file: %v", err)
 	}
-	if *securePassphrase == "" {
-		fatal("required flag missing: secure-passphrase")
+	var cfg config
+	if err := loadConfig(b, &cfg); err != nil {
+		fatalf("load config file: %v", err)
 	}
 
 	var level slog.Leveler
@@ -87,9 +72,9 @@ func main() {
 
 	ctx := context.Background()
 
-	st, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", *dbPath))
+	st, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", cfg.Database))
 	if err != nil {
-		fatalf("open database at %s: %v", *dbPath, err)
+		fatalf("open database at %s: %v", cfg.Database, err)
 	}
 
 	if *enroll {
@@ -121,51 +106,21 @@ func main() {
 	if *addr == "" {
 		fatal("required flag missing: http")
 	}
-	if *issuer == "" {
-		fatal("required flag missing: issuer")
-	}
-	issuerURL, err := url.Parse(*issuer)
-	if err != nil {
-		fatalf("parse issuer: %v", err)
-	}
 
-	if *serveAutocert && *autocertEmail == "" {
-		fatal("autocert-email must be provided when serving with autocert")
-	}
-	var autocertmgr *autocert.Manager
-	if *serveAutocert {
-		autocertmgr = &autocert.Manager{
-			Prompt:     autocert.AcceptTOS,
-			Email:      *autocertEmail,
-			HostPolicy: autocert.HostWhitelist(append([]string{issuerURL.Hostname()}, strings.Split(*autocertAdditionalHosts, ",")...)...),
-		}
-	}
+	// TODO(sr) Eventually this will support >1 issuer.
+	issuer := cfg.Issuer[0]
 
-	clients := &multiClients{}
-	if *clientsFile != "" {
-		b, err := os.ReadFile(*clientsFile)
-		if err != nil {
-			fatalf("read clients file %s: %v", *clientsFile, err)
-		}
-		sc := &staticClients{}
-		if err := yaml.Unmarshal(b, &sc.clients); err != nil {
-			fatalf("decode clients file %s: %v", *clientsFile, err)
-		}
-		clients.sources = append(clients.sources, sc)
-	}
-
-	ks, err := newDerivedKeyset(*securePassphrase, strings.Split(*prevSecurePassphrases, ",")...)
+	ks, err := newDerivedKeyset(cfg.EncryptionKey, cfg.PrevEncryptionKey...)
 	if err != nil {
 		fatalf("derive keyset: %v", err)
 	}
-	log.Printf("issuer: %s", issuerURL)
-	err = serve(ctx, st, ks, issuerURL, clients, *oidcRotateInterval, *oidcMaxAge, *addr, autocertmgr)
+	err = serve(ctx, st, ks, issuer, cfg.OIDCRotationInterval, cfg.OIDCMaxAge, *addr)
 	if err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer *url.URL, clients *multiClients, oidcRotateInterval, oidcMaxAge time.Duration, addr string, autocert *autocert.Manager) error {
+func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer issuerConfig, oidcRotateInterval, oidcMaxAge time.Duration, addr string) error {
 	encryptor := newEncryptor[[]byte](keyset.dbCurr, keyset.dbPrev...)
 
 	oidcrotator := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
@@ -187,15 +142,23 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	}
 
 	oidcmd := discovery.ProviderMetadata{
-		Issuer:                issuer.String(),
-		JWKSURI:               issuer.String() + "/keys",
-		AuthorizationEndpoint: issuer.String() + "/auth",
-		TokenEndpoint:         issuer.String() + "/token",
+		Issuer:                issuer.URL.String(),
+		JWKSURI:               issuer.URL.String() + "/keys",
+		AuthorizationEndpoint: issuer.URL.String() + "/auth",
+		TokenEndpoint:         issuer.URL.String() + "/token",
 	}
 	keysh := discovery.NewKeysHandler(oidcSigner, 1*time.Hour)
 	discoh, err := discovery.NewConfigurationHandler(&oidcmd, discovery.WithCoreDefaults())
 	if err != nil {
 		return fmt.Errorf("configuring metadata handler: %w", err)
+	}
+
+	clients := &multiClients{
+		sources: []core.ClientSource{
+			&staticClients{
+				clients: issuer.Client,
+			},
+		},
 	}
 
 	oidcsvr, err := core.New(&core.Config{
@@ -220,12 +183,11 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 
 	// TODO - usernameless via resident keys would be nice, but need to
 	// see what support is like.
-	slog.Info("RPOrigin", slog.String("issuer", issuer.String()))
 	rrk := false
 	wn, err := webauthn.New(&webauthn.Config{
-		RPDisplayName: issuer.Hostname(), // Display Name for your site
-		RPID:          issuer.Hostname(), // Generally the FQDN for your site
-		RPOrigin:      issuer.String(),   // The origin URL for WebAuthn requests
+		RPDisplayName: issuer.URL.Hostname(), // Display Name for your site
+		RPID:          issuer.URL.Hostname(), // Generally the FQDN for your site
+		RPOrigin:      issuer.URL.String(),   // The origin URL for WebAuthn requests
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			UserVerification:   protocol.VerificationRequired,
 			RequireResidentKey: &rrk,
@@ -240,11 +202,11 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 		store:    storage,
 		webauthn: wn,
 		oidcMiddleware: &oidcm.Handler{
-			Issuer:       issuer.String(),
+			Issuer:       issuer.URL.String(),
 			ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
 			ClientSecret: uuid.New().String(),
-			BaseURL:      issuer.String(),
-			RedirectURL:  issuer.String() + "/local-oidc-callback",
+			BaseURL:      issuer.URL.String(),
+			RedirectURL:  issuer.URL.String() + "/local-oidc-callback",
 			SessionStore: &sessionShim{},
 			SessionName:  "webauthn-manager",
 		},
@@ -260,11 +222,11 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 
 	clients.sources = append([]core.ClientSource{
 		&staticClients{
-			clients: []Client{
+			clients: []clientConfig{
 				{
-					ClientID:      mgr.oidcMiddleware.ClientID,
-					ClientSecrets: []string{mgr.oidcMiddleware.ClientSecret},
-					RedirectURLs:  []string{mgr.oidcMiddleware.RedirectURL},
+					ClientID:     mgr.oidcMiddleware.ClientID,
+					ClientSecret: []string{mgr.oidcMiddleware.ClientSecret},
+					RedirectURL:  []string{mgr.oidcMiddleware.RedirectURL},
 				},
 			},
 		},
@@ -273,7 +235,7 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	mgr.AddHandlers(mux)
 
 	svr := oidcServer{
-		issuer:          issuer.String(),
+		issuer:          issuer.URL.String(),
 		oidcsvr:         oidcsvr,
 		eh:              heh,
 		tokenValidFor:   15 * time.Minute,
@@ -318,21 +280,9 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	}
 
 	g.Add(func() error {
-		if autocert != nil {
-			autocert.Cache = &autocertStore{
-				db:        storage.db,
-				encryptor: encryptor,
-			}
-			hs.TLSConfig = autocert.TLSConfig()
-			slog.Info("server listing", slog.String("addr", "https://"+addr))
-			if err := hs.ListenAndServeTLS("", ""); err != nil {
-				return fmt.Errorf("serving http: %v", err)
-			}
-		} else {
-			slog.Info("server listing", slog.String("addr", "http://"+addr))
-			if err := hs.ListenAndServe(); err != nil {
-				return fmt.Errorf("serving http: %v", err)
-			}
+		slog.Info("server listing", slog.String("addr", "http://"+addr))
+		if err := hs.ListenAndServe(); err != nil {
+			return fmt.Errorf("serving http: %v", err)
 		}
 		return nil
 	}, func(error) {
