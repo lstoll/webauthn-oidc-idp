@@ -1,0 +1,16 @@
+{
+	"database": "db/idp.db",
+	"encryptionKey": "${ENCRYPTION_KEY}",
+	"issuers": [
+		{
+			"url": "http://localhost:8085",
+			"clients": [
+				{
+					"clientID": "client-id",
+					"clientSecrets": ["client-secret"],
+					"redirectURLs": ["http://localhost:8084/callback"]
+				}
+			]
+		}
+	]
+}

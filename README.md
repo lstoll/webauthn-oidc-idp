@@ -7,16 +7,16 @@ See [Issues](/../../issues) for the closest thign we have to a roadmap.
 ## Registering an initial user
 
 ```
-PASSPHRASE="$(openssl rand -hex 32)"
-go run ./ --enroll --email=user@domain --fullname="Users Name" --secure-passphrase "${PASSPHRASE}"
+export ENCRYPTION_KEY="$(openssl rand -hex 32)"
+go run ./ --enroll --email=user@domain --fullname="Users Name"
 # go to the url output
-go run ./ --activate --user-id=<uuid> --secure-passphrase "${PASSPHRASE}"
+go run ./ --activate --user-id=<uuid>
 ```
 
 ## Run the server
 
 ```
-go run ./ --issuer http://localhost:8085 --http 127.0.0.1:8085 --secure-passphrase "${PASSPHRASE}"
+go run ./ --http 127.0.0.1:8085
 # test the auth flow:
 go run github.com/lstoll/oidc/cmd/oidc-example-rp@latest
 ```
