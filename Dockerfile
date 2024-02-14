@@ -1,4 +1,4 @@
-FROM golang:1.18-bullseye AS build
+FROM golang:1.22-bookworm AS build
 
 WORKDIR /src
 
@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 RUN go install ./...
 
-FROM debian:bullseye
+FROM debian:bookworm
 
 WORKDIR /app
 
