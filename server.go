@@ -135,27 +135,6 @@ func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 }
 
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
-	// email := req.URL.Query().Get("email")
-
-	// log.Printf("start for %s", email)
-
-	// u, ok, err := s.store.GetUserByEmail(req.Context(), email)
-	// if err != nil {
-	// 	s.httpErr(rw, err)
-	// 	return
-	// }
-	// if !ok {
-	// 	// TODO - better response
-	// 	s.httpErr(rw, fmt.Errorf("no user for email"))
-	// 	return
-	// }
-
-	// options, sessionData, err := s.webauthn.BeginLogin(u)
-	// if err != nil {
-	// 	s.httpErr(rw, err)
-	// 	return
-	// }
-
 	// A lot of this is lifted from the webauthn.BeginLogin message, but doing it
 	// directly because we aren't hinting the user.
 
