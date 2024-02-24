@@ -20,7 +20,6 @@ import (
 
 type WebauthnUserStore interface {
 	GetUserByID(ctx context.Context, id string, allowInactive bool) (*WebauthnUser, bool, error)
-	GetUserByEmail(ctx context.Context, email string) (*WebauthnUser, bool, error)
 	CreateUser(ctx context.Context, u *WebauthnUser) (id string, err error)
 	UpdateUser(ctx context.Context, u *WebauthnUser) error
 	UpdateCredential(ctx context.Context, userID string, cred webauthn.Credential) error

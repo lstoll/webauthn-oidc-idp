@@ -26,10 +26,6 @@ func (s *storage) GetUserByID(ctx context.Context, id string, allowInactive bool
 	return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where id=$1 and activated=1`, id)
 }
 
-func (s *storage) GetUserByEmail(ctx context.Context, email string) (*WebauthnUser, bool, error) {
-	return s.getUserByQuery(ctx, `select id, email, full_name, activated, enrollment_key from users where email=$1 and activated=1`, email)
-}
-
 func (s *storage) getUserByQuery(ctx context.Context, query string, args ...interface{}) (*WebauthnUser, bool, error) {
 	u := WebauthnUser{}
 	if err := s.db.QueryRowContext(ctx, query, args...).

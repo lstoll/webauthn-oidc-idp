@@ -54,14 +54,6 @@ func TestWebauthnUserStorage(t *testing.T) {
 		t.Fatal("no user got")
 	}
 
-	u, ok, err = s.GetUserByEmail(ctx, u.Email)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("no user got")
-	}
-
 	if len(u.Credentials) != 1 {
 		t.Errorf("user should have %d credentials, got %d", 1, len(u.Credentials))
 	}
