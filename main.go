@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/duo-labs/webauthn/protocol"
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/justinas/nosurf"
@@ -89,9 +89,11 @@ func main() {
 			fatal("required flag missing: fullname")
 		}
 
-		if err := enrollUser(ctx, st, *userID, *email, *fullname); err != nil {
+		ep, err := enrollUser(ctx, st, *userID, *email, *fullname)
+		if err != nil {
 			fatalf("enroll user: %v", err)
 		}
+		fmt.Printf("Enroll at: " + ep)
 		return
 	} else if *activate {
 		if *userID == "" {
@@ -333,7 +335,9 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	return g.Run()
 }
 
-func enrollUser(ctx context.Context, storage *storage, userID, email, fullname string) error {
+// enrollUser creates a new user, and sets an enrollment key. It returns the
+// path of the URL the user can use to enroll
+func enrollUser(ctx context.Context, storage *storage, userID, email, fullname string) (string, error) {
 	ekey := uuid.NewString()
 
 	if _, err := storage.CreateUser(ctx, &WebauthnUser{
@@ -343,13 +347,10 @@ func enrollUser(ctx context.Context, storage *storage, userID, email, fullname s
 		Activated:     false,
 		EnrollmentKey: ekey,
 	}); err != nil {
-		return fmt.Errorf("adding user: %w", err)
+		return "", fmt.Errorf("adding user: %w", err)
 	}
 
-	fmt.Printf("user enrollment key: %s\n", ekey)
-	fmt.Printf("Enroll at: /registration?user_id=%s&enrollment_token=%s\n", userID, ekey)
-
-	return nil
+	return fmt.Sprintf("/registration?user_id=%s&enrollment_token=%s", userID, ekey), nil
 }
 
 func activateUser(ctx context.Context, storage *storage, userID string) error {

@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc/middleware"
 )

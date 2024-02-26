@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/duo-labs/webauthn/protocol"
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc/core"
 )

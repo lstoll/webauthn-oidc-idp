@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 func TestWebauthnUserStorage(t *testing.T) {

@@ -1,7 +1,10 @@
 class WebAuthn {
     // Decode a base64 string into a Uint8Array.
     static _decodeBuffer(value) {
-        return Uint8Array.from(atob(value), c => c.charCodeAt(0));
+        return Uint8Array.from(atob(value
+            .replace(/\-/g, "+")
+            .replace(/_/g, "/")
+        ), c => c.charCodeAt(0));
     }
 
     // Encode an ArrayBuffer into a urlbase64 string.
