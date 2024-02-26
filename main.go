@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"embed"
-	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -15,7 +14,6 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	"github.com/justinas/nosurf"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/discovery"
@@ -23,26 +21,10 @@ import (
 	"github.com/oklog/run"
 )
 
-var (
-	// DefaultHTTPGetAddress Default Address
-	DefaultHTTPGetAddress = "https://checkip.amazonaws.com"
-
-	// ErrNoIP No IP found in response
-	ErrNoIP = errors.New("no IP in HTTP response")
-
-	// ErrNon200Response non 200 status code in response
-	ErrNon200Response = errors.New("non 200 response found")
-
-	//go:embed web/public/*
-	staticFiles embed.FS
-)
+//go:embed web/public/*
+var staticFiles embed.FS
 
 func main() {
-	// this is optional, ignore when it doesn't exist
-	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		fatalf("load .env file: %v", err)
-	}
-
 	debug := flag.Bool("debug", false, "Enable debug logging")
 
 	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
