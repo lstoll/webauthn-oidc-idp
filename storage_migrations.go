@@ -102,4 +102,10 @@ var migrations = []migration{
 			delete from rotatable where usage = 'sessions';
 		`,
 	},
+	{
+		Idx: 202402262228,
+		SQL: `
+			drop table web_sessions;
+		`,
+	},
 }
