@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gorilla/sessions"
 )
 
