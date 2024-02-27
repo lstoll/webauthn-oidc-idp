@@ -53,13 +53,13 @@ type oidcMiddlewareSessionStore struct {
 
 // GetSession implements middleware.SessionStoreV2
 func (o *oidcMiddlewareSessionStore) GetSession(r *http.Request) (*middleware.SessionData, error) {
-	sd, _ := o.mgr.Get(r.Context())
+	sd := o.mgr.Get(r.Context())
 	return &sd.SessionData, nil
 }
 
 // SaveSession implements middleware.SessionStoreV2
 func (o *oidcMiddlewareSessionStore) SaveSession(_ http.ResponseWriter, r *http.Request, d *middleware.SessionData) error {
-	sd, _ := o.mgr.Get(r.Context())
+	sd := o.mgr.Get(r.Context())
 	sd.SessionData = *d
 	o.mgr.Save(r.Context(), sd)
 	return nil

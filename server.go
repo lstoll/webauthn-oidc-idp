@@ -85,7 +85,7 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 
 	// stash in session, so we can pull it out in the login handler without
 	// threading it through the user code. make sure to clear it though!
-	sess, _ := s.sessmgr.Get(req.Context())
+	sess := s.sessmgr.Get(req.Context())
 	sess.WebauthnLogin = &webauthnLoginData{
 		LoginSessionID: ar.SessionID,
 	}
@@ -182,7 +182,7 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 
 	response := protocol.CredentialAssertion{Response: requestOptions}
 
-	sess, _ := s.sessmgr.Get(req.Context())
+	sess := s.sessmgr.Get(req.Context())
 	if sess.WebauthnLogin == nil {
 		s.httpErr(rw, errors.New("no active login session"))
 		return
@@ -224,7 +224,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// }
 	// log.Printf("car: %#v", car)
 
-	sess, _ := s.sessmgr.Get(req.Context())
+	sess := s.sessmgr.Get(req.Context())
 	if sess.WebauthnLogin == nil || sess.WebauthnLogin.WebauthnSessionData == nil {
 		s.httpErr(rw, errors.New("no valid webauthn login in session"))
 		return
@@ -271,7 +271,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
-	sess, _ := s.sessmgr.Get(req.Context())
+	sess := s.sessmgr.Get(req.Context())
 
 	if sess.WebauthnLogin == nil || sess.WebauthnLogin.AuthdUser == nil {
 		s.httpErr(rw, fmt.Errorf("can't find authd_user in session"))
