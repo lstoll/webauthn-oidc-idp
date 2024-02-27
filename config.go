@@ -11,7 +11,10 @@ import (
 )
 
 type config struct {
-	Database             string         `json:"database"`
+	Database string `json:"databaseFile"`
+	// TODO(sr) rename databaseFile and delete config.SQLDatabse.
+	SQLDatabase string `json:"database"`
+
 	EncryptionKey        string         `json:"encryptionKey"`
 	PrevEncryptionKey    []string       `json:"previousEncryptionKeys"`
 	OIDCMaxAge           time.Duration  `json:"oidcMaxAge"`

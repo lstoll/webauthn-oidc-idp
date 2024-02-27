@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"text/tabwriter"
@@ -13,7 +14,7 @@ import (
 func newTestStorage(t *testing.T) *storage {
 	t.Helper()
 
-	s, err := newStorage(context.Background(), "file::memory:?cache=shared")
+	s, err := newStorage(context.Background(), fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", filepath.Join(t.TempDir(), "t.db")))
 	if err != nil {
 		t.Fatal(err)
 	}

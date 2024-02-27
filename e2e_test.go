@@ -73,10 +73,7 @@ func TestE2E(t *testing.T) {
 	})
 
 	/* start an instance of the server */
-	storage, err := newStorage(ctx, "file::memory:?cache=shared")
-	if err != nil {
-		t.Fatalf("creating storage: %v", err)
-	}
+	db := openTestDB(t)
 	derivedKs, err := newDerivedKeyset("aaaaaaaaaaaaaaaaaaaa")
 	if err != nil {
 		t.Fatalf("deriving keyset: %v", err)
@@ -106,7 +103,7 @@ func TestE2E(t *testing.T) {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := serve(serveCtx, storage, derivedKs, issConfig, time.Hour, time.Hour, net.JoinHostPort("localhost", port)); err != nil {
+		if err := serve(serveCtx, db, derivedKs, issConfig, time.Hour, time.Hour, net.JoinHostPort("localhost", port)); err != nil {
 			serveErr <- err
 		}
 	}()
@@ -156,12 +153,17 @@ func TestE2E(t *testing.T) {
 
 	/* start testing */
 
+	var user User
 	testOk := t.Run("Registration", func(t *testing.T) {
 		// first enroll a user.
-		ep, err := enrollUser(ctx, storage, "test.user", "test.user@example.com", "Test User")
+		user, err = db.CreateUser(User{
+			Email:    "test.user@example.com",
+			FullName: "Test User",
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
+		ep := registrationURL(user)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -198,19 +200,16 @@ func TestE2E(t *testing.T) {
 
 		// we need to mark the user as active for their credentials to be
 		// usable.
-		if err := activateUser(ctx, storage, "test.user"); err != nil {
+		if err := activateUser(db, user.ID); err != nil {
 			t.Fatal(err)
 		}
 
-		u, ok, err := storage.GetUserByID(ctx, "test.user", false)
+		user, err = db.GetActivatedUserByID(user.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !ok {
-			t.Fatal("got no user")
-		}
-		if len(u.Credentials) != 1 {
-			t.Fatalf("expected user to have 1 credential, got: %d", len(u.Credentials))
+		if len(user.Credentials) != 1 {
+			t.Fatalf("expected user to have 1 credential, got: %d", len(user.Credentials))
 		}
 	})
 	if !testOk {
@@ -235,8 +234,8 @@ func TestE2E(t *testing.T) {
 
 		select {
 		case tok := <-tokC:
-			if tok.Claims.Subject != "test.user" {
-				t.Fatalf("want sub %s, got: %s", "test.user", tok.Claims.Subject)
+			if tok.Claims.Subject != user.ID {
+				t.Fatalf("want sub %s, got: %s", user.ID, tok.Claims.Subject)
 			}
 		case err := <-loginErrC:
 			t.Fatalf("error in CLI flow: %v", err)
@@ -302,7 +301,6 @@ func TestE2E(t *testing.T) {
 		t.Fatal("dependent step failed, aborting")
 	}
 	clearErrchan(chromeErrC)
-
 }
 
 // cliLoginFlow starts a login flow via the oidc cli library. It will trigger

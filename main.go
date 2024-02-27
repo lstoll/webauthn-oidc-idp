@@ -34,7 +34,7 @@ func main() {
 	email := flag.String("email", "", "Email address for the user.")
 	fullname := flag.String("fullname", "", "Full name of the user.")
 	activate := flag.Bool("activate", false, "Activate an enrolled user.")
-	userID := flag.String("user-id", uuid.NewString(), "Immutable and unique user identifier to enroll or activate.")
+	userID := flag.String("user-id", "", "ID of user to activate.")
 
 	flag.Parse()
 
@@ -55,15 +55,22 @@ func main() {
 
 	ctx := context.Background()
 
-	st, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", cfg.Database))
+	db, err := openDB(cfg.Database)
 	if err != nil {
 		fatalf("open database at %s: %v", cfg.Database, err)
 	}
 
-	if *enroll {
-		if *userID == "" {
-			fatal("required flag missing: user-id")
+	if sqlfile := cfg.SQLDatabase; sqlfile != "" {
+		sqldb, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", sqlfile))
+		if err != nil {
+			fatalf("open sqlite database: %w", err)
 		}
+		if err := migrateSQLToJSON(sqldb, db); err != nil {
+			fatalf("migrate SQLite database %s to %s: %w", sqlfile, cfg.Database, err)
+		}
+	}
+
+	if *enroll {
 		if *email == "" {
 			fatal("required flag missing: email")
 		}
@@ -71,18 +78,22 @@ func main() {
 			fatal("required flag missing: fullname")
 		}
 
-		ep, err := enrollUser(ctx, st, *userID, *email, *fullname)
+		user, err := db.CreateUser(User{
+			Email:     *email,
+			FullName:  *fullname,
+			Activated: false,
+		})
 		if err != nil {
-			fatalf("enroll user: %v", err)
+			fatalf("create user: %w", err)
 		}
-		fmt.Printf("Enroll at: " + ep)
+		fmt.Printf("Enroll at: %s\n", registrationURL(user))
 		return
 	} else if *activate {
 		if *userID == "" {
 			fatal("required flag missing: user-id")
 		}
 
-		if err := activateUser(ctx, st, *userID); err != nil {
+		if err := activateUser(db, *userID); err != nil {
 			fatalf("ativate user: %v", err)
 		}
 		return
@@ -92,47 +103,25 @@ func main() {
 		fatal("required flag missing: http")
 	}
 
-	// TODO(sr) Eventually this will support >1 issuer.
 	issuer := cfg.Issuer[0]
 
 	ks, err := newDerivedKeyset(cfg.EncryptionKey, cfg.PrevEncryptionKey...)
 	if err != nil {
 		fatalf("derive keyset: %v", err)
 	}
-	err = serve(ctx, st, ks, issuer, cfg.OIDCRotationInterval, cfg.OIDCMaxAge, *addr)
-	if err != nil {
+	if err := serve(ctx, db, ks, issuer, cfg.OIDCRotationInterval, cfg.OIDCMaxAge, *addr); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer issuerConfig, oidcRotateInterval, oidcMaxAge time.Duration, addr string) error {
-	encryptor := newEncryptor[[]byte](keyset.dbCurr, keyset.dbPrev...)
-
-	oidcrotator := &dbRotator[rotatableRSAKey, *rotatableRSAKey]{
-		db:             storage.db,
-		usage:          rotatorUsageOIDC,
-		rotateInterval: oidcRotateInterval,
-		maxAge:         oidcMaxAge,
-		newFn: func() (*rotatableRSAKey, error) {
-			return newRotatableRSAKey(encryptor)
-		},
-	}
-	if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
-		return err
-	}
-
-	oidcSigner := &oidcSigner{
-		rotator:   oidcrotator,
-		encryptor: encryptor,
-	}
-
+func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConfig, _, _ time.Duration, addr string) error {
 	oidcmd := discovery.ProviderMetadata{
 		Issuer:                issuer.URL.String(),
 		JWKSURI:               issuer.URL.String() + "/keys",
 		AuthorizationEndpoint: issuer.URL.String() + "/auth",
 		TokenEndpoint:         issuer.URL.String() + "/token",
 	}
-	keysh := discovery.NewKeysHandler(oidcSigner, 1*time.Hour)
+	keysh := discovery.NewKeysHandler(db.KeySource(), 1*time.Hour)
 	discoh, err := discovery.NewConfigurationHandler(&oidcmd, discovery.WithCoreDefaults())
 	if err != nil {
 		return fmt.Errorf("configuring metadata handler: %w", err)
@@ -149,7 +138,7 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	oidcsvr, err := core.New(&core.Config{
 		AuthValidityTime: 5 * time.Minute,
 		CodeValidityTime: 5 * time.Minute,
-	}, storage, clients, oidcSigner)
+	}, db.SessionManager(), clients, db.Signer())
 	if err != nil {
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
@@ -197,7 +186,7 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 
 	// start configuration of webauthn manager
 	mgr := &webauthnManager{
-		store:    storage,
+		db:       db,
 		webauthn: wn,
 		sessmgr:  webSessMgr,
 		oidcMiddleware: &oidcm.Handler{
@@ -244,8 +233,7 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 		sessmgr:         webSessMgr,
 		// upstreamPolicy:  []byte(ucp),
 		webauthn: wn,
-		store:    storage,
-		storage:  storage,
+		db:       db,
 	}
 
 	pubContent, err := fs.Sub(fs.FS(staticFiles), "web")
@@ -256,11 +244,6 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	mux.Handle("/public/", fs)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		if err := storage.db.Ping(); err != nil {
-			slog.Error("health check: ping database", logErr(err))
-			http.Error(w, "unhealthy", http.StatusInternalServerError)
-			return
-		}
 		_, _ = w.Write([]byte("OK"))
 	})
 
@@ -294,61 +277,27 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 		_ = hs.Shutdown(ctx)
 	})
 
-	rotInt := make(chan struct{}, 1)
-	g.Add(func() error {
-		slog.Info("starting rotator", slog.Duration("interval", time.Minute))
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if err := oidcrotator.RotateIfNeeded(ctx); err != nil {
-					return err
-				}
-			case <-rotInt:
-				return nil
-			}
-		}
-	}, func(error) {
-		rotInt <- struct{}{}
-	})
-
 	return g.Run()
 }
 
-// enrollUser creates a new user, and sets an enrollment key. It returns the
-// path of the URL the user can use to enroll
-func enrollUser(ctx context.Context, storage *storage, userID, email, fullname string) (string, error) {
-	ekey := uuid.NewString()
-
-	if _, err := storage.CreateUser(ctx, &WebauthnUser{
-		ID:            userID,
-		Email:         email,
-		FullName:      fullname,
-		Activated:     false,
-		EnrollmentKey: ekey,
-	}); err != nil {
-		return "", fmt.Errorf("adding user: %w", err)
-	}
-
-	return fmt.Sprintf("/registration?user_id=%s&enrollment_token=%s", userID, ekey), nil
+func registrationURL(user User) string {
+	// TODO(sr) can we return the full URL here? (issuer + path)
+	return fmt.Sprintf("/registration?user_id=%s&enrollment_token=%s", user.ID, user.EnrollmentKey)
 }
 
-func activateUser(ctx context.Context, storage *storage, userID string) error {
-	u, ok, err := storage.GetUserByID(ctx, userID, true)
+// activateUser marks the user as activated and deletes its enrollment key.
+// Must be called after the user has completed the registration flow.
+func activateUser(db *DB, userID string) error {
+	user, err := db.GetUserByID(userID)
 	if err != nil {
-		return fmt.Errorf("getting user %s: %w", userID, err)
-	}
-	if !ok {
-		return fmt.Errorf("user not found: %s", userID)
+		return fmt.Errorf("get user %s: %w", userID, err)
 	}
 
-	u.EnrollmentKey = ""
-	u.Activated = true
+	user.EnrollmentKey = ""
+	user.Activated = true
 
-	if err := storage.UpdateUser(ctx, u); err != nil {
-		return fmt.Errorf("updaing user %s: %w", userID, err)
+	if err := db.UpdateUser(user); err != nil {
+		return fmt.Errorf("update user %s: %w", userID, err)
 	}
 
 	fmt.Println("Done.")

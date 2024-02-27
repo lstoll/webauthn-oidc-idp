@@ -13,8 +13,6 @@ import (
 	"github.com/google/uuid"
 )
 
-var _ WebauthnUserStore = (*storage)(nil)
-
 func init() {
 	gob.Register(webauthn.Credential{})
 }

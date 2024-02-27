@@ -1,5 +1,5 @@
 {
-	"database": "db/idp.db",
+	"databaseFile": "db/dev.json",
 	"encryptionKey": "${ENCRYPTION_KEY}",
 	"issuers": [
 		{
