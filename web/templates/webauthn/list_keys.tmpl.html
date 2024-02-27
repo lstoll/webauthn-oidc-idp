@@ -22,14 +22,14 @@
                 <td>Delete</td>
             </tr>
         </thead>
-        {{range $v := .User.Credentials }}
+        {{range $k, $v := .User.Credentials }}
         <tr>
-            <td>{{ $v.Name }}</td>
+            <td>{{ $k }}</td>
             <td>
-                <form method="POST" onsubmit="return confirm('Really remove key {{ $v.Name }}?');">
+                <form method="POST" onsubmit="return confirm('Really remove key {{ $k }}?');">
                     {{ csrfField }}
                     <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="keyID" value="{{ $v.ID }}">
+                    <input type="hidden" name="keyName" value="{{ $k }}">
                     <input type="submit" value="Delete">
                 </form>
             </td>

@@ -18,22 +18,8 @@ import (
 	oidcm "github.com/lstoll/oidc/middleware"
 )
 
-type WebauthnUserStore interface {
-	GetUserByID(ctx context.Context, id string, allowInactive bool) (*WebauthnUser, bool, error)
-	CreateUser(ctx context.Context, u *WebauthnUser) (id string, err error)
-	UpdateUser(ctx context.Context, u *WebauthnUser) error
-	UpdateCredential(ctx context.Context, userID string, cred webauthn.Credential) error
-	// AddCredentialToUser adds the credential to the user, returning the
-	// friendly ID
-	AddCredentialToUser(ctx context.Context, userid string, credential webauthn.Credential, keyName string) (id string, err error)
-	// DeleteCredentialFromuser takes the friendly ID for the credential
-	DeleteCredentialFromuser(ctx context.Context, userid string, credentialID string) error
-	ListUsers(ctx context.Context) ([]*WebauthnUser, error)
-	DeleteUser(ctx context.Context, id string) error
-}
-
 type webauthnManager struct {
-	store    WebauthnUserStore
+	db       *DB
 	webauthn *webauthn.WebAuthn
 
 	// oidcMiddleware is used to gate access to the system. It should be
@@ -67,7 +53,7 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	responded, overridden, u := w.userForReq(rw, req)
+	responded, overridden, user := w.userForReq(rw, req)
 	if responded {
 		return
 	}
@@ -75,14 +61,14 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		switch req.Form.Get("action") {
 		case "delete":
-			if err := w.deleteKey(req.Context(), u, req.Form); err != nil {
+			if err := w.deleteKey(user, req.Form); err != nil {
 				w.httpErr(req.Context(), rw, err)
 				return
 			}
 		case "registerKey":
 			sess := w.sessmgr.Get(req.Context())
 			sess.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
-				ForUserID: u.ID,
+				ForUserID: user.ID,
 				ReturnTo:  "/authenticators",
 			}
 			w.sessmgr.Save(req.Context(), sess)
@@ -100,23 +86,22 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 	// consider putting it in the session or something
 	waq := ""
 	if overridden {
-		waq = fmt.Sprintf("override_uid=" + u.ID)
+		waq = fmt.Sprintf("override_uid=" + user.ID)
 	}
 
 	w.execTemplate(rw, req, "list_keys.tmpl.html", map[string]interface{}{
-		"User":          u,
+		"User":          user,
 		"WebauthnQuery": waq,
 	})
 }
 
-func (w *webauthnManager) deleteKey(ctx context.Context, u *WebauthnUser, form url.Values) error {
-	id := form.Get("keyID")
-	if id == "" {
+func (w *webauthnManager) deleteKey(user User, form url.Values) error {
+	name := form.Get("keyName")
+	if name == "" {
 		// TODO - more elegant
-		return fmt.Errorf("keyID not provided")
+		return fmt.Errorf("key name not provided")
 	}
-
-	return w.store.DeleteCredentialFromuser(ctx, u.ID, id)
+	return w.db.DeleteUserCredential(user.ID, name)
 }
 
 // registration is a page used to add a new key. It should handle either a user
@@ -135,16 +120,12 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 	et := req.URL.Query().Get("enrollment_token")
 	if uid != "" && et != "" {
 		// we want to enroll a user. Find them, and match the token
-		u, ok, err := w.store.GetUserByID(req.Context(), uid, true)
+		user, err := w.db.GetUserByID(uid)
 		if err != nil {
-			w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", uid, err))
+			w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", uid, err))
 			return
 		}
-		if !ok {
-			w.httpNotFound(rw)
-			return
-		}
-		if u.Activated || subtle.ConstantTimeCompare([]byte(et), []byte(u.EnrollmentKey)) == 0 {
+		if user.Activated || subtle.ConstantTimeCompare([]byte(et), []byte(user.EnrollmentKey)) == 0 {
 			w.httpUnauth(rw, "invalid enrollment")
 			return
 		}
@@ -167,13 +148,9 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	u, ok, err := w.store.GetUserByID(req.Context(), sess.PendingWebauthnEnrollment.ForUserID, true)
+	user, err := w.db.GetUserByID(sess.PendingWebauthnEnrollment.ForUserID)
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
-		return
-	}
-	if !ok {
-		w.httpNotFound(rw)
+		w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
 		return
 	}
 
@@ -190,7 +167,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 	}
 	conveyancePref := protocol.ConveyancePreference(protocol.PreferDirectAttestation)
 
-	options, sessionData, err := w.webauthn.BeginRegistration(u, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
+	options, sessionData, err := w.webauthn.BeginRegistration(user, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
@@ -214,13 +191,9 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	u, ok, err := w.store.GetUserByID(req.Context(), sess.PendingWebauthnEnrollment.ForUserID, true) // TODO - guard the allow unactive for enrol only!
+	user, err := w.db.GetUserByID(sess.PendingWebauthnEnrollment.ForUserID) // TODO - guard the allow unactive for enrol only!
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
-		return
-	}
-	if !ok {
-		w.httpNotFound(rw)
 		return
 	}
 
@@ -241,13 +214,13 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		w.httpErr(req.Context(), rw, fmt.Errorf("parsing credential creation response: %w", err))
 		return
 	}
-	credential, err := w.webauthn.CreateCredential(u, sessionData, parsedResponse)
+	credential, err := w.webauthn.CreateCredential(user, sessionData, parsedResponse)
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("creating credential: %w", err))
 		return
 	}
 
-	if _, err := w.store.AddCredentialToUser(req.Context(), u.ID, *credential, keyName); err != nil {
+	if err := w.db.CreateUserCredential(user.ID, keyName, *credential); err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
 	}
@@ -260,13 +233,13 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 // userForReq gets the user for a given request, accounting for the override_uid
 // / admin params. it will handle response to user, indicating if it does via the
 // return. If it has, the caller should simply return
-func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overridden bool, u *WebauthnUser) {
+func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overridden bool, user User) {
 	overridden = false
 
 	claims := oidcm.ClaimsFromContext(req.Context())
 	if claims == nil {
 		w.httpUnauth(rw, "")
-		return true, overridden, nil
+		return true, overridden, User{}
 	}
 
 	uid := claims.Subject
@@ -277,17 +250,13 @@ func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) 
 		overridden = true
 	}
 
-	u, ok, err := w.store.GetUserByID(req.Context(), uid, false)
+	user, err := w.db.GetActivatedUserByID(uid)
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
-		return true, overridden, nil
-	}
-	if !ok {
-		w.httpNotFound(rw)
-		return true, overridden, nil
+		return true, overridden, User{}
 	}
 
-	return false, overridden, u
+	return false, overridden, user
 }
 
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
@@ -298,16 +267,16 @@ func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, e
 	if errors.As(err, &pErr) {
 		devinfo = pErr.DevInfo
 	}
-	slog.ErrorContext(ctx, "webauthn manager error", logErr(err), slog.String("dev-info", devinfo))
-	http.Error(rw, "Internal Error", http.StatusInternalServerError)
+	if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrUserNotActivated) {
+		http.Error(rw, err.Error(), http.StatusNotFound)
+	} else {
+		slog.ErrorContext(ctx, "webauthn manager error", logErr(err), slog.String("dev-info", devinfo))
+		http.Error(rw, "Internal Error", http.StatusInternalServerError)
+	}
 }
 
 func (w *webauthnManager) httpUnauth(rw http.ResponseWriter, msg string) {
 	http.Error(rw, fmt.Sprintf("Access denied: %s", msg), http.StatusForbidden)
-}
-
-func (w *webauthnManager) httpNotFound(rw http.ResponseWriter) {
-	http.Error(rw, "Not Found", http.StatusNotFound)
 }
 
 func (w *webauthnManager) isAdmin(sub string) bool {

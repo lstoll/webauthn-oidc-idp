@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"encoding/base64"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,19 +60,10 @@ type oidcServer struct {
 	// asm             AuthSessionManager
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
-
-	eh *httpErrHandler
-
-	sessmgr *cookiesession.Manager[webSession, *webSession]
-
-	/* here on is old webauthn provider stuff
-	   TODO - merge field better */
-	store    WebauthnUserStore
-	webauthn *webauthn.WebAuthn
-
-	/* here on is the authsessionmanager stuff
-	   TODO - merge better */
-	storage Storage
+	eh              *httpErrHandler
+	sessmgr         *cookiesession.Manager[webSession, *webSession]
+	webauthn        *webauthn.WebAuthn
+	db              *DB
 }
 
 func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
@@ -99,19 +89,16 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 
 func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
 	err := s.oidcsvr.Token(w, req, func(tr *core.TokenRequest) (*core.TokenResponse, error) {
-		auth, ok, err := s.storage.GetAuthentication(req.Context(), tr.SessionID) // this smelt a bit previously
+		auth, err := s.db.GetAuthenticatedUser(tr.SessionID) // this smelt a bit previously
 		if err != nil {
-			return nil, fmt.Errorf("getting authentication for session %s", tr.SessionID)
-		}
-		if !ok {
-			return nil, fmt.Errorf("no authentication for session %s", tr.SessionID)
+			return nil, fmt.Errorf("get authentication for session %s", tr.SessionID)
 		}
 
 		idt := tr.PrefillIDToken(s.issuer, auth.Subject, time.Now().Add(s.tokenValidFor))
 
 		// oauth2 proxy wants this, when we don't have useinfo
 		// TODO - scopes/userinfo etc.
-		idt.Extra["email"] = auth.EMail
+		idt.Extra["email"] = auth.Email
 		idt.Extra["email_verified"] = true
 
 		return &core.TokenResponse{
@@ -184,14 +171,9 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 
 	userID := string(parsedResponse.Response.UserHandle) // user handle is the webauthn.User#ID we registered with
 
-	u, ok, err := s.store.GetUserByID(req.Context(), userID, false)
+	user, err := s.db.GetActivatedUserByID(userID)
 	if err != nil {
 		s.httpErr(rw, err)
-		return
-	}
-	if !ok {
-		// TODO - better response
-		s.httpErr(rw, fmt.Errorf("no user for id"))
 		return
 	}
 
@@ -204,15 +186,15 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// log.Printf("car: %#v", car)
 
 	sess := s.sessmgr.Get(req.Context())
+	if sess == nil {
+		s.httpErr(rw, fmt.Errorf("session data not in session"))
+		return
+	}
 	if sess.WebauthnLogin == nil || sess.WebauthnLogin.WebauthnSessionData == nil {
 		s.httpErr(rw, errors.New("no valid webauthn login in session"))
 		return
 	}
 	sessionData := *sess.WebauthnLogin.WebauthnSessionData
-	if !ok {
-		s.httpErr(rw, fmt.Errorf("session data not in session"))
-		return
-	}
 	sess.WebauthnLogin.WebauthnSessionData = nil
 	s.sessmgr.Save(req.Context(), sess)
 
@@ -222,14 +204,14 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// 	return
 	// }
 	sessionData.UserID = parsedResponse.Response.UserHandle // need this for the validation
-	credential, err := s.webauthn.ValidateLogin(u, sessionData, parsedResponse)
+	credential, err := s.webauthn.ValidateLogin(user, sessionData, parsedResponse)
 	if err != nil {
 		s.httpErr(rw, fmt.Errorf("validating login: %v", err))
 		return
 	}
 
 	// update the credential for the counter etc.
-	if err := s.store.UpdateCredential(req.Context(), u.ID, *credential); err != nil {
+	if err := s.db.UpdateUserCredential(user.ID, *credential); err != nil {
 		s.httpErr(rw, err)
 		return
 	}
@@ -239,7 +221,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// interface iirc. Or maybe it's an OIDC library limitation, either way we
 	// should look at how to flatten it.
 	sess.WebauthnLogin.AuthdUser = &webauthnLogin{
-		UserID:      u.ID,
+		UserID:      user.ID,
 		SessionID:   sess.WebauthnLogin.LoginSessionID,
 		ValidBefore: time.Now().Add(15 * time.Second), // TODO - policy etc.
 	}
@@ -265,13 +247,9 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	u, ok, err := s.store.GetUserByID(req.Context(), authdUser.UserID, false)
+	user, err := s.db.GetActivatedUserByID(authdUser.UserID)
 	if err != nil {
 		s.httpErr(rw, err)
-		return
-	}
-	if !ok {
-		s.httpErr(rw, fmt.Errorf("no user found"))
 		return
 	}
 
@@ -282,17 +260,17 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 	// render Access issues, or a redirect to the final location.
 
 	// finalize it. this will redirect the user to the appropriate place
-	auth := Authentication{
-		Subject:  u.ID,
-		EMail:    u.Email,
-		FullName: u.FullName,
+	auth := AuthenticatedUser{
+		Subject:  user.ID,
+		Email:    user.Email,
+		FullName: user.FullName,
 		// TODO other fields
 	}
 
 	// todo - what is/was this actually doing? It's on
 	// our custom storage type, so diff to oidc?
 	// https://github.com/lstoll/idp/blob/bc90facd5b6ea40d95f4f71c255f74d0a3bb5f83/storage_dynamo_sessions.go#L195-L247
-	if err := s.storage.Authenticate(req.Context(), authdUser.SessionID, auth); err != nil {
+	if err := s.db.Authenticate(authdUser.SessionID, auth); err != nil {
 		s.httpErr(rw, fmt.Errorf("authenticating user for session id %s: %w", authdUser.SessionID, err))
 		return
 	}
@@ -311,14 +289,4 @@ func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
 	// TODO - replace me with the error handler
 	slog.Error("(TODO improve this handler) error in server", logErr(err))
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
-}
-
-type webauthnLogin struct {
-	UserID      string
-	ValidBefore time.Time
-	SessionID   string
-}
-
-func init() {
-	gob.Register(webauthnLogin{})
 }

@@ -8,6 +8,12 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+const (
+	// keySize is the length of secretbox's key array. We should always use a key
+	// that matches this.
+	keySize = 32
+)
+
 type derivedKeyset struct {
 	dbCurr [keySize]byte
 	dbPrev [][keySize]byte

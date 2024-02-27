@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/cookiesession"
@@ -26,6 +27,12 @@ type webauthnLoginData struct {
 	// AuthdUser tracks information about the user we just authenticated, for
 	// when we send the user to the login finished page.
 	AuthdUser *webauthnLogin `json:"authd_user,omitempty"`
+}
+
+type webauthnLogin struct {
+	UserID      string
+	ValidBefore time.Time
+	SessionID   string
 }
 
 type webSession struct {
