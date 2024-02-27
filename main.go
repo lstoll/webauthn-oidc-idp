@@ -15,6 +15,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/justinas/nosurf"
+	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/discovery"
 	oidcm "github.com/lstoll/oidc/middleware"
@@ -153,9 +154,22 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
 
-	webSessMgr := &sessionManager{
-		st:                  storage,
-		sessionValidityTime: 24 * time.Hour, // TODO - configure
+	wsSessKeys := &cookiesession.StaticKeys{Encryption: keyset.webSessCurr, Decryption: keyset.webSessPrev}
+	webSessMgr, err := cookiesession.New[webSession](wsSessKeys, cookiesession.Options{
+		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
+		Path:   "/",
+	})
+	if err != nil {
+		return fmt.Errorf("creating cookie session for webauthn: %w", err)
+	}
+
+	oidcmSessKeys := &cookiesession.StaticKeys{Encryption: keyset.oidcmSessCurr, Decryption: keyset.oidcmSessPrev}
+	oidcmSessMgr, err := cookiesession.New[oidcMiddlewareSession](oidcmSessKeys, cookiesession.Options{
+		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
+		Path:   "/",
+	})
+	if err != nil {
+		return fmt.Errorf("creating cookie session for oidc middleware: %w", err)
 	}
 
 	mux := http.NewServeMux()
@@ -185,14 +199,17 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	mgr := &webauthnManager{
 		store:    storage,
 		webauthn: wn,
+		sessmgr:  webSessMgr,
 		oidcMiddleware: &oidcm.Handler{
 			Issuer:       issuer.URL.String(),
 			ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
 			ClientSecret: uuid.New().String(),
 			BaseURL:      issuer.URL.String(),
 			RedirectURL:  issuer.URL.String() + "/local-oidc-callback",
-			SessionStore: &sessionShim{},
-			SessionName:  "webauthn-manager",
+			SessionStoreV2: &oidcMiddlewareSessionStore{
+				mgr: oidcmSessMgr,
+			},
+			SessionName: "webauthn-manager",
 		},
 		csrfMiddleware: nosurf.NewPure,
 		// admins: p.Webauthn.AdminSubjects, // TODO - google account id
@@ -224,6 +241,7 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 		eh:              heh,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
+		sessmgr:         webSessMgr,
 		// upstreamPolicy:  []byte(ucp),
 		webauthn: wn,
 		store:    storage,
@@ -256,7 +274,7 @@ func serve(ctx context.Context, storage *storage, keyset *derivedKeyset, issuer 
 	// but we shouldn't save it. but, we need it for logging and stuff. TODO
 	// at some point consider splitting the middleware, but then we might
 	// need to dup the middleware wrap or something.
-	hh := baseMiddleware(mux, webSessMgr)
+	hh := baseMiddleware(mux, webSessMgr, oidcmSessMgr)
 
 	hs := &http.Server{
 		Addr:    addr,
