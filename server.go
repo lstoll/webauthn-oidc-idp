@@ -167,7 +167,7 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 
 	requestOptions := protocol.PublicKeyCredentialRequestOptions{
 		Challenge:        challenge,
-		Timeout:          s.webauthn.Config.Timeout,
+		Timeout:          int(s.webauthn.Config.Timeouts.Login.Timeout),
 		RelyingPartyID:   s.webauthn.Config.RPID,
 		UserVerification: s.webauthn.Config.AuthenticatorSelection.UserVerification,
 		// AllowedCredentials: allowedCredentials, // this is what we don't send for resident/usernameless
