@@ -82,7 +82,7 @@ func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
 				return
 			}
 		case "registerKey":
-			sess, _ := w.sessmgr.Get(req.Context())
+			sess := w.sessmgr.Get(req.Context())
 			sess.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
 				ForUserID: u.ID,
 				ReturnTo:  "/authenticators",
@@ -222,7 +222,7 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 			w.httpUnauth(rw, "invalid enrollment")
 			return
 		}
-		sess, _ := w.sessmgr.Get(req.Context())
+		sess := w.sessmgr.Get(req.Context())
 		sess.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
 			ForUserID: uid,
 		}
@@ -234,7 +234,7 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 }
 
 func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
-	sess, _ := w.sessmgr.Get(req.Context())
+	sess := w.sessmgr.Get(req.Context())
 
 	if sess.PendingWebauthnEnrollment == nil || sess.PendingWebauthnEnrollment.ForUserID == "" {
 		w.httpUnauth(rw, "no enroll to user id set in session")
@@ -281,7 +281,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 }
 
 func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
-	sess, _ := w.sessmgr.Get(req.Context())
+	sess := w.sessmgr.Get(req.Context())
 
 	if sess.PendingWebauthnEnrollment == nil || sess.PendingWebauthnEnrollment.ForUserID == "" {
 		w.httpUnauth(rw, "no enroll to user id set in session")
