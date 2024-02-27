@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
@@ -42,7 +41,7 @@ func newFieldEncryptor(key [keySize]byte, plaintext any) *fieldEncryptor {
 func (e *fieldEncryptor) Value() (driver.Value, error) {
 	var nonce [nonceSize]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-		return nil, errors.Wrap(err, "Failed to create nonce")
+		return nil, fmt.Errorf("creating nonce: %w", err)
 	}
 
 	b, err := json.Marshal(e.Plaintext)
@@ -77,7 +76,7 @@ func newFieldDecryptor[T any](key [keySize]byte, additionalKeys ...[keySize]byte
 
 func (e *fieldDecryptor[T]) Scan(src interface{}) error {
 	if src == nil {
-		return errors.New("nil source")
+		return fmt.Errorf("nil source")
 	}
 	b, ok := src.([]byte)
 	if !ok {
@@ -112,7 +111,7 @@ func (e *fieldDecryptor[T]) decrypt(b []byte) ([]byte, error) {
 			return db, nil
 		}
 	}
-	return nil, errors.New("field failed to decrypt, missing keys?")
+	return nil, fmt.Errorf("field failed to decrypt, missing keys?")
 }
 
 type encryptor[T any] struct {
@@ -142,7 +141,7 @@ func (e *encryptor[T]) Encrypt(data T) ([]byte, error) {
 
 	var nonce [nonceSize]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-		return nil, errors.Wrap(err, "Failed to create nonce")
+		return nil, fmt.Errorf("creating nonce: %w", err)
 	}
 
 	sealed := secretbox.Seal(nonce[:], b, &nonce, &e.EncryptionKey)
@@ -154,7 +153,7 @@ func (e *encryptor[T]) Decrypt(data []byte) (T, error) {
 	var nilt T
 
 	if !bytes.HasPrefix(data, []byte(encryptedMagicJSON)) {
-		return nilt, errors.New("incorrect magic prefix")
+		return nilt, fmt.Errorf("incorrect magic prefix")
 	}
 	b := data[4:]
 
@@ -170,5 +169,5 @@ func (e *encryptor[T]) Decrypt(data []byte) (T, error) {
 			return newt, nil
 		}
 	}
-	return nilt, errors.New("field failed to decrypt, missing keys?")
+	return nilt, fmt.Errorf("field failed to decrypt, missing keys?")
 }
