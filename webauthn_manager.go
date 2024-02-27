@@ -391,7 +391,7 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		"csrfField": func() template.HTML {
 			return template.HTML(fmt.Sprintf(`<input type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
 		},
-		"pathFor": func(s string) string {
+		"pathFor": func(_ string) string {
 			return "TODO"
 		},
 	}
