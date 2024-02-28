@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/gob"
-	"errors"
 	"fmt"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -68,44 +67,14 @@ func (s *storage) CreateUser(ctx context.Context, u *WebauthnUser) (id string, e
 	return u.ID, nil
 }
 
-func (s *storage) UpdateUser(ctx context.Context, u *WebauthnUser) error {
-	if u.ID == "" {
-		return errors.New("user missing ID")
-	}
-	if _, err := s.db.ExecContext(ctx, `update users set email=$1, full_name=$2, activated=$3, enrollment_key=$4 where id=$5`, u.Email, u.FullName, u.Activated, u.EnrollmentKey, u.ID); err != nil {
-		return fmt.Errorf("updating user %s: %w", u.ID, err)
-	}
-	return nil
-}
-
-func (s *storage) AddCredentialToUser(ctx context.Context, userid string, credential webauthn.Credential, keyName string) (id string, err error) {
+func (s *storage) AddCredentialToUser(ctx context.Context, userid string, credential webauthn.Credential, keyName string) error {
 	cid := base64.RawStdEncoding.EncodeToString(credential.ID)
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(credential); err != nil {
-		return "", fmt.Errorf("encoding credential: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `insert into webauthn_credentials (id, user_id, name, credential) values ($1, $2, $3, $4)`, cid, userid, keyName, buf.Bytes()); err != nil {
-		return "", fmt.Errorf("inserting credential: %w", err)
-	}
-	return cid, nil
-}
-
-func (s *storage) UpdateCredential(ctx context.Context, userID string, cred webauthn.Credential) error {
-	cid := base64.RawStdEncoding.EncodeToString(cred.ID)
-
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(cred); err != nil {
 		return fmt.Errorf("encoding credential: %w", err)
 	}
-	if _, err := s.db.ExecContext(ctx, `update webauthn_credentials set credential=$1 where user_id=$2 and id=$3`, buf.Bytes(), userID, cid); err != nil {
-		return fmt.Errorf("updating credential: %w", err)
-	}
-	return nil
-}
-
-func (s *storage) DeleteCredentialFromuser(ctx context.Context, userID string, credentialID string) error {
-	if _, err := s.db.ExecContext(ctx, `delete from webauthn_credentials where id=$1 and user_id=$2`, credentialID, userID); err != nil {
-		return fmt.Errorf("deleting credential %s from user %s: %w", credentialID, userID, err)
+	if _, err := s.db.ExecContext(ctx, `insert into webauthn_credentials (id, user_id, name, credential) values ($1, $2, $3, $4)`, cid, userid, keyName, buf.Bytes()); err != nil {
+		return fmt.Errorf("inserting credential: %w", err)
 	}
 	return nil
 }
@@ -129,20 +98,6 @@ func (s *storage) ListUsers(_ context.Context) ([]*WebauthnUser, error) {
 	}
 	return ret, nil
 }
-
-func (s *storage) DeleteUser(ctx context.Context, id string) error {
-	return s.execTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `delete from webauthn_credentials where user_id=$1`, id); err != nil {
-			return fmt.Errorf("deleting credentials from user %s: %w", id, err)
-		}
-		if _, err := tx.ExecContext(ctx, `delete from users where id=$1`, id); err != nil {
-			return fmt.Errorf("deleting user %s: %w", id, err)
-		}
-		return nil
-	})
-}
-
-var _ webauthn.User = (*WebauthnUser)(nil)
 
 type WebauthnUser struct {
 	// ID uniquely identifies the user, and is assigned by the storage
@@ -169,34 +124,4 @@ type WebauthnUserCredential struct {
 	Name string
 	// Credential is the actual credential
 	Credential webauthn.Credential
-}
-
-// User ID according to the Relying Party
-func (d *WebauthnUser) WebAuthnID() []byte {
-	return []byte(d.ID)
-}
-
-// User Name according to the Relying Party
-func (d *WebauthnUser) WebAuthnName() string {
-	return d.Email
-}
-
-// Display Name of the user
-func (d *WebauthnUser) WebAuthnDisplayName() string {
-	return d.FullName
-}
-
-// User's icon url
-func (d *WebauthnUser) WebAuthnIcon() string {
-	return ""
-}
-
-// Credentials owned by the user - this is used by the webauthn library, which
-// expects the raw credentials.
-func (d *WebauthnUser) WebAuthnCredentials() []webauthn.Credential {
-	var ret []webauthn.Credential
-	for _, c := range d.Credentials {
-		ret = append(ret, c.Credential)
-	}
-	return ret
 }
