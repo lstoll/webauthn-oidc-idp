@@ -31,6 +31,34 @@ func TestOpenDB(t *testing.T) {
 	}
 }
 
+func TestReloadDB(t *testing.T) {
+	t.Parallel()
+
+	file := filepath.Join(t.TempDir(), "db.json")
+
+	db, err := openDB(file)
+	if err != nil {
+		t.Fatalf("openDB: %v", err)
+	}
+
+	if want, got := 0, len(db.ListUsers()); got != want {
+		t.Fatalf("want %d users, got: %d", want, got)
+	}
+
+	err = os.WriteFile(file, []byte(`{"version": 1, "users": {"uuid": {"id": "uuid"}}}`), 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := db.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	if want, got := 1, len(db.ListUsers()); got != want {
+		t.Fatalf("want %d users after reload, got: %d", want, got)
+	}
+}
+
 func TestUsers(t *testing.T) {
 	t.Parallel()
 

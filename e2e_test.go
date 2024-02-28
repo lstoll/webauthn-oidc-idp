@@ -116,6 +116,9 @@ func TestE2E(t *testing.T) {
 		t.Fatal("server startup timed out")
 	}
 
+	// not strictly needed for the E2E tests.
+	reloadDB(net.JoinHostPort("localhost", port))
+
 	/* enable the virtual webauthn environment */
 	var virtAuthenticatorID cdpwebauthn.AuthenticatorID
 
