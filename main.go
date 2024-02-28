@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -86,7 +88,7 @@ func main() {
 		if err != nil {
 			fatalf("create user: %w", err)
 		}
-		fmt.Printf("Enroll at: %s\n", registrationURL(user))
+		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
 		return
 	} else if *activate {
 		if *userID == "" {
@@ -280,9 +282,20 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 	return g.Run()
 }
 
-func registrationURL(user User) string {
-	// TODO(sr) can we return the full URL here? (issuer + path)
-	return fmt.Sprintf("/registration?user_id=%s&enrollment_token=%s", user.ID, user.EnrollmentKey)
+func registrationURL(iss *url.URL, user User) *url.URL {
+	u := *iss
+	if !strings.HasSuffix(u.Path, "/") {
+		u.Path += "/"
+	}
+	u2, err := u.Parse("/registration")
+	if err != nil {
+		panic(err)
+	}
+	q := u2.Query()
+	q.Add("user_id", user.ID)
+	q.Add("enrollment_token", user.EnrollmentKey)
+	u2.RawQuery = q.Encode()
+	return u2
 }
 
 // activateUser marks the user as activated and deletes its enrollment key.

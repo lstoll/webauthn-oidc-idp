@@ -87,8 +87,7 @@ func TestE2E(t *testing.T) {
 	}
 
 	issConfig := issuerConfig{
-		URL:    issU,
-		RawURL: issU.String(),
+		URL: issU,
 		Client: []clientConfig{
 			{
 				ClientID:     "test-cli",
@@ -163,13 +162,13 @@ func TestE2E(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ep := registrationURL(user)
+		ep := registrationURL(issConfig.URL, user)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {
 			err := chromedp.Run(ctx,
-				chromedp.Navigate(issConfig.RawURL+ep),
+				chromedp.Navigate(ep.String()),
 				chromedp.WaitVisible(`//button[text()='Register Key']`),
 				chromedp.SendKeys(`//input[@id='keyName']`, "Test Passkey"),
 				chromedp.Click(`//button[text()='Register Key']`),
@@ -218,7 +217,7 @@ func TestE2E(t *testing.T) {
 	clearErrchan(chromeErrC)
 
 	testOk = t.Run("Successful Login", func(t *testing.T) {
-		tokC, loginErrC := cliLoginFlow(ctx, t, issConfig.RawURL)
+		tokC, loginErrC := cliLoginFlow(ctx, t, issConfig.URL.String())
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -261,7 +260,7 @@ func TestE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		tokC, errC := cliLoginFlow(ctx, t, issConfig.RawURL)
+		tokC, errC := cliLoginFlow(ctx, t, issConfig.URL.String())
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
