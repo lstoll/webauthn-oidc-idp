@@ -138,7 +138,7 @@ func TestMigrateSQLToJSON(t *testing.T) {
 		t.Fatalf("sqldb.CreateUser: %v", err)
 	}
 	user.ID = id
-	_, err = sqldb.AddCredentialToUser(ctx, user.ID, webauthn.Credential{ID: []byte("ID")}, "test name")
+	err = sqldb.AddCredentialToUser(ctx, user.ID, webauthn.Credential{ID: []byte("ID")}, "test name")
 	if err != nil {
 		t.Fatalf("sqldb.AddCredentialToUser: %v", err)
 	}

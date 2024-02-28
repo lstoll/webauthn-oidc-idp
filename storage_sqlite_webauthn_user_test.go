@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -30,23 +32,17 @@ func TestWebauthnUserStorage(t *testing.T) {
 		t.Fatal("inactive user should not be returned")
 	}
 
-	u.Activated = true
-
-	if err := s.UpdateUser(ctx, u); err != nil {
-		t.Fatal(err)
-	}
-
 	randb := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, randb); err != nil {
 		t.Fatal(err)
 	}
 
-	cid, err := s.AddCredentialToUser(ctx, u.ID, webauthn.Credential{}, "test name")
+	err = s.AddCredentialToUser(ctx, u.ID, webauthn.Credential{ID: randb}, "test name")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	u, ok, err = s.GetUserByID(ctx, u.ID, false)
+	u, ok, err = s.GetUserByID(ctx, u.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,14 +54,6 @@ func TestWebauthnUserStorage(t *testing.T) {
 		t.Errorf("user should have %d credentials, got %d", 1, len(u.Credentials))
 	}
 
-	if err := s.UpdateCredential(ctx, u.ID, u.Credentials[0].Credential); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.DeleteCredentialFromuser(ctx, u.ID, cid); err != nil {
-		t.Fatal(err)
-	}
-
 	us, err := s.ListUsers(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -73,4 +61,14 @@ func TestWebauthnUserStorage(t *testing.T) {
 	if len(us) != 1 {
 		t.Errorf("want 1 user, got %d", len(us))
 	}
+}
+
+func newTestStorage(t *testing.T) *storage {
+	t.Helper()
+
+	s, err := newStorage(context.Background(), fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", filepath.Join(t.TempDir(), "t.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
