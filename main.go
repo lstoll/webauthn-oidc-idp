@@ -5,8 +5,10 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -88,16 +90,17 @@ func main() {
 		if err != nil {
 			fatalf("create user: %v", err)
 		}
+		reloadDB(*addr)
 		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
 		return
 	} else if *activate {
 		if *userID == "" {
 			fatal("required flag missing: user-id")
 		}
-
 		if err := activateUser(db, *userID); err != nil {
 			fatalf("ativate user: %v", err)
 		}
+		reloadDB(*addr)
 		return
 	}
 
@@ -249,6 +252,30 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 		_, _ = w.Write([]byte("OK"))
 	})
 
+	_, loopback, err := net.ParseCIDR("127.0.0.0/8")
+	if err != nil {
+		return err
+	}
+	mux.HandleFunc("/reloaddb", func(w http.ResponseWriter, r *http.Request) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if !loopback.Contains(net.ParseIP(ip)) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		if err := db.Reload(); err != nil {
+			slog.ErrorContext(r.Context(), "database reload failed", slog.Any("error", err))
+			http.Error(w, fmt.Sprintf("reload failed: %v", err), http.StatusInternalServerError)
+		} else {
+			slog.InfoContext(r.Context(), "database reloaded")
+		}
+	})
+
 	svr.AddHandlers(mux)
 
 	var g run.Group
@@ -316,6 +343,19 @@ func activateUser(db *DB, userID string) error {
 	fmt.Println("Done.")
 
 	return nil
+}
+
+// reloadDB tells the server running on addr to reload its database from disk.
+func reloadDB(addr string) {
+	resp, err := http.Get("http://" + addr + "/reloaddb")
+	if err != nil {
+		fatalf("database reload failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		fatalf("database reload failed: %s", string(b))
+	}
 }
 
 func fatal(s string) {

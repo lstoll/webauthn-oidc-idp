@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"sync"
 
 	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -173,14 +174,40 @@ func openDB(path string) (*DB, error) {
 	if ver != schemaVersion {
 		return nil, fmt.Errorf("unsupported database version: %d", ver)
 	}
-	return &DB{f: f}, nil
+	return &DB{unsafeF: f, path: path}, nil
 }
 
 // DB is the IDP database.
 // The database consists of a single JSON file stored on disk.
 // It contains unencrypted private key material.
 type DB struct {
-	f *jsonfile.JSONFile[schema]
+	unsafeF *jsonfile.JSONFile[schema] // unsafe, use f() to access.
+	path    string                     // path of the file on disk.
+	mu      sync.RWMutex               // protects unsafeF.
+}
+
+func (db *DB) f() *jsonfile.JSONFile[schema] {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return db.unsafeF
+}
+
+func (db *DB) Reload() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	file, err := jsonfile.Load[schema](db.path)
+	if err != nil {
+		return err
+	}
+
+	var ver uint
+	file.Read(func(db *schema) { ver = db.Version })
+	if ver != schemaVersion {
+		return fmt.Errorf("unsupported database version: %d", ver)
+	}
+	db.unsafeF = file
+	return nil
 }
 
 func (db *DB) GetUserByID(userID string) (User, error) {
@@ -188,7 +215,7 @@ func (db *DB) GetUserByID(userID string) (User, error) {
 		v  User
 		ok bool
 	)
-	db.f.Read(func(db *schema) {
+	db.f().Read(func(db *schema) {
 		v, ok = db.Users[userID]
 	})
 	if !ok {
@@ -218,7 +245,7 @@ func (db *DB) CreateUser(user User) (User, error) {
 	user.ID = uuid.NewString()
 	user.EnrollmentKey = uuid.NewString()
 	user.Credentials = make(map[string]webauthn.Credential)
-	err := db.f.Write(func(db *schema) error {
+	err := db.f().Write(func(db *schema) error {
 		if _, ok := db.Users[user.ID]; ok {
 			panic("generated UUID already in use")
 		}
@@ -248,7 +275,7 @@ func (db *DB) UpdateUser(user User) error {
 	if user.ID == "" {
 		return errors.New("user ID missing")
 	}
-	err := db.f.Write(func(db *schema) error {
+	err := db.f().Write(func(db *schema) error {
 		if _, ok := db.Users[user.ID]; !ok {
 			return ErrUserNotFound
 		}
@@ -264,7 +291,7 @@ func (db *DB) UpdateUser(user User) error {
 }
 
 func (db *DB) UpdateUserCredential(userID string, cred webauthn.Credential) error {
-	err := db.f.Write(func(db *schema) error {
+	err := db.f().Write(func(db *schema) error {
 		user, ok := db.Users[userID]
 		if !ok {
 			return ErrUserNotFound
@@ -281,7 +308,7 @@ func (db *DB) UpdateUserCredential(userID string, cred webauthn.Credential) erro
 }
 
 func (db *DB) CreateUserCredential(userID, name string, cred webauthn.Credential) error {
-	err := db.f.Write(func(db *schema) error {
+	err := db.f().Write(func(db *schema) error {
 		if _, ok := db.Users[userID]; !ok {
 			return ErrUserNotFound
 		}
@@ -292,7 +319,7 @@ func (db *DB) CreateUserCredential(userID, name string, cred webauthn.Credential
 }
 
 func (db *DB) DeleteUserCredential(userID string, name string) error {
-	err := db.f.Write(func(db *schema) error {
+	err := db.f().Write(func(db *schema) error {
 		if _, ok := db.Users[userID]; !ok {
 			return ErrUserNotFound
 		}
@@ -304,7 +331,7 @@ func (db *DB) DeleteUserCredential(userID string, name string) error {
 
 func (db *DB) ListUsers() []User {
 	var users []User
-	db.f.Read(func(db *schema) {
+	db.f().Read(func(db *schema) {
 		for _, v := range db.Users {
 			users = append(users, v)
 		}
@@ -313,7 +340,7 @@ func (db *DB) ListUsers() []User {
 }
 
 func (db *DB) Authenticate(sessionID string, auth AuthenticatedUser) error {
-	return db.f.Write(func(db *schema) error {
+	return db.f().Write(func(db *schema) error {
 		if len(db.AuthenticatedUsers) == 0 {
 			db.AuthenticatedUsers = make(map[string]AuthenticatedUser)
 		}
@@ -327,7 +354,7 @@ func (db *DB) GetAuthenticatedUser(sessionID string) (AuthenticatedUser, error) 
 		v  AuthenticatedUser
 		ok bool
 	)
-	db.f.Read(func(db *schema) {
+	db.f().Read(func(db *schema) {
 		v, ok = db.AuthenticatedUsers[sessionID]
 	})
 	if !ok {
@@ -338,7 +365,7 @@ func (db *DB) GetAuthenticatedUser(sessionID string) (AuthenticatedUser, error) 
 
 func (db *DB) Signer() core.Signer {
 	var v RSAKey
-	db.f.Read(func(db *schema) {
+	db.f().Read(func(db *schema) {
 		v = db.OIDCSigningKey
 	})
 	if v.KeyID == "" {
@@ -349,7 +376,7 @@ func (db *DB) Signer() core.Signer {
 
 func (db *DB) KeySource() discovery.KeySource {
 	var v RSAKey
-	db.f.Read(func(db *schema) {
+	db.f().Read(func(db *schema) {
 		v = db.OIDCSigningKey
 	})
 	if v.KeyID == "" {
@@ -359,7 +386,7 @@ func (db *DB) KeySource() discovery.KeySource {
 }
 
 func (db *DB) SessionManager() core.SessionManager {
-	return &sessionManager{f: db.f}
+	return &sessionManager{f: db.f()}
 }
 
 const rsaKeyBits = 2048
@@ -412,7 +439,7 @@ func migrateSQLToJSON(sqldb *storage, jsondb *DB) error {
 // createMigratedUser saves the given user as is in the database.
 // Do not use; it's temporary and will be deleted in the near future.
 func (db *DB) createMigratedUser(user User) error {
-	return db.f.Write(func(db *schema) error {
+	return db.f().Write(func(db *schema) error {
 		if len(db.Users) == 0 {
 			db.Users = make(map[string]User)
 		}
