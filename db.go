@@ -27,6 +27,7 @@ const schemaVersion uint = 1
 var (
 	ErrUserNotFound        = errors.New("user not found")
 	ErrUserNotActivated    = errors.New("user not activated")
+	ErrUserEmailTaken      = errors.New("user email taken")
 	ErrUnauthenticatedUser = errors.New("unauthenticated user")
 	ErrCredentialNotFound  = errors.New("credential not found")
 )
@@ -85,7 +86,6 @@ type User struct {
 
 	// Email address for the user. This is changeable, however it must be unique as
 	// it's the "exposed" ID for a user for login purposes.
-	// TODO(sr) maybe enforce uniqueness of user email.
 	Email string `json:"email"`
 
 	// FullName to refer to the user as.
@@ -222,6 +222,16 @@ func (db *DB) CreateUser(user User) (User, error) {
 		if _, ok := db.Users[user.ID]; ok {
 			panic("generated UUID already in use")
 		}
+		var dupe bool
+		for _, u := range db.Users {
+			if u.Email == user.Email {
+				dupe = true
+				break
+			}
+		}
+		if dupe {
+			return ErrUserEmailTaken
+		}
 		if len(db.Users) == 0 {
 			db.Users = make(map[string]User)
 		}
@@ -241,6 +251,11 @@ func (db *DB) UpdateUser(user User) error {
 	err := db.f.Write(func(db *schema) error {
 		if _, ok := db.Users[user.ID]; !ok {
 			return ErrUserNotFound
+		}
+		for _, u := range db.Users {
+			if u.ID != user.ID && u.Email == user.Email {
+				return ErrUserEmailTaken
+			}
 		}
 		db.Users[user.ID] = user
 		return nil

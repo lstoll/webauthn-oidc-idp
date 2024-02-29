@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -45,6 +46,10 @@ func TestUsers(t *testing.T) {
 		t.Fatal("CreateUser did not reject user with existing ID")
 	}
 
+	if _, err := db.CreateUser(User{Email: user.Email}); err != ErrUserEmailTaken {
+		t.Fatalf("CreateUser did not reject non-unique email, got: %v", err)
+	}
+
 	if _, err := db.GetUserByID("foo"); err != ErrUserNotFound {
 		t.Fatalf("want GetUserByID to return user not found error, got: %v", err)
 	}
@@ -57,6 +62,18 @@ func TestUsers(t *testing.T) {
 
 	if err := db.UpdateUser(newUser); err != nil {
 		t.Fatalf("UpdateUser: %v", err)
+	}
+
+	user2, err := db.CreateUser(User{Email: "me@example.com"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := db.UpdateUser(User{ID: user2.ID, Email: user.Email}); err != ErrUserEmailTaken {
+		t.Fatalf("UpdateUser did not reject non-unique email, got: %v", err)
+	}
+	err = db.CreateUserCredential(user2.ID, "1pass", webauthn.Credential{ID: []byte("ID")})
+	if err != nil {
+		t.Fatalf("AddCredentialToUser: %v", err)
 	}
 
 	if err := db.UpdateUser(User{}); err == nil {
@@ -95,11 +112,13 @@ func TestUsers(t *testing.T) {
 	}
 
 	users := db.ListUsers()
-	if len(users) != 1 {
+	if len(users) != 2 {
 		t.Errorf("ListUsers: want 1 user, got %d", len(users))
 	}
-
-	if got := len(users[0].Credentials); got != 0 {
+	idx := slices.IndexFunc[[]User](users, func(u User) bool {
+		return u.ID == user.ID
+	})
+	if got := len(users[idx].Credentials); got != 0 {
 		t.Errorf("want user to have no credentials left, got: %d", got)
 	}
 }
