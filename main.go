@@ -65,10 +65,10 @@ func main() {
 	if sqlfile := cfg.SQLDatabase; sqlfile != "" {
 		sqldb, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", sqlfile))
 		if err != nil {
-			fatalf("open sqlite database: %w", err)
+			fatalf("open sqlite database: %v", err)
 		}
 		if err := migrateSQLToJSON(sqldb, db); err != nil {
-			fatalf("migrate SQLite database %s to %s: %w", sqlfile, cfg.Database, err)
+			fatalf("migrate SQLite database %s to %s: %v", sqlfile, cfg.Database, err)
 		}
 	}
 
@@ -86,7 +86,7 @@ func main() {
 			Activated: false,
 		})
 		if err != nil {
-			fatalf("create user: %w", err)
+			fatalf("create user: %v", err)
 		}
 		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
 		return
