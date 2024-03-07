@@ -45,12 +45,6 @@ type schema struct {
 
 	// Keysets is a map of the keyset name to the keyset data.
 	Keysets map[string]DBKeyset `json:"keysets"`
-
-	// OIDCKeyset is the keyset for signing OIDC messages.
-	OIDCKeyset DBKeyset `json:"oidcKeyset"`
-
-	// CookieKeyset is the keyset for encrypting session cookies.
-	CookieKeyset DBKeyset `json:"cookieKeyset"`
 }
 
 // DBKeyset represents a rotating keyset in the database.
