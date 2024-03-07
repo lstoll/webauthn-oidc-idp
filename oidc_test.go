@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
@@ -9,41 +8,6 @@ import (
 
 	"github.com/lstoll/oidc/core"
 )
-
-func TestOIDCSigner(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	db := openTestDB(t)
-	os := db.Signer()
-
-	signed, err := os.Sign(ctx, []byte("hello"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	payload, err := os.VerifySignature(ctx, string(signed))
-	if err != nil {
-		t.Fatalf("failed to verify JWT: %v", err)
-	}
-
-	if !bytes.Equal(payload, []byte("hello")) {
-		t.Errorf("payload mismatch")
-	}
-}
-
-func TestOIDCKeySource(t *testing.T) {
-	t.Parallel()
-
-	db := openTestDB(t)
-	keyset, err := db.KeySource().PublicKeys(context.Background())
-	if err != nil {
-		t.Fatalf("PublicKeys: %v", err)
-	}
-	if want, got := 1, len(keyset.Keys); got != want {
-		t.Fatalf("want %d public keys, got: %d", want, got)
-	}
-}
 
 // versionedSession is a core.Session used for testing our SessionManager
 // implementation. Adapted from github.com/lstoll/oidc/core.

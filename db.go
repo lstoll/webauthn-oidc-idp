@@ -3,21 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
+	"time"
 
 	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/lstoll/oidc/core"
-	"github.com/lstoll/oidc/discovery"
 )
 
 // schemaVersion is the current version of the database schema. It may be used
@@ -48,34 +43,19 @@ type schema struct {
 	// The key is the session ID from OIDCSessions.
 	AuthenticatedUsers map[string]AuthenticatedUser `json:"authenticatedUsers"`
 
-	// OIDCSigningKey is the static OIDC signing key. It will be replaced by
-	// a keyset (i.e. rotated keys) soon. (TODO: lstoll)
-	OIDCSigningKey RSAKey `json:"oidcStaticKey"`
+	// OIDCKeyset is the keyset for signing OIDC messages.
+	OIDCKeyset OIDCKeyset `json:"oidcKeyset"`
 }
 
-// RSAKey implements crypto.Signer.
-// TODO(lstoll) Replace this.
-type RSAKey struct {
-	KeyID      string `json:"keyID"`
-	PrivateKey []byte `json:"privateKey"`
-	PublicKey  []byte `json:"publicKey"`
-}
-
-func (k RSAKey) Public() crypto.PublicKey {
-	pub, err := x509.ParsePKCS1PublicKey(k.PublicKey)
-	if err != nil {
-		// TODO(lstoll) - no real better way to deal with this here?
-		panic(fmt.Errorf("parse public key: %v", err))
-	}
-	return pub
-}
-
-func (k RSAKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
-	pk, err := x509.ParsePKCS1PrivateKey(k.PrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("parse private key: %w", err)
-	}
-	return pk.Sign(rand, digest, opts)
+// OIDCKeyset represents the OIDC signing keys as stored in the DB
+type OIDCKeyset struct {
+	// LastRotated is the time the last rotation was performed on the set
+	LastRotated time.Time `json:"lastRotated,omitempty"`
+	// UpcomingKeyID is the keyset key ID for the newly-provisioned key, that is
+	// waiting to get rotated in to being active.
+	UpcomingKeyID uint32 `json:"upcomingKeyID"`
+	// Keyset is the JSON formatted representation of the tink keyset.
+	Keyset json.RawMessage `json:"keyset,omitempty"`
 }
 
 // User implements webauthn.User.
@@ -153,14 +133,6 @@ func openDB(path string) (*DB, error) {
 			return nil, err
 		}
 		err = f.Write(func(db *schema) error {
-			// HACK initialize the static signing key when the database is created
-			// This should be deleted after key rotation (keyset) is implemented.
-			key, err := generateStaticSigningKey()
-			if err != nil {
-				return fmt.Errorf("generate signing key: %w", err)
-			}
-			db.OIDCSigningKey = key
-
 			db.Version = schemaVersion
 			return nil
 		})
@@ -345,46 +317,26 @@ func (db *DB) GetAuthenticatedUser(sessionID string) (AuthenticatedUser, error) 
 	return v, nil
 }
 
-func (db *DB) Signer() core.Signer {
-	var v RSAKey
-	db.f.Read(func(db *schema) {
-		v = db.OIDCSigningKey
-	})
-	if v.KeyID == "" {
-		panic("signing key not set")
-	}
-	return &oidcSigner{key: v}
-}
-
-func (db *DB) KeySource() discovery.KeySource {
-	var v RSAKey
-	db.f.Read(func(db *schema) {
-		v = db.OIDCSigningKey
-	})
-	if v.KeyID == "" {
-		panic("signing key not set")
-	}
-	return &staticKeySource{key: v}
-}
-
 func (db *DB) SessionManager() core.SessionManager {
 	return &sessionManager{f: db.f}
 }
 
-const rsaKeyBits = 2048
-
-// TODO(lstoll) delete this.
-func generateStaticSigningKey() (RSAKey, error) {
-	pk, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
-	if err != nil {
-		return RSAKey{}, fmt.Errorf("generate rsa key: %w", err)
-	}
-	return RSAKey{
-		KeyID:      uuid.NewString(),
-		PrivateKey: x509.MarshalPKCS1PrivateKey(pk),
-		PublicKey:  x509.MarshalPKCS1PublicKey(&pk.PublicKey),
-	}, nil
+func (db *DB) GetOIDCKeyset() OIDCKeyset {
+	var ks OIDCKeyset
+	db.f.Read(func(data *schema) {
+		ks = data.OIDCKeyset
+	})
+	return ks
 }
+
+func (db *DB) PutOIDCKeyset(ks OIDCKeyset) error {
+	return db.f.Write(func(db *schema) error {
+		db.OIDCKeyset = ks
+		return nil
+	})
+}
+
+const rsaKeyBits = 2048
 
 func migrateSQLToJSON(sqldb *storage, jsondb *DB) error {
 	ctx := context.Background()
