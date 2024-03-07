@@ -1,11 +1,9 @@
 package main
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc/middleware"
 )
 
@@ -52,22 +50,4 @@ type oidcMiddlewareSession struct {
 
 func (oidcMiddlewareSession) SessionName() string {
 	return "oidc-mw"
-}
-
-type oidcMiddlewareSessionStore struct {
-	mgr *cookiesession.Manager[oidcMiddlewareSession, *oidcMiddlewareSession]
-}
-
-// GetSession implements middleware.SessionStoreV2
-func (o *oidcMiddlewareSessionStore) GetSession(r *http.Request) (*middleware.SessionData, error) {
-	sd := o.mgr.Get(r.Context())
-	return &sd.SessionData, nil
-}
-
-// SaveSession implements middleware.SessionStoreV2
-func (o *oidcMiddlewareSessionStore) SaveSession(_ http.ResponseWriter, r *http.Request, d *middleware.SessionData) error {
-	sd := o.mgr.Get(r.Context())
-	sd.SessionData = *d
-	o.mgr.Save(r.Context(), sd)
-	return nil
 }

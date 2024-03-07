@@ -56,7 +56,7 @@ func (o OIDCKeysetManager) Run() error {
 		select {
 		case <-t.C:
 			if err := o.doRotate(); err != nil {
-				slog.Error("failed to rotate keyset", "err", err)
+				slog.Error("failed to rotate keyset", logErr(err))
 			}
 		case <-o.stopCh:
 			return nil
@@ -97,7 +97,7 @@ func (o *OIDCKeysetManager) doRotate() error {
 		return o.writeKeyset(cks, mgr)
 	}
 
-	slog.Info("rotating OIDC keyset", "last-rotated", cks.LastRotated)
+	slog.Info("rotating OIDC keyset", slog.Time("last-rotated", cks.LastRotated))
 
 	// doing a normal rotation
 	rdr := keyset.NewJSONReader(bytes.NewReader(cks.Keyset))
@@ -114,7 +114,9 @@ func (o *OIDCKeysetManager) doRotate() error {
 	for _, ki := range h.KeysetInfo().KeyInfo {
 		// remove all keys that aren't current or upcoming
 		if ki.KeyId != upcomingKID || ki.KeyId != currKID {
-			mgr.Delete(ki.KeyId)
+			if err := mgr.Delete(ki.KeyId); err != nil {
+				return fmt.Errorf("deleting key %d: %w", ki.KeyId, err)
+			}
 		}
 	}
 

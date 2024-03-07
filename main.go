@@ -292,6 +292,8 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 
 	g.Add(run.SignalHandler(ctx, os.Interrupt))
 
+	g.Add(ksm.Run, ksm.Interrupt)
+
 	// this will always try and create a session for discovery and stuff,
 	// but we shouldn't save it. but, we need it for logging and stuff. TODO
 	// at some point consider splitting the middleware, but then we might

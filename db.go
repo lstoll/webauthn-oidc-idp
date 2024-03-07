@@ -336,8 +336,6 @@ func (db *DB) PutOIDCKeyset(ks OIDCKeyset) error {
 	})
 }
 
-const rsaKeyBits = 2048
-
 func migrateSQLToJSON(sqldb *storage, jsondb *DB) error {
 	ctx := context.Background()
 	users, err := sqldb.ListUsers(ctx)
