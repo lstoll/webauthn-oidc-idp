@@ -7,12 +7,14 @@ import (
 func TestOIDCKeyset(t *testing.T) {
 	db := openTestDB(t)
 
-	ksm, err := NewOIDCKeysetManager(db)
+	ksm, err := NewKeysetManager(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ksm.doRotate(); err != nil {
-		t.Fatal(err)
+	for _, ks := range allKeysets {
+		if err := ksm.doRotate(ks); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

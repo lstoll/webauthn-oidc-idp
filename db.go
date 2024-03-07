@@ -43,12 +43,18 @@ type schema struct {
 	// The key is the session ID from OIDCSessions.
 	AuthenticatedUsers map[string]AuthenticatedUser `json:"authenticatedUsers"`
 
+	// Keysets is a map of the keyset name to the keyset data.
+	Keysets map[string]DBKeyset `json:"keysets"`
+
 	// OIDCKeyset is the keyset for signing OIDC messages.
-	OIDCKeyset OIDCKeyset `json:"oidcKeyset"`
+	OIDCKeyset DBKeyset `json:"oidcKeyset"`
+
+	// CookieKeyset is the keyset for encrypting session cookies.
+	CookieKeyset DBKeyset `json:"cookieKeyset"`
 }
 
-// OIDCKeyset represents the OIDC signing keys as stored in the DB
-type OIDCKeyset struct {
+// DBKeyset represents a rotating keyset in the database.
+type DBKeyset struct {
 	// LastRotated is the time the last rotation was performed on the set
 	LastRotated time.Time `json:"lastRotated,omitempty"`
 	// UpcomingKeyID is the keyset key ID for the newly-provisioned key, that is
@@ -321,17 +327,20 @@ func (db *DB) SessionManager() core.SessionManager {
 	return &sessionManager{f: db.f}
 }
 
-func (db *DB) GetOIDCKeyset() OIDCKeyset {
-	var ks OIDCKeyset
+func (db *DB) GetKeyset(ks Keyset) DBKeyset {
+	var ret DBKeyset
 	db.f.Read(func(data *schema) {
-		ks = data.OIDCKeyset
+		ret = data.Keysets[ks.Name]
 	})
-	return ks
+	return ret
 }
 
-func (db *DB) PutOIDCKeyset(ks OIDCKeyset) error {
+func (db *DB) PutKeyset(ks Keyset, stored DBKeyset) error {
 	return db.f.Write(func(db *schema) error {
-		db.OIDCKeyset = ks
+		if db.Keysets == nil {
+			db.Keysets = map[string]DBKeyset{}
+		}
+		db.Keysets[ks.Name] = stored
 		return nil
 	})
 }

@@ -24,7 +24,6 @@ import (
 	"github.com/lstoll/oidc/discovery"
 	oidcm "github.com/lstoll/oidc/middleware"
 	"github.com/oklog/run"
-	"github.com/tink-crypto/tink-go/v2/keyset"
 )
 
 //go:embed web/public/*
@@ -121,7 +120,7 @@ func main() {
 }
 
 func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerConfig, _, _ time.Duration, addr string) error {
-	ksm, err := NewOIDCKeysetManager(db)
+	ksm, err := NewKeysetManager(db)
 	if err != nil {
 		return fmt.Errorf("creating OIDC keyset manager: %w", err)
 	}
@@ -132,7 +131,8 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 		AuthorizationEndpoint: issuer.URL.String() + "/auth",
 		TokenEndpoint:         issuer.URL.String() + "/token",
 	}
-	keysh, err := discovery.NewKeysHandler(func(context.Context) (*keyset.Handle, error) { return ksm.PublicHandle(), nil }, 1*time.Hour)
+	oidcHandles := ksm.Handles(KeysetOIDC)
+	keysh, err := discovery.NewKeysHandler(oidcHandles.PublicHandle, 1*time.Hour)
 	if err != nil {
 		return fmt.Errorf("creating discovery keys handler: %w", err)
 	}
@@ -152,7 +152,7 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 	oidcsvr, err := core.New(&core.Config{
 		AuthValidityTime: 5 * time.Minute,
 		CodeValidityTime: 5 * time.Minute,
-	}, db.SessionManager(), clients, func(context.Context) (*keyset.Handle, error) { return ksm.PrivateHandle(), nil })
+	}, db.SessionManager(), clients, oidcHandles.Handle)
 	if err != nil {
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
