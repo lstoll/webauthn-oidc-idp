@@ -8,6 +8,12 @@
 					"clientID": "client-id",
 					"clientSecrets": ["client-secret"],
 					"redirectURLs": ["http://localhost:8084/callback"]
+				},
+				{
+					"clientID": "cli",
+					"clientSecrets": ["secret"],
+					"public": true,
+					"redirectURLs": ["http://localhost"]
 				}
 			]
 		}
