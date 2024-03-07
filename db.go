@@ -71,14 +71,19 @@ type User struct {
 	// FullName to refer to the user as.
 	FullName string `json:"fullName"`
 
-	// Activated if the user is valid to be used.
-	Activated bool `json:"activated"`
-
-	// EnrollmentKey used for enrolling users first token.
+	// EnrollmentKey used for enrolling tokens for a user. It is removed when
+	// the token is enrolled.
 	EnrollmentKey string `json:"enrollmentKey"`
 
 	// Credentials is the user's WebAuthn credentials keyed by a user-provided identifier.
-	Credentials map[string]webauthn.Credential `json:"credentials"`
+	Credentials map[string]WebauthnCredential `json:"credentials"`
+}
+
+// WebauthnCredential wraps the webauthn.Credential with some more metadata.
+type WebauthnCredential struct {
+	webauthn.Credential
+	Name    string    `json:"name"`
+	AddedAt time.Time `json:"addedAt"`
 }
 
 func (u User) WebAuthnID() []byte {
@@ -100,7 +105,7 @@ func (u User) WebAuthnIcon() string {
 func (u User) WebAuthnCredentials() []webauthn.Credential {
 	var ret []webauthn.Credential
 	for _, v := range u.Credentials {
-		ret = append(ret, v)
+		ret = append(ret, v.Credential)
 	}
 	return ret
 }
@@ -178,17 +183,6 @@ func (db *DB) GetUserByID(userID string) (User, error) {
 	return v, nil
 }
 
-func (db *DB) GetActivatedUserByID(id string) (User, error) {
-	user, err := db.GetUserByID(id)
-	if err != nil {
-		return User{}, err
-	}
-	if !user.Activated {
-		return User{}, ErrUserNotActivated
-	}
-	return user, nil
-}
-
 func (db *DB) CreateUser(user User) (User, error) {
 	if user.ID != "" {
 		return User{}, fmt.Errorf("user ID already assigned")
@@ -198,7 +192,7 @@ func (db *DB) CreateUser(user User) (User, error) {
 	}
 	user.ID = uuid.NewString()
 	user.EnrollmentKey = uuid.NewString()
-	user.Credentials = make(map[string]webauthn.Credential)
+	user.Credentials = make(map[string]WebauthnCredential)
 	err := db.f.Write(func(db *schema) error {
 		if _, ok := db.Users[user.ID]; ok {
 			panic("generated UUID already in use")
@@ -252,7 +246,9 @@ func (db *DB) UpdateUserCredential(userID string, cred webauthn.Credential) erro
 		}
 		for k, v := range user.Credentials {
 			if bytes.Equal(cred.ID, v.ID) {
-				db.Users[userID].Credentials[k] = cred
+				c := db.Users[userID].Credentials[k]
+				c.Credential = cred
+				db.Users[userID].Credentials[k] = c
 				return nil
 			}
 		}
@@ -261,12 +257,15 @@ func (db *DB) UpdateUserCredential(userID string, cred webauthn.Credential) erro
 	return err
 }
 
-func (db *DB) CreateUserCredential(userID, name string, cred webauthn.Credential) error {
+func (db *DB) CreateUserCredential(userID, name string, cred WebauthnCredential) error {
 	err := db.f.Write(func(db *schema) error {
 		if _, ok := db.Users[userID]; !ok {
 			return ErrUserNotFound
 		}
-		db.Users[userID].Credentials[name] = cred
+		u := db.Users[userID]
+		u.EnrollmentKey = ""
+		u.Credentials[name] = cred
+		db.Users[userID] = u
 		return nil
 	})
 	return err
@@ -357,12 +356,15 @@ func migrateSQLToJSON(sqldb *storage, jsondb *DB) error {
 			ID:            user.ID,
 			Email:         user.Email,
 			FullName:      user.FullName,
-			Activated:     user.Activated,
 			EnrollmentKey: user.EnrollmentKey,
-			Credentials:   make(map[string]webauthn.Credential),
+			Credentials:   make(map[string]WebauthnCredential),
 		}
 		for _, cred := range user.Credentials {
-			newUser.Credentials[cred.Name] = cred.Credential
+			newUser.Credentials[cred.Name] = WebauthnCredential{
+				Credential: cred.Credential,
+				Name:       cred.Name,
+				AddedAt:    time.Now(),
+			}
 		}
 		if err := jsondb.createMigratedUser(newUser); err != nil {
 			return fmt.Errorf("json.createMigratedUser: %w", err)

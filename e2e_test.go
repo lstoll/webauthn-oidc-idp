@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -163,6 +164,8 @@ func TestE2E(t *testing.T) {
 		}
 		ep := registrationURL(issConfig.URL, user)
 
+		log.Printf("ep: %v", ep)
+
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {
@@ -196,13 +199,7 @@ func TestE2E(t *testing.T) {
 		case <-doneC:
 		}
 
-		// we need to mark the user as active for their credentials to be
-		// usable.
-		if err := activateUser(db, user.ID); err != nil {
-			t.Fatal(err)
-		}
-
-		user, err = db.GetActivatedUserByID(user.ID)
+		user, err = db.GetUserByID(user.ID)
 		if err != nil {
 			t.Fatal(err)
 		}

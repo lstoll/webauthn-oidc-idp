@@ -171,7 +171,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 
 	userID := string(parsedResponse.Response.UserHandle) // user handle is the webauthn.User#ID we registered with
 
-	user, err := s.db.GetActivatedUserByID(userID)
+	user, err := s.db.GetUserByID(userID)
 	if err != nil {
 		s.httpErr(rw, err)
 		return
@@ -247,7 +247,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	user, err := s.db.GetActivatedUserByID(authdUser.UserID)
+	user, err := s.db.GetUserByID(authdUser.UserID)
 	if err != nil {
 		s.httpErr(rw, err)
 		return
