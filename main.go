@@ -33,7 +33,7 @@ var staticFiles embed.FS
 func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging")
 
-	addr := flag.String("http", "127.0.0.1:8084", "Run the IDP server on the given host:port.")
+	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
 	configFile := flag.String("config", "config.json", "Path to the config file.")
 	enroll := flag.Bool("enroll", false, "Enroll a user into the system.")
 	email := flag.String("email", "", "Email address for the user.")
