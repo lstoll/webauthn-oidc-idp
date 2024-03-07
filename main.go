@@ -24,6 +24,7 @@ import (
 	"github.com/lstoll/oidc/discovery"
 	oidcm "github.com/lstoll/oidc/middleware"
 	"github.com/oklog/run"
+	"golang.org/x/sys/unix"
 )
 
 //go:embed web/public/*
@@ -32,7 +33,7 @@ var staticFiles embed.FS
 func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging")
 
-	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
+	addr := flag.String("http", "127.0.0.1:8084", "Run the IDP server on the given host:port.")
 	configFile := flag.String("config", "config.json", "Path to the config file.")
 	enroll := flag.Bool("enroll", false, "Enroll a user into the system.")
 	email := flag.String("email", "", "Email address for the user.")
@@ -290,7 +291,7 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 
 	var g run.Group
 
-	g.Add(run.SignalHandler(ctx, os.Interrupt))
+	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
 
 	g.Add(ksm.Run, ksm.Interrupt)
 

@@ -79,7 +79,8 @@ type KeysetManager struct {
 
 func NewKeysetManager(db *DB) (*KeysetManager, error) {
 	o := &KeysetManager{
-		db: db,
+		db:     db,
+		stopCh: make(chan struct{}),
 	}
 	for _, ks := range allKeysets {
 		if err := o.doRotate(ks); err != nil {
