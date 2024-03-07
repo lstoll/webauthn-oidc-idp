@@ -74,10 +74,6 @@ func TestE2E(t *testing.T) {
 
 	/* start an instance of the server */
 	db := openTestDB(t)
-	derivedKs, err := newDerivedKeyset("aaaaaaaaaaaaaaaaaaaa")
-	if err != nil {
-		t.Fatalf("deriving keyset: %v", err)
-	}
 
 	port := mustAllocatePort()
 
@@ -102,7 +98,7 @@ func TestE2E(t *testing.T) {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := serve(serveCtx, db, derivedKs, issConfig, net.JoinHostPort("localhost", port)); err != nil {
+		if err := serve(serveCtx, db, issConfig, net.JoinHostPort("localhost", port)); err != nil {
 			serveErr <- err
 		}
 	}()

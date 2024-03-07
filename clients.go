@@ -1,11 +1,8 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
-
-	"github.com/lstoll/oidc/core"
 )
 
 // reValidPublicRedirectUri is a fairly strict regular expression that must
@@ -70,66 +67,4 @@ func (s *staticClients) ValidateClientRedirectURI(clientID, redirectURI string) 
 	}
 
 	return false, nil
-}
-
-// errSourceNotFound is returned by multiClients when no source handles the
-// client.
-var errSourceNotFound = errors.New("no source found for client ID")
-
-// multiClients is a core.ClientSource that acts on a series of underlying client
-// sources. these are iterated in order, with the first client indicating a
-// client ID is valid being the source responsible for said client.
-type multiClients struct {
-	sources []core.ClientSource
-}
-
-func (m *multiClients) IsValidClientID(clientID string) (ok bool, err error) {
-	s, err := m.sourceForID(clientID)
-	if err != nil {
-		if err == errSourceNotFound {
-			// no source just means invalid client ID here
-			return false, nil
-		}
-		return false, err
-	}
-	return s.IsValidClientID(clientID)
-}
-
-func (m *multiClients) IsUnauthenticatedClient(clientID string) (ok bool, err error) {
-	s, err := m.sourceForID(clientID)
-	if err != nil {
-		return false, err
-	}
-	return s.IsUnauthenticatedClient(clientID)
-}
-
-func (m *multiClients) ValidateClientSecret(clientID, clientSecret string) (ok bool, err error) {
-	s, err := m.sourceForID(clientID)
-	if err != nil {
-		return false, err
-	}
-	return s.ValidateClientSecret(clientID, clientSecret)
-}
-
-func (m *multiClients) ValidateClientRedirectURI(clientID, redirectURI string) (ok bool, err error) {
-	s, err := m.sourceForID(clientID)
-	if err != nil {
-		return false, err
-	}
-	return s.ValidateClientRedirectURI(clientID, redirectURI)
-}
-
-// sourceForID finds the first source for which the client ID is valid, and
-// returns it. If no source found, an error is returned
-func (m *multiClients) sourceForID(clientID string) (core.ClientSource, error) {
-	for _, cs := range m.sources {
-		ok, err := cs.IsValidClientID(clientID)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			return cs, nil
-		}
-	}
-	return nil, errSourceNotFound
 }

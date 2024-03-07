@@ -15,7 +15,7 @@ type (
 )
 
 // baseMiddleware should wrap all requests to the service
-func baseMiddleware(wrapped http.Handler, wnsessmgr *cookiesession.Manager[webSession, *webSession], oidmsessmgr *cookiesession.Manager[oidcMiddlewareSession, *oidcMiddlewareSession]) http.Handler {
+func baseMiddleware(wrapped http.Handler, wnsessmgr *cookiesession.Manager[webSession, *webSession]) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		st := time.Now()
 
@@ -33,9 +33,7 @@ func baseMiddleware(wrapped http.Handler, wnsessmgr *cookiesession.Manager[webSe
 		}
 
 		wnsessmgr.Wrap(
-			oidmsessmgr.Wrap(
-				wrapped,
-			),
+			wrapped,
 		).ServeHTTP(ww, r)
 
 		logger.Info("http request",

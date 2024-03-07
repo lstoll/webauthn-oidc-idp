@@ -1,6 +1,5 @@
 {
 	"databaseFile": "db/dev.json",
-	"encryptionKey": "${ENCRYPTION_KEY}",
 	"issuers": [
 		{
 			"url": "http://localhost:8085",

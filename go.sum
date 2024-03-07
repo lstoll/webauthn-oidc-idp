@@ -39,6 +39,8 @@ github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80 h1:6Yzfa6GP0rIo/kUL
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
 github.com/lstoll/cookiesession v0.0.0-20240227024017-31867f99cfc2 h1:1j7ORT6GUIrVLEjQLuIpu0fv97dYmZpDoxyB+lpH988=
 github.com/lstoll/cookiesession v0.0.0-20240227024017-31867f99cfc2/go.mod h1:Jx9DhXX7rfJZmHI5iXXVNVE4mSJiESOmKG0oLOsWK54=
+github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9 h1:4iHGC6XR3UV057pCVjkupYBsIiMk7XnDp0DPu8RB9CM=
+github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9/go.mod h1:6ncG4bHWXCWDe+m6b9C2cvg1eCJpHiCkkl6DFJBOAeo=
 github.com/lstoll/oidc v0.0.0-20240302161652-ec893a64705d h1:syo+9j68ijq9IgZWR0vYRZ84hKN+xiCQfpOu7ESBaTY=
 github.com/lstoll/oidc v0.0.0-20240302161652-ec893a64705d/go.mod h1:5Ab35X/xQmWVkTsWAZgSY7+vvgmH5CGEXpPEkpMd0cw=
 github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=

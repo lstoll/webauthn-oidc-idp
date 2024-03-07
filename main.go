@@ -17,13 +17,11 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
-	"github.com/justinas/nosurf"
 	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/discovery"
-	oidcm "github.com/lstoll/oidc/middleware"
 	"github.com/oklog/run"
+	"github.com/tink-crypto/tink-go/v2/keyset"
 	"golang.org/x/sys/unix"
 )
 
@@ -111,16 +109,12 @@ func main() {
 
 	issuer := cfg.Issuer[0]
 
-	ks, err := newDerivedKeyset(cfg.EncryptionKey, cfg.PrevEncryptionKey...)
-	if err != nil {
-		fatalf("derive keyset: %v", err)
-	}
-	if err := serve(ctx, db, ks, issuer, *addr); err != nil {
+	if err := serve(ctx, db, issuer, *addr); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerConfig, addr string) error {
+func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error {
 	ksm, err := NewKeysetManager(db)
 	if err != nil {
 		return fmt.Errorf("creating OIDC keyset manager: %w", err)
@@ -142,13 +136,7 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 		return fmt.Errorf("configuring metadata handler: %w", err)
 	}
 
-	clients := &multiClients{
-		sources: []core.ClientSource{
-			&staticClients{
-				clients: issuer.Client,
-			},
-		},
-	}
+	clients := &staticClients{clients: issuer.Client}
 
 	oidcsvr, err := core.New(&core.Config{
 		AuthValidityTime: 5 * time.Minute,
@@ -158,22 +146,21 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
 
-	wsSessKeys := &cookiesession.StaticKeys{Encryption: appKeys.webSessCurr, Decryption: appKeys.webSessPrev}
-	webSessMgr, err := cookiesession.New[webSession](wsSessKeys, cookiesession.Options{
+	webSessMgr, err := cookiesession.New[webSession]("idp", func() *keyset.Handle {
+		h, err := ksm.Handles(KeysetCookie).Handle(context.Background())
+		if err != nil {
+			// we should not hit this, the load comes from the DB TODO(lstoll)
+			// get a consistent way of looking up handles.
+			slog.Error("refreshing keyset", logErr(err))
+			os.Exit(1)
+		}
+		return h
+	}, cookiesession.Options{
 		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
 		Path:   "/",
 	})
 	if err != nil {
 		return fmt.Errorf("creating cookie session for webauthn: %w", err)
-	}
-
-	oidcmSessKeys := &cookiesession.StaticKeys{Encryption: appKeys.oidcmSessCurr, Decryption: appKeys.oidcmSessPrev}
-	oidcmSessMgr, err := cookiesession.New[oidcMiddlewareSession](oidcmSessKeys, cookiesession.Options{
-		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
-		Path:   "/",
-	})
-	if err != nil {
-		return fmt.Errorf("creating cookie session for oidc middleware: %w", err)
 	}
 
 	mux := http.NewServeMux()
@@ -200,43 +187,11 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 	}
 
 	// start configuration of webauthn manager
-	oidcSess, err := oidcm.NewMemorySessionStore(http.Cookie{Name: "oidc-login", Path: "/", HttpOnly: true})
-	if err != nil {
-		return fmt.Errorf("creating OIDC middleware session store: %w", err)
-	}
 	mgr := &webauthnManager{
 		db:       db,
 		webauthn: wn,
 		sessmgr:  webSessMgr,
-		oidcMiddleware: &oidcm.Handler{
-			Issuer:       issuer.URL.String(),
-			ClientID:     uuid.New().String(), // TODO - something that will live beyond restarts
-			ClientSecret: uuid.New().String(),
-			BaseURL:      issuer.URL.String(),
-			RedirectURL:  issuer.URL.String() + "/local-oidc-callback",
-			SessionStore: oidcSess,
-		},
-		csrfMiddleware: nosurf.NewPure,
-		// admins: p.Webauthn.AdminSubjects, // TODO - google account id
-		acrs: nil,
 	}
-	// this is a dumb hack, because we use the middleware super
-	// restrictively but it needs to catch it's callback.
-	mux.Handle("/local-oidc-callback", mgr.oidcMiddleware.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("should never get here?"))
-	})))
-
-	clients.sources = append([]core.ClientSource{
-		&staticClients{
-			clients: []clientConfig{
-				{
-					ClientID:     mgr.oidcMiddleware.ClientID,
-					ClientSecret: []string{mgr.oidcMiddleware.ClientSecret},
-					RedirectURL:  []string{mgr.oidcMiddleware.RedirectURL},
-				},
-			},
-		},
-	}, clients.sources...)
 
 	mgr.AddHandlers(mux)
 
@@ -299,7 +254,7 @@ func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerCon
 	// but we shouldn't save it. but, we need it for logging and stuff. TODO
 	// at some point consider splitting the middleware, but then we might
 	// need to dup the middleware wrap or something.
-	hh := baseMiddleware(mux, webSessMgr, oidcmSessMgr)
+	hh := baseMiddleware(mux, webSessMgr)
 
 	hs := &http.Server{
 		Addr:    addr,

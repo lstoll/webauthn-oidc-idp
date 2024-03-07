@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/lstoll/oidc/middleware"
 )
 
 // pendingWebauthnEnrollment tracks enrollment info across an authenticator
@@ -20,7 +19,8 @@ type pendingWebauthnEnrollment struct {
 // webauthnLogin tracks data for a login session
 type webauthnLoginData struct {
 	// LoginSessionID is the current OIDC session ID for the flow
-	LoginSessionID      string                `json:"login_session_id"`
+	LoginSessionID string `json:"login_session_id"`
+	// WebauthnSessionData is the data for the in-process login
 	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
 	// AuthdUser tracks information about the user we just authenticated, for
 	// when we send the user to the login finished page.
@@ -36,18 +36,4 @@ type webauthnLogin struct {
 type webSession struct {
 	PendingWebauthnEnrollment *pendingWebauthnEnrollment `json:"pending_webauthn_enrollment,omitempty"`
 	WebauthnLogin             *webauthnLoginData         `json:"webauthn_login,omitempty"`
-}
-
-func (webSession) SessionName() string {
-	return "idp"
-}
-
-// oidcMiddlewareSession is the session we persist and load for the OIDC
-// middleware. It just wraps the upstream data, so we can add a session name.
-type oidcMiddlewareSession struct {
-	middleware.SessionData
-}
-
-func (oidcMiddlewareSession) SessionName() string {
-	return "oidc-mw"
 }

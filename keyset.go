@@ -127,7 +127,7 @@ func (o *KeysetManager) doRotate(ks Keyset) error {
 	}
 
 	if cks.Keyset == nil {
-		slog.Info("provisioning new OIDC keyset")
+		slog.Info("provisioning new keyset", slog.String("keyset", ks.Name))
 
 		// new keyset. provision both current and upcoming key.
 		h, err := keyset.NewHandle(ks.Template)

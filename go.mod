@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/justinas/nosurf v1.1.1
-	github.com/lstoll/cookiesession v0.0.0-20240227024017-31867f99cfc2
+	github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9
 	github.com/lstoll/oidc v0.0.0-20240302161652-ec893a64705d
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/oklog/run v1.1.0
