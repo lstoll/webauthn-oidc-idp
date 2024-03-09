@@ -36,10 +36,24 @@ func baseMiddleware(wrapped http.Handler, wnsessmgr *cookiesession.Manager[webSe
 			wrapped,
 		).ServeHTTP(ww, r)
 
+		if ww.st == 0 {
+			// WriteHeader is not guaranteed to be called, so we need to set a
+			// default.
+			ww.st = http.StatusOK
+		}
+
+		remoteAddr := r.RemoteAddr
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// append the real remote address to the xff, in case it is spoofed
+			// etc.
+			remoteAddr = xff + ", " + remoteAddr
+		}
+
 		logger.Info("http request",
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", ww.st),
+			slog.String("remote-address", remoteAddr),
 			slog.Duration("duration", time.Since(st)))
 	})
 }
