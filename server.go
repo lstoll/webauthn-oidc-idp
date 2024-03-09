@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,38 +121,19 @@ func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 }
 
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
-	// A lot of this is lifted from the webauthn.BeginLogin message, but doing it
-	// directly because we aren't hinting the user.
-
-	challenge, err := protocol.CreateChallenge()
+	response, sessionData, err := s.webauthn.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
-		s.httpErr(rw, err)
+		slog.Error("starting discoverable login", logErr(err))
+		s.httpErr(rw, errors.New("no active login session"))
 		return
 	}
-
-	requestOptions := protocol.PublicKeyCredentialRequestOptions{
-		Challenge:        challenge,
-		Timeout:          int(s.webauthn.Config.Timeouts.Login.Timeout),
-		RelyingPartyID:   s.webauthn.Config.RPID,
-		UserVerification: s.webauthn.Config.AuthenticatorSelection.UserVerification,
-		// AllowedCredentials: allowedCredentials, // this is what we don't send for resident/usernameless
-	}
-
-	sessionData := webauthn.SessionData{
-		Challenge: base64.RawURLEncoding.EncodeToString(challenge),
-		// UserID:               user.WebAuthnID(),
-		AllowedCredentialIDs: requestOptions.GetAllowedCredentialIDs(),
-		UserVerification:     requestOptions.UserVerification,
-	}
-
-	response := protocol.CredentialAssertion{Response: requestOptions}
 
 	sess := s.sessmgr.Get(req.Context())
 	if sess.WebauthnLogin == nil {
 		s.httpErr(rw, errors.New("no active login session"))
 		return
 	}
-	sess.WebauthnLogin.WebauthnSessionData = &sessionData
+	sess.WebauthnLogin.WebauthnSessionData = sessionData
 	s.sessmgr.Save(req.Context(), sess)
 
 	if err := json.NewEncoder(rw).Encode(response); err != nil {

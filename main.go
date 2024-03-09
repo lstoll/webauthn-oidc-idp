@@ -179,8 +179,10 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 		}
 		return h
 	}, cookiesession.Options{
-		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
-		Path:   "/",
+		MaxAge:   0, // Scopes it to browser lifecycle, which I think is good for now
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Insecure: issuer.URL.Hostname() == "localhost", // safari is picky about this
 	})
 	if err != nil {
 		return fmt.Errorf("creating cookie session for webauthn: %w", err)
@@ -193,16 +195,15 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 
 	heh := &httpErrHandler{}
 
-	// TODO - usernameless via resident keys would be nice, but need to
-	// see what support is like.
-	rrk := false
 	wn, err := webauthn.New(&webauthn.Config{
 		RPDisplayName: issuer.URL.Hostname(), // Display Name for your site
 		RPID:          issuer.URL.Hostname(), // Generally the FQDN for your site
-		RPOrigin:      issuer.URL.String(),   // The origin URL for WebAuthn requests
+		RPOrigins: []string{
+			issuer.URL.String(),
+		},
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			UserVerification:   protocol.VerificationRequired,
-			RequireResidentKey: &rrk,
+			RequireResidentKey: ptr(true),
 		},
 	})
 	if err != nil {
@@ -341,4 +342,8 @@ func fatalf(s string, args ...any) {
 
 func logErr(err error) slog.Attr {
 	return slog.Any("error", err)
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
