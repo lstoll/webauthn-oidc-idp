@@ -99,6 +99,7 @@ func (o *KeysetManager) Handles(keyset Keyset) *KeysetHandles {
 // update handles on this manager instance.
 func (o KeysetManager) Run() error {
 	t := time.NewTicker(keysetRotateCheckInterval)
+	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
