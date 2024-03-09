@@ -57,7 +57,7 @@ func (k *KeysetHandles) Handle(context.Context) (*keyset.Handle, error) {
 	return h, nil
 }
 
-// PublicHandle returns a handle to the current keyset, only including private
+// PublicHandle returns a handle to the current keyset, only including public
 // keys if they keyset supports this.
 func (k *KeysetHandles) PublicHandle(ctx context.Context) (*keyset.Handle, error) {
 	h, err := k.Handle(ctx)
