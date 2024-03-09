@@ -38,7 +38,7 @@ func main() {
 	email := flag.String("email", "", "Email address for the user.")
 	fullname := flag.String("fullname", "", "Full name of the user.")
 	addCredential := flag.Bool("add-credential", false, "Generate a new credential enrollment URL for a user")
-	userID := flag.String("user-id", "", "ID of user add credential to.")
+	userID := flag.String("user-id", "", "ID of user to add credential to.")
 	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
 
 	flag.Parse()
