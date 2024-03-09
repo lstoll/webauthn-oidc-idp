@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -210,7 +209,6 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 	if err != nil {
 		return fmt.Errorf("configuring webauthn: %w", err)
 	}
-	log.Printf("webaithn: %#v", wn.Config)
 
 	// start configuration of webauthn manager
 	mgr := &webauthnManager{
