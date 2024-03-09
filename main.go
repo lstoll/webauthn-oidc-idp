@@ -19,6 +19,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/lstoll/cookiesession"
+	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
@@ -149,6 +150,8 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 	oidcmd := discovery.DefaultCoreMetadata(issuer.URL.String())
 	oidcmd.AuthorizationEndpoint = issuer.URL.String() + "/auth"
 	oidcmd.TokenEndpoint = issuer.URL.String() + "/token"
+	oidcmd.ScopesSupported = []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile, "offline"}
+	oidcmd.UserinfoEndpoint = issuer.URL.String() + "/userinfo"
 
 	discoh, err := discovery.NewConfigurationHandler(oidcmd, oidcHandles)
 	if err != nil {

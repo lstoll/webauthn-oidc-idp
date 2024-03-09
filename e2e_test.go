@@ -115,6 +115,17 @@ func TestE2E(t *testing.T) {
 		t.Fatal("server startup timed out")
 	}
 
+	provider, err := oidc.DiscoverProvider(ctx, issConfig.URL.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oa2Cfg := oauth2.Config{
+		ClientID:     "test-cli",
+		ClientSecret: "public",
+		Endpoint:     provider.Endpoint(),
+		Scopes:       []string{oidc.ScopeOpenID},
+	}
+
 	// not strictly needed for the E2E tests.
 	reloadDB(net.JoinHostPort("localhost", port))
 
@@ -213,7 +224,7 @@ func TestE2E(t *testing.T) {
 	clearErrchan(chromeErrC)
 
 	testOk = t.Run("Successful Login", func(t *testing.T) {
-		tokC, loginErrC := cliLoginFlow(ctx, t, issConfig.URL.String())
+		tokC, loginErrC := cliLoginFlow(ctx, t, oa2Cfg)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -229,6 +240,11 @@ func TestE2E(t *testing.T) {
 
 		select {
 		case tok := <-tokC:
+			ui, err := provider.Userinfo(ctx, oa2Cfg.TokenSource(ctx, tok))
+			if err != nil {
+				t.Fatalf("getting userinfo: %v", err)
+			}
+			t.Logf("userinfo: %v", ui)
 			// positive case
 			//
 			// TODO(lstoll) get userinfo
@@ -257,7 +273,7 @@ func TestE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		tokC, errC := cliLoginFlow(ctx, t, issConfig.URL.String())
+		tokC, errC := cliLoginFlow(ctx, t, oa2Cfg)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -305,20 +321,8 @@ func TestE2E(t *testing.T) {
 // If an error occurs, that will be returned on that channel. It is the callers
 // responsibility to complete the flow - this will only get you to the initial
 // URL for the flow.
-func cliLoginFlow(ctx context.Context, t *testing.T, issuer string) (chan *oauth2.Token, chan error) { //nolint:thelper // it's not that kind of helper
+func cliLoginFlow(ctx context.Context, t *testing.T, oa2Cfg oauth2.Config) (chan *oauth2.Token, chan error) { //nolint:thelper // it's not that kind of helper
 	openCh := make(chan struct{}, 1)
-
-	provider, err := oidc.DiscoverProvider(ctx, issuer, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	oa2Cfg := oauth2.Config{
-		ClientID:     "test-cli",
-		ClientSecret: "public",
-		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID},
-	}
 
 	cli, err := clitoken.NewSource(ctx, oa2Cfg, clitoken.WithOpener(&chromeDPOpener{notifyCh: openCh}))
 	if err != nil {
