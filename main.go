@@ -24,6 +24,7 @@ import (
 	"github.com/lstoll/oidc/discovery"
 	oidcm "github.com/lstoll/oidc/middleware"
 	"github.com/oklog/run"
+	"golang.org/x/sys/unix"
 )
 
 //go:embed web/public/*
@@ -114,19 +115,28 @@ func main() {
 	if err != nil {
 		fatalf("derive keyset: %v", err)
 	}
-	if err := serve(ctx, db, ks, issuer, cfg.OIDCRotationInterval, cfg.OIDCMaxAge, *addr); err != nil {
+	if err := serve(ctx, db, ks, issuer, *addr); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConfig, _, _ time.Duration, addr string) error {
+func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerConfig, addr string) error {
+	ksm, err := NewKeysetManager(db)
+	if err != nil {
+		return fmt.Errorf("creating OIDC keyset manager: %w", err)
+	}
+
 	oidcmd := discovery.ProviderMetadata{
 		Issuer:                issuer.URL.String(),
 		JWKSURI:               issuer.URL.String() + "/keys",
 		AuthorizationEndpoint: issuer.URL.String() + "/auth",
 		TokenEndpoint:         issuer.URL.String() + "/token",
 	}
-	keysh := discovery.NewKeysHandler(db.KeySource(), 1*time.Hour)
+	oidcHandles := ksm.Handles(KeysetOIDC)
+	keysh, err := discovery.NewKeysHandler(oidcHandles.PublicHandle, 1*time.Hour)
+	if err != nil {
+		return fmt.Errorf("creating discovery keys handler: %w", err)
+	}
 	discoh, err := discovery.NewConfigurationHandler(&oidcmd, discovery.WithCoreDefaults())
 	if err != nil {
 		return fmt.Errorf("configuring metadata handler: %w", err)
@@ -143,12 +153,12 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 	oidcsvr, err := core.New(&core.Config{
 		AuthValidityTime: 5 * time.Minute,
 		CodeValidityTime: 5 * time.Minute,
-	}, db.SessionManager(), clients, db.Signer())
+	}, db.SessionManager(), clients, oidcHandles.Handle)
 	if err != nil {
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
 
-	wsSessKeys := &cookiesession.StaticKeys{Encryption: keyset.webSessCurr, Decryption: keyset.webSessPrev}
+	wsSessKeys := &cookiesession.StaticKeys{Encryption: appKeys.webSessCurr, Decryption: appKeys.webSessPrev}
 	webSessMgr, err := cookiesession.New[webSession](wsSessKeys, cookiesession.Options{
 		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
 		Path:   "/",
@@ -157,7 +167,7 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 		return fmt.Errorf("creating cookie session for webauthn: %w", err)
 	}
 
-	oidcmSessKeys := &cookiesession.StaticKeys{Encryption: keyset.oidcmSessCurr, Decryption: keyset.oidcmSessPrev}
+	oidcmSessKeys := &cookiesession.StaticKeys{Encryption: appKeys.oidcmSessCurr, Decryption: appKeys.oidcmSessPrev}
 	oidcmSessMgr, err := cookiesession.New[oidcMiddlewareSession](oidcmSessKeys, cookiesession.Options{
 		MaxAge: 0, // Scopes it to browser lifecycle, which I think is good for now
 		Path:   "/",
@@ -190,6 +200,10 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 	}
 
 	// start configuration of webauthn manager
+	oidcSess, err := oidcm.NewMemorySessionStore(http.Cookie{Name: "oidc-login", Path: "/", HttpOnly: true})
+	if err != nil {
+		return fmt.Errorf("creating OIDC middleware session store: %w", err)
+	}
 	mgr := &webauthnManager{
 		db:       db,
 		webauthn: wn,
@@ -200,10 +214,7 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 			ClientSecret: uuid.New().String(),
 			BaseURL:      issuer.URL.String(),
 			RedirectURL:  issuer.URL.String() + "/local-oidc-callback",
-			SessionStoreV2: &oidcMiddlewareSessionStore{
-				mgr: oidcmSessMgr,
-			},
-			SessionName: "webauthn-manager",
+			SessionStore: oidcSess,
 		},
 		csrfMiddleware: nosurf.NewPure,
 		// admins: p.Webauthn.AdminSubjects, // TODO - google account id
@@ -280,7 +291,9 @@ func serve(ctx context.Context, db *DB, keyset *derivedKeyset, issuer issuerConf
 
 	var g run.Group
 
-	g.Add(run.SignalHandler(ctx, os.Interrupt))
+	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
+
+	g.Add(ksm.Run, ksm.Interrupt)
 
 	// this will always try and create a session for discovery and stuff,
 	// but we shouldn't save it. but, we need it for logging and stuff. TODO
