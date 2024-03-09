@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/discovery"
@@ -36,8 +37,9 @@ func main() {
 	enroll := flag.Bool("enroll", false, "Enroll a user into the system.")
 	email := flag.String("email", "", "Email address for the user.")
 	fullname := flag.String("fullname", "", "Full name of the user.")
-	activate := flag.Bool("activate", false, "Activate an enrolled user.")
-	userID := flag.String("user-id", "", "ID of user to activate.")
+	addCredential := flag.Bool("add-credential", false, "Generate a new credential enrollment URL for a user")
+	userID := flag.String("user-id", "", "ID of user to add credential to.")
+	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
 
 	flag.Parse()
 
@@ -82,9 +84,8 @@ func main() {
 		}
 
 		user, err := db.CreateUser(User{
-			Email:     *email,
-			FullName:  *fullname,
-			Activated: false,
+			Email:    *email,
+			FullName: *fullname,
 		})
 		if err != nil {
 			fatalf("create user: %v", err)
@@ -92,14 +93,36 @@ func main() {
 		reloadDB(*addr)
 		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
 		return
-	} else if *activate {
+	} else if *addCredential {
 		if *userID == "" {
 			fatal("required flag missing: user-id")
 		}
-		if err := activateUser(db, *userID); err != nil {
-			fatalf("ativate user: %v", err)
+		user, err := db.GetUserByID(*userID)
+		if err != nil {
+			fatalf("get user %s: %w", userID, err)
 		}
+
+		user.EnrollmentKey = uuid.NewString()
+
+		if err := db.UpdateUser(user); err != nil {
+			fatalf("update user %s: %w", userID, err)
+		}
+
 		reloadDB(*addr)
+		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
+		return
+	} else if *listCredential {
+		if *userID == "" {
+			fatal("required flag missing: user-id")
+		}
+		user, err := db.GetUserByID(*userID)
+		if err != nil {
+			fatalf("get user %s: %w", userID, err)
+		}
+
+		for _, c := range user.Credentials {
+			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.AddedAt)
+		}
 		return
 	}
 
@@ -291,26 +314,6 @@ func registrationURL(iss *url.URL, user User) *url.URL {
 	q.Add("enrollment_token", user.EnrollmentKey)
 	u2.RawQuery = q.Encode()
 	return u2
-}
-
-// activateUser marks the user as activated and deletes its enrollment key.
-// Must be called after the user has completed the registration flow.
-func activateUser(db *DB, userID string) error {
-	user, err := db.GetUserByID(userID)
-	if err != nil {
-		return fmt.Errorf("get user %s: %w", userID, err)
-	}
-
-	user.EnrollmentKey = ""
-	user.Activated = true
-
-	if err := db.UpdateUser(user); err != nil {
-		return fmt.Errorf("update user %s: %w", userID, err)
-	}
-
-	fmt.Println("Done.")
-
-	return nil
 }
 
 // reloadDB tells the server running on addr to reload its database from disk.

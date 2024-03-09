@@ -196,13 +196,7 @@ func TestE2E(t *testing.T) {
 		case <-doneC:
 		}
 
-		// we need to mark the user as active for their credentials to be
-		// usable.
-		if err := activateUser(db, user.ID); err != nil {
-			t.Fatal(err)
-		}
-
-		user, err = db.GetActivatedUserByID(user.ID)
+		user, err = db.GetUserByID(user.ID)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -26,18 +27,13 @@ type webauthnManager struct {
 func (w *webauthnManager) AddHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/registration/begin", w.beginRegistration)
 	mux.HandleFunc("/registration/finish", w.finishRegistration)
-	mux.HandleFunc("/registration", w.registration)
+	mux.HandleFunc("GET /registration", w.registration)
 }
 
 // registration is a page used to add a new key. It should handle either a user
 // in the session (from the logged in keys page), or a boostrap token and user
 // id as query params for an inactive user.
 func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodGet {
-		http.Error(rw, "Invalid Method", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// first, check the URL for a registration token and user id. If it exists,
 	// check if we have the user and if they are active/with a matching token,
 	// embed it in the page.
@@ -50,8 +46,8 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 			w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", uid, err))
 			return
 		}
-		if user.Activated || subtle.ConstantTimeCompare([]byte(et), []byte(user.EnrollmentKey)) == 0 {
-			w.httpUnauth(rw, "invalid enrollment")
+		if user.EnrollmentKey == "" || subtle.ConstantTimeCompare([]byte(et), []byte(user.EnrollmentKey)) == 0 {
+			w.httpUnauth(rw, "either previous enrollment completed fine, or invalid enrollment")
 			return
 		}
 		sess := w.sessmgr.Get(req.Context())
@@ -145,7 +141,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	if err := w.db.CreateUserCredential(user.ID, keyName, *credential); err != nil {
+	if err := w.db.CreateUserCredential(user.ID, keyName, WebauthnCredential{Credential: *credential, Name: keyName, AddedAt: time.Now()}); err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
 	}

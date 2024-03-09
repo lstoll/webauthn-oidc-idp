@@ -82,16 +82,6 @@ func TestUsers(t *testing.T) {
 		t.Fatalf("want GetUserByID to return user not found error, got: %v", err)
 	}
 
-	if _, err := db.GetActivatedUserByID(newUser.ID); err != ErrUserNotActivated {
-		t.Fatalf("want GetActivatedUserByID to return user not activated error, got: %v", err)
-	}
-
-	newUser.Activated = true
-
-	if err := db.UpdateUser(newUser); err != nil {
-		t.Fatalf("UpdateUser: %v", err)
-	}
-
 	user2, err := db.CreateUser(User{Email: "me@example.com"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -99,7 +89,7 @@ func TestUsers(t *testing.T) {
 	if err := db.UpdateUser(User{ID: user2.ID, Email: user.Email}); err != ErrUserEmailTaken {
 		t.Fatalf("UpdateUser did not reject non-unique email, got: %v", err)
 	}
-	err = db.CreateUserCredential(user2.ID, "1pass", webauthn.Credential{ID: []byte("ID")})
+	err = db.CreateUserCredential(user2.ID, "1pass", WebauthnCredential{Credential: webauthn.Credential{ID: []byte("ID")}})
 	if err != nil {
 		t.Fatalf("AddCredentialToUser: %v", err)
 	}
@@ -108,7 +98,7 @@ func TestUsers(t *testing.T) {
 		t.Fatal("UpdateUser: want missing user ID error")
 	}
 
-	err = db.CreateUserCredential(newUser.ID, "test", webauthn.Credential{ID: []byte("ID")})
+	err = db.CreateUserCredential(newUser.ID, "test", WebauthnCredential{Credential: webauthn.Credential{ID: []byte("ID")}})
 	if err != nil {
 		t.Fatalf("AddCredentialToUser: %v", err)
 	}
@@ -122,7 +112,7 @@ func TestUsers(t *testing.T) {
 		t.Errorf("want user to have 1 credentials, got %d", len(user.Credentials))
 	}
 
-	if err := db.UpdateUserCredential(user.ID, user.Credentials["test"]); err != nil {
+	if err := db.UpdateUserCredential(user.ID, user.Credentials["test"].Credential); err != nil {
 		t.Fatalf("UpdateUserCredential: %v", err)
 	}
 	if err := db.UpdateUserCredential(user.ID, webauthn.Credential{}); err != ErrCredentialNotFound {
@@ -194,10 +184,6 @@ func TestMigrateSQLToJSON(t *testing.T) {
 
 	if err := migrateSQLToJSON(sqldb, jsondb); err != nil {
 		t.Fatalf("migrateSQLToJSON: %v", err)
-	}
-
-	if _, err = jsondb.GetActivatedUserByID(user.ID); err != nil {
-		t.Fatalf("jsondb.GetActivatedUserByID: %v", err)
 	}
 
 	user2, err := jsondb.GetUserByID(user.ID)
