@@ -5,12 +5,12 @@
 			"url": "http://localhost:8085",
 			"clients": [
 				{
-					"clientID": "client-id",
+					"id": "client-id",
 					"clientSecrets": ["client-secret"],
 					"redirectURLs": ["http://localhost:8084/callback"]
 				},
 				{
-					"clientID": "cli",
+					"id": "cli",
 					"public": true,
 					"permitLocalhostRedirect": true
 				}
