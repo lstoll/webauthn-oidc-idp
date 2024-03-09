@@ -115,12 +115,12 @@ func main() {
 	if err != nil {
 		fatalf("derive keyset: %v", err)
 	}
-	if err := serve(ctx, db, ks, issuer, cfg.OIDCRotationInterval, cfg.OIDCMaxAge, *addr); err != nil {
+	if err := serve(ctx, db, ks, issuer, *addr); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerConfig, _, _ time.Duration, addr string) error {
+func serve(ctx context.Context, db *DB, appKeys *derivedKeyset, issuer issuerConfig, addr string) error {
 	ksm, err := NewKeysetManager(db)
 	if err != nil {
 		return fmt.Errorf("creating OIDC keyset manager: %w", err)

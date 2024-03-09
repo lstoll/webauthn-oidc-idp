@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 )
 
 type config struct {
@@ -15,11 +14,9 @@ type config struct {
 	// TODO(sr) rename databaseFile and delete config.SQLDatabse.
 	SQLDatabase string `json:"database"`
 
-	EncryptionKey        string         `json:"encryptionKey"`
-	PrevEncryptionKey    []string       `json:"previousEncryptionKeys"`
-	OIDCMaxAge           time.Duration  `json:"oidcMaxAge"`
-	OIDCRotationInterval time.Duration  `json:"oidcRotatationInterval"`
-	Issuer               []issuerConfig `json:"issuers"`
+	EncryptionKey     string         `json:"encryptionKey"`
+	PrevEncryptionKey []string       `json:"previousEncryptionKeys"`
+	Issuer            []issuerConfig `json:"issuers"`
 }
 
 type issuerConfig struct {
