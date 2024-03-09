@@ -123,15 +123,6 @@ func main() {
 		for _, c := range user.Credentials {
 			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.AddedAt)
 		}
-
-		user.EnrollmentKey = uuid.NewString()
-
-		if err := db.UpdateUser(user); err != nil {
-			fatalf("update user %s: %w", userID, err)
-		}
-
-		reloadDB(*addr)
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
 		return
 	}
 
