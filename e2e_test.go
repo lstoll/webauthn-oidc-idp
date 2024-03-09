@@ -224,7 +224,7 @@ func TestE2E(t *testing.T) {
 	clearErrchan(chromeErrC)
 
 	testOk = t.Run("Successful Login", func(t *testing.T) {
-		tokC, loginErrC := cliLoginFlow(ctx, t, provider, oa2Cfg)
+		tokC, loginErrC := cliLoginFlow(ctx, t, oa2Cfg)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -273,7 +273,7 @@ func TestE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		tokC, errC := cliLoginFlow(ctx, t, provider, oa2Cfg)
+		tokC, errC := cliLoginFlow(ctx, t, oa2Cfg)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -321,7 +321,7 @@ func TestE2E(t *testing.T) {
 // If an error occurs, that will be returned on that channel. It is the callers
 // responsibility to complete the flow - this will only get you to the initial
 // URL for the flow.
-func cliLoginFlow(ctx context.Context, t *testing.T, provider *oidc.Provider, oa2Cfg oauth2.Config) (chan *oauth2.Token, chan error) { //nolint:thelper // it's not that kind of helper
+func cliLoginFlow(ctx context.Context, t *testing.T, oa2Cfg oauth2.Config) (chan *oauth2.Token, chan error) { //nolint:thelper // it's not that kind of helper
 	openCh := make(chan struct{}, 1)
 
 	cli, err := clitoken.NewSource(ctx, oa2Cfg, clitoken.WithOpener(&chromeDPOpener{notifyCh: openCh}))
