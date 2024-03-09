@@ -93,17 +93,18 @@ func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
 			return nil, fmt.Errorf("get authentication for session %s", tr.SessionID)
 		}
 
-		idt := tr.PrefillIDToken(s.issuer, auth.Subject, time.Now().Add(s.tokenValidFor))
+		idt := tr.PrefillIDToken(auth.Subject, time.Now().Add(s.tokenValidFor))
+		at := tr.PrefillAccessToken(auth.Subject, time.Now().Add(s.tokenValidFor))
 
-		// oauth2 proxy wants this, when we don't have useinfo
+		// oauth2 proxy wants this, when we don't have userinfo
 		// TODO - scopes/userinfo etc.
 		idt.Extra["email"] = auth.Email
 		idt.Extra["email_verified"] = true
 
 		return &core.TokenResponse{
-			AccessTokenValidUntil:  time.Now().Add(s.tokenValidFor),
 			RefreshTokenValidUntil: time.Now().Add(s.refreshValidFor),
 			IssueRefreshToken:      tr.SessionRefreshable, // always allow it if we want it
+			AccessToken:            at,
 			IDToken:                idt,
 		}, nil
 	})

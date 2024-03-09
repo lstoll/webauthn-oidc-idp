@@ -11,11 +11,12 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/justinas/nosurf v1.1.1
 	github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9
-	github.com/lstoll/oidc v0.0.0-20240302161652-ec893a64705d
+	github.com/lstoll/oidc v1.0.0-alpha.1
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/oklog/run v1.1.0
 	github.com/tink-crypto/tink-go/v2 v2.1.0
-	golang.org/x/crypto v0.20.0
+	golang.org/x/oauth2 v0.17.0
+	golang.org/x/sys v0.17.0
 )
 
 require (
@@ -32,8 +33,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/oauth2 v0.17.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
+	golang.org/x/crypto v0.20.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

@@ -11,9 +11,8 @@
 				},
 				{
 					"clientID": "cli",
-					"clientSecrets": ["secret"],
 					"public": true,
-					"redirectURLs": ["http://localhost"]
+					"permitLocalhostRedirect": true
 				}
 			]
 		}

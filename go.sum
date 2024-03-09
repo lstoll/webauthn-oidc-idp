@@ -37,12 +37,10 @@ github.com/justinas/nosurf v1.1.1 h1:92Aw44hjSK4MxJeMSyDa7jwuI9GR2J/JCQiaKvXXSlk
 github.com/justinas/nosurf v1.1.1/go.mod h1:ALpWdSbuNGy2lZWtyXdjkYv4edL23oSEgfBT1gPJ5BQ=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80 h1:6Yzfa6GP0rIo/kULo2bwGEkFvCePZ3qHDDTC3/J9Swo=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
-github.com/lstoll/cookiesession v0.0.0-20240227024017-31867f99cfc2 h1:1j7ORT6GUIrVLEjQLuIpu0fv97dYmZpDoxyB+lpH988=
-github.com/lstoll/cookiesession v0.0.0-20240227024017-31867f99cfc2/go.mod h1:Jx9DhXX7rfJZmHI5iXXVNVE4mSJiESOmKG0oLOsWK54=
 github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9 h1:4iHGC6XR3UV057pCVjkupYBsIiMk7XnDp0DPu8RB9CM=
 github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9/go.mod h1:6ncG4bHWXCWDe+m6b9C2cvg1eCJpHiCkkl6DFJBOAeo=
-github.com/lstoll/oidc v0.0.0-20240302161652-ec893a64705d h1:syo+9j68ijq9IgZWR0vYRZ84hKN+xiCQfpOu7ESBaTY=
-github.com/lstoll/oidc v0.0.0-20240302161652-ec893a64705d/go.mod h1:5Ab35X/xQmWVkTsWAZgSY7+vvgmH5CGEXpPEkpMd0cw=
+github.com/lstoll/oidc v1.0.0-alpha.1 h1:b40XAq3OOawRJazif1xilLN8PdwalJL+qvG1sS1BAOg=
+github.com/lstoll/oidc v1.0.0-alpha.1/go.mod h1:ZQ/Awk92pRKZizlR6HD/TZpSLqvrMa/tlXDJod6mk0Q=
 github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=
 github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJJLY9Nlc=
 github.com/mattn/go-sqlite3 v1.14.13 h1:1tj15ngiFfcZzii7yd82foL+ks+ouQcj8j/TPq3fk1I=
