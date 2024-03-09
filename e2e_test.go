@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"os"
@@ -163,8 +162,6 @@ func TestE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		ep := registrationURL(issConfig.URL, user)
-
-		log.Printf("ep: %v", ep)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
