@@ -14,9 +14,7 @@ type config struct {
 	// TODO(sr) rename databaseFile and delete config.SQLDatabse.
 	SQLDatabase string `json:"database"`
 
-	EncryptionKey     string         `json:"encryptionKey"`
-	PrevEncryptionKey []string       `json:"previousEncryptionKeys"`
-	Issuer            []issuerConfig `json:"issuers"`
+	Issuer []issuerConfig `json:"issuers"`
 }
 
 type issuerConfig struct {
@@ -40,9 +38,6 @@ func loadConfig(file []byte, cfg *config) error {
 	}
 	if cfg.Database == "" {
 		return errors.New("required field missing: database")
-	}
-	if cfg.EncryptionKey == "" {
-		return errors.New("required field missing: encryptionKey")
 	}
 	if len(cfg.Issuer) != 1 {
 		return errors.New("must configure exactly 1 issuer")

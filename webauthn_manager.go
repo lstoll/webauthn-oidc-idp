@@ -9,99 +9,24 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"net/url"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/justinas/nosurf"
 	"github.com/lstoll/cookiesession"
-	oidcm "github.com/lstoll/oidc/middleware"
 )
 
 type webauthnManager struct {
 	db       *DB
 	webauthn *webauthn.WebAuthn
 
-	// oidcMiddleware is used to gate access to the system. It should be
-	// configured with the right ACR.
-	oidcMiddleware *oidcm.Handler
-	csrfMiddleware func(http.Handler) http.Handler
-
 	sessmgr *cookiesession.Manager[webSession, *webSession]
-
-	// admins is a list of subjects for users who are administrators. They can
-	// list, and add users to the system.
-	admins []string
-	// acrs is a list of ACR values to request and require for access to the
-	// webauthn manager. This will usually be the webauthn ACRs in use, to
-	// provide like-for-like access. When bootstrapping the system this should
-	// be empty, to allow a federated user to log in.
-	acrs []string
 }
 
 func (w *webauthnManager) AddHandlers(mux *http.ServeMux) {
-	mux.Handle("/authenticators", w.oidcMiddleware.Wrap(w.csrfMiddleware(http.HandlerFunc(w.listKeys))))
 	mux.HandleFunc("/registration/begin", w.beginRegistration)
 	mux.HandleFunc("/registration/finish", w.finishRegistration)
 	mux.HandleFunc("/registration", w.registration)
-}
-
-// listKeys is the "index" page for a users credentials. It can be used to add,
-func (w *webauthnManager) listKeys(rw http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodGet && req.Method != http.MethodPost {
-		http.Error(rw, "Invalid Method", http.StatusMethodNotAllowed)
-		return
-	}
-
-	responded, overridden, user := w.userForReq(rw, req)
-	if responded {
-		return
-	}
-
-	if req.Method == http.MethodPost {
-		switch req.Form.Get("action") {
-		case "delete":
-			if err := w.deleteKey(user, req.Form); err != nil {
-				w.httpErr(req.Context(), rw, err)
-				return
-			}
-		case "registerKey":
-			sess := w.sessmgr.Get(req.Context())
-			sess.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
-				ForUserID: user.ID,
-				ReturnTo:  "/authenticators",
-			}
-			w.sessmgr.Save(req.Context(), sess)
-			http.Redirect(rw, req, "/registration", http.StatusSeeOther)
-		default:
-			w.httpErr(req.Context(), rw, fmt.Errorf("unknown action %s", req.Form.Get("action")))
-			return
-		}
-		// TODO - we need to track this some other way, in case form doesn't include it?
-		http.Redirect(rw, req, req.URL.Path+"?"+req.URL.Query().Encode(), http.StatusSeeOther)
-		return
-	}
-
-	// need to propagate this to the JS callbacks. TODO - This is janky,
-	// consider putting it in the session or something
-	waq := ""
-	if overridden {
-		waq = fmt.Sprintf("override_uid=" + user.ID)
-	}
-
-	w.execTemplate(rw, req, "list_keys.tmpl.html", map[string]interface{}{
-		"User":          user,
-		"WebauthnQuery": waq,
-	})
-}
-
-func (w *webauthnManager) deleteKey(user User, form url.Values) error {
-	name := form.Get("keyName")
-	if name == "" {
-		// TODO - more elegant
-		return fmt.Errorf("key name not provided")
-	}
-	return w.db.DeleteUserCredential(user.ID, name)
 }
 
 // registration is a page used to add a new key. It should handle either a user
@@ -230,35 +155,6 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 	// TODO - return the next URL in the response, make the JS follow it.
 }
 
-// userForReq gets the user for a given request, accounting for the override_uid
-// / admin params. it will handle response to user, indicating if it does via the
-// return. If it has, the caller should simply return
-func (w *webauthnManager) userForReq(rw http.ResponseWriter, req *http.Request) (responded, overridden bool, user User) {
-	overridden = false
-
-	claims := oidcm.ClaimsFromContext(req.Context())
-	if claims == nil {
-		w.httpUnauth(rw, "")
-		return true, overridden, User{}
-	}
-
-	uid := claims.Subject
-	if req.URL.Query().Get("override_uid") != "" && w.isAdmin(claims.Subject) {
-		// impersonation path = we allow user to override the user ID to perform
-		// actions as the targeted user
-		uid = req.URL.Query().Get("override_uid")
-		overridden = true
-	}
-
-	user, err := w.db.GetActivatedUserByID(uid)
-	if err != nil {
-		w.httpErr(req.Context(), rw, err)
-		return true, overridden, User{}
-	}
-
-	return false, overridden, user
-}
-
 func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
 	var (
 		pErr    *protocol.Error
@@ -277,15 +173,6 @@ func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, e
 
 func (w *webauthnManager) httpUnauth(rw http.ResponseWriter, msg string) {
 	http.Error(rw, fmt.Sprintf("Access denied: %s", msg), http.StatusForbidden)
-}
-
-func (w *webauthnManager) isAdmin(sub string) bool {
-	for _, a := range w.admins {
-		if a == sub {
-			return true
-		}
-	}
-	return false
 }
 
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
