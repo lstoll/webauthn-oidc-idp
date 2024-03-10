@@ -43,10 +43,20 @@ func loadConfig(file []byte, cfg *config) error {
 			return fmt.Errorf("parse issuer url %d: %w", i, err)
 		}
 		cfg.Issuer[i].URL = parsed
+		var validErr error
 		for ii, c := range cfg.Issuer[i].Clients {
 			if c.ID == "" {
-				return fmt.Errorf("issuer %s client %d must set clientID", parsed, ii)
+				validErr = errors.Join(validErr, fmt.Errorf("issuer %s client %d must set clientID", parsed, ii))
 			}
+			if len(c.RedirectURLs) == 0 && !c.Public && !c.PermitLocalhostRedirect {
+				validErr = errors.Join(validErr, fmt.Errorf("issuer %s client %d requires a redirect URL when not public with localhost permitted", parsed, ii))
+			}
+			if len(c.Secrets) == 0 && !c.Public && c.RequiresPKCE != nil && !*c.RequiresPKCE {
+				validErr = errors.Join(validErr, fmt.Errorf("issuer %s client %d requires a client secret when PKCE not required", parsed, ii))
+			}
+		}
+		if validErr != nil {
+			return validErr
 		}
 	}
 	return nil
