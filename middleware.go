@@ -19,8 +19,7 @@ func baseMiddleware(wrapped http.Handler, wnsessmgr *cookiesession.Manager[webSe
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		st := time.Now()
 
-		// TODO - determine if we're in a place to trust this
-		rid := r.Header.Get("X-Request-Id") // lambda
+		rid := r.Header.Get("Fly-Request-ID")
 		if rid == "" {
 			rid = uuid.NewString()
 		}
