@@ -161,17 +161,17 @@ func (o *KeysetManager) doRotate(ks Keyset) error {
 	upcomingKID := cks.UpcomingKeyID
 	currKID := h.KeysetInfo().PrimaryKeyId
 
+	if err := mgr.SetPrimary(upcomingKID); err != nil {
+		return fmt.Errorf("setting primary key to %d: %w", upcomingKID, err)
+	}
+
 	for _, ki := range h.KeysetInfo().KeyInfo {
 		// remove all keys that aren't current or upcoming
-		if ki.KeyId != upcomingKID || ki.KeyId != currKID {
+		if ki.KeyId != upcomingKID && ki.KeyId != currKID {
 			if err := mgr.Delete(ki.KeyId); err != nil {
 				return fmt.Errorf("deleting key %d: %w", ki.KeyId, err)
 			}
 		}
-	}
-
-	if err := mgr.SetPrimary(upcomingKID); err != nil {
-		return fmt.Errorf("setting primary key to %d: %w", upcomingKID, err)
 	}
 
 	cks.UpcomingKeyID, err = mgr.Add(ks.Template)
