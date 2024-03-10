@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/lstoll/oidc/core/staticclients"
 )
 
 type config struct {
@@ -18,16 +20,9 @@ type config struct {
 }
 
 type issuerConfig struct {
-	URL    *url.URL       `json:"-"`
-	RawURL string         `json:"url"`
-	Client []clientConfig `json:"clients"`
-}
-
-type clientConfig struct {
-	ClientID     string   `json:"clientID"`
-	ClientSecret []string `json:"clientSecrets"`
-	RedirectURL  []string `json:"redirectURLs"`
-	Public       bool     `json:"public"`
+	URL     *url.URL               `json:"-"`
+	RawURL  string                 `json:"url"`
+	Clients []staticclients.Client `json:"clients"`
 }
 
 func loadConfig(file []byte, cfg *config) error {
@@ -48,15 +43,9 @@ func loadConfig(file []byte, cfg *config) error {
 			return fmt.Errorf("parse issuer url %d: %w", i, err)
 		}
 		cfg.Issuer[i].URL = parsed
-		for ii, c := range cfg.Issuer[i].Client {
-			if c.ClientID == "" {
+		for ii, c := range cfg.Issuer[i].Clients {
+			if c.ID == "" {
 				return fmt.Errorf("issuer %s client %d must set clientID", parsed, ii)
-			}
-			if len(c.ClientSecret) == 0 {
-				return fmt.Errorf("issuer %s client %d must set at least one clientSecrets", parsed, ii)
-			}
-			if len(c.RedirectURL) == 0 {
-				return fmt.Errorf("issuer %s client %d must set at least one redirectURLs", parsed, ii)
 			}
 		}
 	}

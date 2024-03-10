@@ -1,18 +1,22 @@
 package main
 
 import (
+	"crypto/md5"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/cookiesession"
+	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
 )
 
@@ -93,17 +97,18 @@ func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
 			return nil, fmt.Errorf("get authentication for session %s", tr.SessionID)
 		}
 
-		idt := tr.PrefillIDToken(s.issuer, auth.Subject, time.Now().Add(s.tokenValidFor))
+		idt := tr.PrefillIDToken(auth.Subject, time.Now().Add(s.tokenValidFor))
+		at := tr.PrefillAccessToken(auth.Subject, time.Now().Add(s.tokenValidFor))
 
-		// oauth2 proxy wants this, when we don't have useinfo
+		// oauth2 proxy wants this, when we don't have userinfo
 		// TODO - scopes/userinfo etc.
 		idt.Extra["email"] = auth.Email
 		idt.Extra["email_verified"] = true
 
 		return &core.TokenResponse{
-			AccessTokenValidUntil:  time.Now().Add(s.tokenValidFor),
 			RefreshTokenValidUntil: time.Now().Add(s.refreshValidFor),
 			IssueRefreshToken:      tr.SessionRefreshable, // always allow it if we want it
+			AccessToken:            at,
 			IDToken:                idt,
 		}, nil
 	})
@@ -118,6 +123,7 @@ func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/start", s.startLogin)
 	mux.HandleFunc("/finish", s.finishLogin)
 	mux.HandleFunc("/loggedin", s.loggedIn)
+	mux.HandleFunc("GET /userinfo", s.userinfo)
 }
 
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
@@ -265,8 +271,48 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 	_ = s.oidcsvr.FinishAuthorization(rw, req, authdUser.SessionID, az)
 }
 
+func (s *oidcServer) userinfo(w http.ResponseWriter, req *http.Request) {
+	err := s.oidcsvr.Userinfo(w, req, func(w io.Writer, uireq *core.UserinfoRequest) error {
+		u, err := s.db.GetUserByID(uireq.Subject)
+		if err != nil {
+			return fmt.Errorf("getting user %s: %w", uireq.Subject, err)
+		}
+
+		// TODO(lstoll) pass through the scopes, use them to decide what to
+		// reurn. For now all info is good enough, we don't have a consent
+		// process anyway.
+		//
+		// https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
+		cl := oidc.IDClaims{
+			Issuer:  s.issuer,
+			Subject: uireq.Subject,
+			Extra:   make(map[string]any),
+		}
+		cl.Extra["email"] = u.Email
+		cl.Extra["email_verified"] = true
+		cl.Extra["picture"] = gravatarURL(u.Email) // thank u tom
+		cl.Extra["name"] = u.FullName
+		nsp := strings.Split(u.FullName, " ")
+		if len(nsp) == 2 {
+			cl.Extra["given_name"] = nsp[0]
+			cl.Extra["family_name"] = nsp[1]
+		}
+		// cl.Extra["preferred_username"] TODO(lstoll) just e-email? do we want a username field?
+
+		return json.NewEncoder(w).Encode(cl)
+	})
+	if err != nil {
+		s.eh.Error(w, req, err)
+	}
+}
+
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
 	// TODO - replace me with the error handler
 	slog.Error("(TODO improve this handler) error in server", logErr(err))
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
+}
+
+func gravatarURL(email string) string {
+	hash := md5.Sum([]byte(email))
+	return fmt.Sprintf("https://www.gravatar.com/avatar/%x.png", hash)
 }

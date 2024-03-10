@@ -19,7 +19,9 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/lstoll/cookiesession"
+	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
+	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
 	"github.com/oklog/run"
 	"github.com/tink-crypto/tink-go/v2/keyset"
@@ -143,28 +145,24 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 		return fmt.Errorf("creating OIDC keyset manager: %w", err)
 	}
 
-	oidcmd := discovery.ProviderMetadata{
-		Issuer:                issuer.URL.String(),
-		JWKSURI:               issuer.URL.String() + "/keys",
-		AuthorizationEndpoint: issuer.URL.String() + "/auth",
-		TokenEndpoint:         issuer.URL.String() + "/token",
-	}
 	oidcHandles := ksm.Handles(KeysetOIDC)
-	keysh, err := discovery.NewKeysHandler(oidcHandles.PublicHandle, 1*time.Hour)
-	if err != nil {
-		return fmt.Errorf("creating discovery keys handler: %w", err)
-	}
-	discoh, err := discovery.NewConfigurationHandler(&oidcmd, discovery.WithCoreDefaults())
+
+	oidcmd := discovery.DefaultCoreMetadata(issuer.URL.String())
+	oidcmd.AuthorizationEndpoint = issuer.URL.String() + "/auth"
+	oidcmd.TokenEndpoint = issuer.URL.String() + "/token"
+	oidcmd.ScopesSupported = []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile, "offline"}
+	oidcmd.UserinfoEndpoint = issuer.URL.String() + "/userinfo"
+
+	discoh, err := discovery.NewConfigurationHandler(oidcmd, oidcHandles)
 	if err != nil {
 		return fmt.Errorf("configuring metadata handler: %w", err)
 	}
 
-	clients := &staticClients{clients: issuer.Client}
-
 	oidcsvr, err := core.New(&core.Config{
+		Issuer:           issuer.URL.String(),
 		AuthValidityTime: 5 * time.Minute,
 		CodeValidityTime: 5 * time.Minute,
-	}, db.SessionManager(), clients, oidcHandles.Handle)
+	}, db.SessionManager(), &staticclients.Clients{Clients: issuer.Clients}, oidcHandles)
 	if err != nil {
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
@@ -190,8 +188,8 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 
 	mux := http.NewServeMux()
 
-	mux.Handle("/keys", keysh)
-	mux.Handle("/.well-known/openid-configuration", discoh)
+	mux.Handle("GET /.well-known/openid-configuration", discoh)
+	mux.Handle("GET /.well-known/jwks.json", discoh)
 
 	heh := &httpErrHandler{}
 
