@@ -101,7 +101,7 @@ func TestE2E(t *testing.T) {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := serve(serveCtx, db, issConfig, net.JoinHostPort("localhost", port)); err != nil {
+		if err := serve(serveCtx, db, issConfig, net.JoinHostPort("localhost", port), ""); err != nil {
 			serveErr <- err
 		}
 	}()
