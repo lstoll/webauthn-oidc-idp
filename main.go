@@ -24,17 +24,34 @@ import (
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
 	"github.com/oklog/run"
+	"github.com/prometheus/client_golang/prometheus"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/version"
 	"github.com/tink-crypto/tink-go/v2/keyset"
 	"golang.org/x/sys/unix"
 )
 
+const progname = "webauthn-oidc-idp"
+
 //go:embed web/public/*
 var staticFiles embed.FS
 
-func main() {
-	debug := flag.Bool("debug", false, "Enable debug logging")
+func init() {
+	if version.Version == "" {
+		version.Version = "devel"
+	}
+	if version.Branch == "" {
+		version.Branch = "unknown"
+	}
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(progname, "-", "_")))
+}
 
+func main() {
+	ver := flag.Bool("version", false, "Print the version and exit.")
+	debug := flag.Bool("debug", false, "Enable debug logging")
 	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
+	metrics := flag.String("metrics", "", "Expose Prometheus metrics on the given host:port.")
 	configFile := flag.String("config", "config.json", "Path to the config file.")
 	enroll := flag.Bool("enroll", false, "Enroll a user into the system.")
 	email := flag.String("email", "", "Email address for the user.")
@@ -44,6 +61,11 @@ func main() {
 	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
 
 	flag.Parse()
+
+	if *ver {
+		fmt.Fprintln(os.Stdout, version.Print(progname))
+		os.Exit(0)
+	}
 
 	b, err := os.ReadFile(*configFile)
 	if err != nil {
@@ -134,12 +156,12 @@ func main() {
 
 	issuer := cfg.Issuer[0]
 
-	if err := serve(ctx, db, issuer, *addr); err != nil {
+	if err := serve(ctx, db, issuer, *addr, *metrics); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error {
+func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics string) error {
 	ksm, err := NewKeysetManager(db)
 	if err != nil {
 		return fmt.Errorf("creating OIDC keyset manager: %w", err)
@@ -296,6 +318,24 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr string) error 
 		_ = hs.Shutdown(ctx)
 	})
 
+	{
+		if metrics != "" {
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", promhttp.Handler())
+			promsrv := &http.Server{Addr: metrics, Handler: mux}
+
+			g.Add(func() error {
+				slog.Info("metrics server listing", slog.String("addr", "http://"+metrics))
+				if err := promsrv.ListenAndServe(); err != nil {
+					return fmt.Errorf("serving metrics: %v", err)
+				}
+				return nil
+			}, func(error) {
+				promsrv.Close()
+			})
+		}
+	}
+
 	return g.Run()
 }
 
@@ -329,12 +369,12 @@ func reloadDB(addr string) {
 }
 
 func fatal(s string) {
-	fmt.Fprintf(os.Stderr, "webauthn-oidc-idp: %s\n", s)
+	fmt.Fprintf(os.Stderr, "%s: %s\n", progname, s)
 	os.Exit(1)
 }
 
 func fatalf(s string, args ...any) {
-	fmt.Fprintf(os.Stderr, fmt.Sprintf("webauthn-oidc-idp: %s\n", s), args...)
+	fmt.Fprintf(os.Stderr, fmt.Sprintf("%s: %s\n", progname, s), args...)
 	os.Exit(1)
 }
 
