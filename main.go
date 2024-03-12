@@ -89,16 +89,6 @@ func main() {
 		fatalf("open database at %s: %v", cfg.Database, err)
 	}
 
-	if sqlfile := cfg.SQLDatabase; sqlfile != "" {
-		sqldb, err := newStorage(ctx, fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", sqlfile))
-		if err != nil {
-			fatalf("open sqlite database: %v", err)
-		}
-		if err := migrateSQLToJSON(sqldb, db); err != nil {
-			fatalf("migrate SQLite database %s to %s: %v", sqlfile, cfg.Database, err)
-		}
-	}
-
 	if *enroll {
 		if *email == "" {
 			fatal("required flag missing: email")

@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestOpenDB(t *testing.T) {
@@ -160,38 +158,6 @@ func TestAuthenticatedUsers(t *testing.T) {
 	}
 	if auth.Subject != "me@example.com" {
 		t.Fatalf("GetAuthenticated: got unexpected subject: %s", auth.Subject)
-	}
-}
-
-func TestMigrateSQLToJSON(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	sqldb := newTestStorage(t)
-
-	user := &WebauthnUser{Email: "abc@def.com", Activated: true}
-	id, err := sqldb.CreateUser(ctx, user)
-	if err != nil {
-		t.Fatalf("sqldb.CreateUser: %v", err)
-	}
-	user.ID = id
-	err = sqldb.AddCredentialToUser(ctx, user.ID, webauthn.Credential{ID: []byte("ID")}, "test name")
-	if err != nil {
-		t.Fatalf("sqldb.AddCredentialToUser: %v", err)
-	}
-
-	jsondb := openTestDB(t)
-
-	if err := migrateSQLToJSON(sqldb, jsondb); err != nil {
-		t.Fatalf("migrateSQLToJSON: %v", err)
-	}
-
-	user2, err := jsondb.GetUserByID(user.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if user2.ID != user.ID || user2.Email != user.Email {
-		t.Fatalf("user mismatch: %s", cmp.Diff(user2, user))
 	}
 }
 

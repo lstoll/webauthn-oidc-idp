@@ -7,12 +7,10 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20240202021202-6d0b6a386732
 	github.com/chromedp/chromedp v0.9.5
 	github.com/go-webauthn/webauthn v0.10.1
-	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/justinas/nosurf v1.1.1
 	github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9
 	github.com/lstoll/oidc v1.0.0-alpha.1
-	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/common v0.50.0
