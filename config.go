@@ -12,11 +12,8 @@ import (
 )
 
 type config struct {
-	Database string `json:"databaseFile"`
-	// TODO(sr) rename databaseFile and delete config.SQLDatabse.
-	SQLDatabase string `json:"database"`
-
-	Issuer []issuerConfig `json:"issuers"`
+	Database string         `json:"database"`
+	Issuer   []issuerConfig `json:"issuers"`
 }
 
 type issuerConfig struct {

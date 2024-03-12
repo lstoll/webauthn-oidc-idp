@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -334,53 +333,6 @@ func (db *DB) PutKeyset(ks Keyset, stored DBKeyset) error {
 			db.Keysets = map[string]DBKeyset{}
 		}
 		db.Keysets[ks.Name] = stored
-		return nil
-	})
-}
-
-func migrateSQLToJSON(sqldb *storage, jsondb *DB) error {
-	ctx := context.Background()
-	users, err := sqldb.ListUsers(ctx)
-	if err != nil {
-		return fmt.Errorf("sql.ListUsers: %w", err)
-	}
-	for _, u := range users {
-		user, ok, err := sqldb.GetUserByID(ctx, u.ID, true)
-		if err != nil {
-			return fmt.Errorf("sql.GetUserByID: %w", err)
-		}
-		if !ok {
-			return fmt.Errorf("sql.GetUserByID: user %s not found", u.ID)
-		}
-		newUser := User{
-			ID:            user.ID,
-			Email:         user.Email,
-			FullName:      user.FullName,
-			EnrollmentKey: user.EnrollmentKey,
-			Credentials:   make(map[string]WebauthnCredential),
-		}
-		for _, cred := range user.Credentials {
-			newUser.Credentials[cred.Name] = WebauthnCredential{
-				Credential: cred.Credential,
-				Name:       cred.Name,
-				AddedAt:    time.Now(),
-			}
-		}
-		if err := jsondb.createMigratedUser(newUser); err != nil {
-			return fmt.Errorf("json.createMigratedUser: %w", err)
-		}
-	}
-	return nil
-}
-
-// createMigratedUser saves the given user as is in the database.
-// Do not use; it's temporary and will be deleted in the near future.
-func (db *DB) createMigratedUser(user User) error {
-	return db.f.Write(func(db *schema) error {
-		if len(db.Users) == 0 {
-			db.Users = make(map[string]User)
-		}
-		db.Users[user.ID] = user
 		return nil
 	})
 }

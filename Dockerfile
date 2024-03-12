@@ -7,10 +7,10 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o /go/bin/webauthn-oidc-idp -ldflags "\
+RUN CGO_ENABLED=0 go build -o /go/bin/webauthn-oidc-idp -ldflags "\
     -X 'github.com/prometheus/common/version.Branch=$(git describe --contains --all HEAD)' \
     -X 'github.com/prometheus/common/version.BuildUser=$(whoami)' \
-    -X 'github.com/prometheus/common/version.BuildDate=$(date --iso-8601=seconds)'" \
+    -X 'github.com/prometheus/common/version.BuildDate=$(date --utc --iso-8601=seconds)'" \
     ./...
 
 FROM debian:bookworm
@@ -18,7 +18,7 @@ FROM debian:bookworm
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates sqlite3
+    apt-get install -y ca-certificates
 
 COPY --from=build /go/bin/webauthn-oidc-idp /usr/bin/
 

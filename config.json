@@ -1,5 +1,5 @@
 {
-	"databaseFile": "db/dev.json",
+	"database": "db/dev.json",
 	"issuers": [
 		{
 			"url": "http://localhost:8085",
