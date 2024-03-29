@@ -101,9 +101,13 @@ func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
 		at := tr.PrefillAccessToken(auth.Subject, time.Now().Add(s.tokenValidFor))
 
 		// oauth2 proxy wants this, when we don't have userinfo
-		// TODO - scopes/userinfo etc.
+		// also our middleware doesn't suppor userinfo
+		// TODO(lstoll) decide on what we include here, what is userinfo etc. for now, include enough to work with
+		// TODO(lstoll) respond correctly based on scopes
 		idt.Extra["email"] = auth.Email
 		idt.Extra["email_verified"] = true
+		idt.Extra["picture"] = gravatarURL(auth.Email) // thank u tom
+		idt.Extra["name"] = auth.FullName
 
 		return &core.TokenResponse{
 			RefreshTokenValidUntil: time.Now().Add(s.refreshValidFor),
