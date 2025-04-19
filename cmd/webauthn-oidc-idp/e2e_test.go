@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	goruntime "runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -47,6 +48,9 @@ func TestE2E(t *testing.T) {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if !runE2EHeadless {
 		opts = append(opts, chromedp.Flag("headless", false))
+	}
+	if goruntime.GOOS == "linux" && os.Getenv("GITHUB_ACTIONS") != "" {
+		opts = append(opts, chromedp.Flag("no-sandbox", true))
 	}
 	allocCtx, execCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(execCancel)
