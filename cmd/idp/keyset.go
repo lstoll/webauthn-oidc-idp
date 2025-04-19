@@ -1,14 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/lstoll/tinkrotate"
+	"github.com/oklog/run"
 	"github.com/tink-crypto/tink-go/v2/aead"
-	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"github.com/tink-crypto/tink-go/v2/keyset"
 	"github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
@@ -25,36 +25,75 @@ type Keyset struct {
 	RotateEvery time.Duration
 }
 
-var (
-	KeysetOIDC = Keyset{
-		Name:        "oidc",
-		Template:    jwt.RS256_2048_F4_Key_Template(),
-		RotateEvery: 24 * time.Hour,
-	}
-	KeysetCookie = Keyset{
-		Name:        "cookie",
-		Template:    aead.AES128GCMSIVKeyTemplate(),
-		RotateEvery: 30 * 24 * time.Hour,
-	}
-
-	allKeysets = []Keyset{KeysetOIDC, KeysetCookie}
+const (
+	keysetIDCookie = "cookie"
+	keysetIDOIDC   = "oidc"
 )
+
+var (
+	cookieRotatePolicy = tinkrotate.RotationPolicy{
+		KeyTemplate:         aead.XAES256GCM192BitNonceKeyTemplate(),
+		PrimaryDuration:     30 * 24 * time.Hour,
+		PropagationTime:     24 * time.Hour,
+		PhaseOutDuration:    7 * 24 * time.Hour,
+		DeletionGracePeriod: 0,
+	}
+	oidcRotatePolicy = tinkrotate.RotationPolicy{
+		KeyTemplate:         jwt.RS256_2048_F4_Key_Template(),
+		PrimaryDuration:     24 * time.Hour,
+		PropagationTime:     6 * time.Hour,
+		PhaseOutDuration:    24 * time.Hour,
+		DeletionGracePeriod: 0,
+	}
+)
+
+func initKeysets(ctx context.Context, db *sql.DB, g run.Group) (cookieKeyset, oidcKeyset *KeysetHandles, _ error) {
+	cookieStore, err := tinkrotate.NewSQLStore(db, keysetIDCookie)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating cookie keyset store: %w", err)
+	}
+	cookieRotator, err := tinkrotate.NewRotator(cookieRotatePolicy)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating cookie rotator: %w", err)
+	}
+	cookieAutoRotator, err := tinkrotate.NewAutoRotator(cookieStore, cookieRotator, 10*time.Minute)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating cookie rotator: %w", err)
+	}
+	if err := cookieAutoRotator.RunOnce(ctx); err != nil {
+		return nil, nil, fmt.Errorf("running cookie rotator: %w", err)
+	}
+	g.Add(func() error { cookieAutoRotator.Start(ctx); return nil }, func(_ error) { cookieAutoRotator.Stop() })
+
+	oidcStore, err := tinkrotate.NewSQLStore(db, keysetIDOIDC)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating oidc keyset store: %w", err)
+	}
+	oidcRotator, err := tinkrotate.NewRotator(oidcRotatePolicy)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating oidc rotator: %w", err)
+	}
+	oidcAutoRotator, err := tinkrotate.NewAutoRotator(oidcStore, oidcRotator, 10*time.Minute)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating oidc rotator: %w", err)
+	}
+	if err := oidcAutoRotator.RunOnce(ctx); err != nil {
+		return nil, nil, fmt.Errorf("running oidc rotator: %w", err)
+	}
+	g.Add(func() error { oidcAutoRotator.Start(ctx); return nil }, func(_ error) { oidcAutoRotator.Stop() })
+
+	return &KeysetHandles{autoRotator: cookieAutoRotator}, &KeysetHandles{autoRotator: oidcAutoRotator}, nil
+}
 
 // KeysetHandles can retrieve handles for the given keyset from the DB.
 type KeysetHandles struct {
-	db     *DB
-	keyset Keyset
+	autoRotator *tinkrotate.AutoRotator
 }
 
 // PublicHandle returns a handle to the current keyset, only including private
 // keys
-func (k *KeysetHandles) Handle(context.Context) (*keyset.Handle, error) {
-	rdr := keyset.NewJSONReader(bytes.NewReader(k.db.GetKeyset(k.keyset).Keyset))
-	h, err := insecurecleartextkeyset.Read(rdr)
-	if err != nil {
-		return nil, fmt.Errorf("parsing keyset from db: %w", err)
-	}
-	return h, nil
+func (k *KeysetHandles) Handle(ctx context.Context) (*keyset.Handle, error) {
+	return k.autoRotator.GetCurrentHandle(ctx)
 }
 
 // PublicHandle returns a handle to the current keyset, only including public
@@ -69,139 +108,4 @@ func (k *KeysetHandles) PublicHandle(ctx context.Context) (*keyset.Handle, error
 		return nil, err
 	}
 	return ph, nil
-}
-
-type KeysetManager struct {
-	db *DB
-
-	stopCh chan struct{}
-}
-
-func NewKeysetManager(db *DB) (*KeysetManager, error) {
-	o := &KeysetManager{
-		db:     db,
-		stopCh: make(chan struct{}),
-	}
-	for _, ks := range allKeysets {
-		if err := o.doRotate(ks); err != nil {
-			return nil, fmt.Errorf("initial rotate for %s: %w", ks.Name, err)
-		}
-	}
-	return o, nil
-}
-
-// PrivateHandle returns a handle to the current keyset, including private keys
-func (o *KeysetManager) Handles(keyset Keyset) *KeysetHandles {
-	return &KeysetHandles{db: o.db, keyset: keyset}
-}
-
-// Run synchronously runs a loop to rotate the keys in the DB as needed, and
-// update handles on this manager instance.
-func (o KeysetManager) Run() error {
-	t := time.NewTicker(keysetRotateCheckInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-t.C:
-			for _, ks := range allKeysets {
-				if err := o.doRotate(ks); err != nil {
-					slog.Error("failed to rotate keyset", slog.String("keyset", ks.Name), logErr(err))
-				}
-			}
-		case <-o.stopCh:
-			return nil
-		}
-	}
-}
-
-func (o *KeysetManager) Interrupt(_ error) {
-	o.stopCh <- struct{}{}
-}
-
-func (o *KeysetManager) doRotate(ks Keyset) error {
-	cks := o.db.GetKeyset(ks)
-
-	if time.Now().Before(cks.LastRotated.Add(ks.RotateEvery)) {
-		// nothing to do, within rotation window
-		return nil
-	}
-
-	if cks.Keyset == nil {
-		slog.Info("provisioning new keyset", slog.String("keyset", ks.Name))
-
-		// new keyset. provision both current and upcoming key.
-		h, err := keyset.NewHandle(ks.Template)
-		if err != nil {
-			return fmt.Errorf("creating new handle: %w", err)
-		}
-
-		mgr := keyset.NewManagerFromHandle(h)
-
-		cks.UpcomingKeyID, err = mgr.Add(ks.Template)
-		if err != nil {
-			return fmt.Errorf("creating upcoming key: %w", err)
-		}
-
-		cks.LastRotated = time.Now()
-
-		return o.writeKeyset(ks, cks, mgr)
-	}
-
-	slog.Info("rotating OIDC keyset", slog.Time("last-rotated", cks.LastRotated))
-
-	// doing a normal rotation
-	rdr := keyset.NewJSONReader(bytes.NewReader(cks.Keyset))
-	h, err := insecurecleartextkeyset.Read(rdr)
-	if err != nil {
-		return fmt.Errorf("parsing keyset from db: %w", err)
-	}
-
-	mgr := keyset.NewManagerFromHandle(h)
-
-	upcomingKID := cks.UpcomingKeyID
-	currKID := h.KeysetInfo().PrimaryKeyId
-
-	if err := mgr.SetPrimary(upcomingKID); err != nil {
-		return fmt.Errorf("setting primary key to %d: %w", upcomingKID, err)
-	}
-
-	for _, ki := range h.KeysetInfo().KeyInfo {
-		// remove all keys that aren't current or upcoming
-		if ki.KeyId != upcomingKID && ki.KeyId != currKID {
-			if err := mgr.Delete(ki.KeyId); err != nil {
-				return fmt.Errorf("deleting key %d: %w", ki.KeyId, err)
-			}
-		}
-	}
-
-	cks.UpcomingKeyID, err = mgr.Add(ks.Template)
-	if err != nil {
-		return fmt.Errorf("creating new upcoming key: %w", err)
-	}
-
-	cks.LastRotated = time.Now()
-
-	return o.writeKeyset(ks, cks, mgr)
-}
-
-// writeKeyset persists the updated handle and keyset info to the data store,
-// and updates the private/public handles on this manager.
-func (o *KeysetManager) writeKeyset(ks Keyset, dbks DBKeyset, km *keyset.Manager) error {
-	h, err := km.Handle()
-	if err != nil {
-		return fmt.Errorf("getting handle from manager: %w", err)
-	}
-
-	buf := new(bytes.Buffer)
-	wr := keyset.NewJSONWriter(buf)
-	if err := insecurecleartextkeyset.Write(h, wr); err != nil {
-		return fmt.Errorf("converting handle to JSON: %w", err)
-	}
-	dbks.Keyset = buf.Bytes()
-
-	if err := o.db.PutKeyset(ks, dbks); err != nil {
-		return fmt.Errorf("saving new keyset: %w", err)
-	}
-
-	return nil
 }

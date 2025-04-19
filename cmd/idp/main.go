@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -21,7 +22,9 @@ import (
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
+	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/web"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -55,6 +58,17 @@ func main() {
 	addCredential := flag.Bool("add-credential", false, "Generate a new credential enrollment URL for a user")
 	userID := flag.String("user-id", "", "ID of user to add credential to.")
 	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
+	dbPath := flag.String("db", "", "Path to SQLite database file. Overrides config file setting.")
+
+	// Set flags from environment variables with IDP_ prefix
+	flag.VisitAll(func(f *flag.Flag) {
+		envName := "IDP_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+		if val, ok := os.LookupEnv(envName); ok {
+			if err := f.Value.Set(val); err != nil {
+				fatalf("set flag %s from env %s: %v", f.Name, envName, err)
+			}
+		}
+	})
 
 	flag.Parse()
 
@@ -139,21 +153,42 @@ func main() {
 	if *addr == "" {
 		fatal("required flag missing: http")
 	}
+	if *dbPath == "" {
+		fatal("required flag missing: db")
+	}
 
 	issuer := cfg.Issuer[0]
 
-	if err := serve(ctx, db, issuer, *addr, *metrics); err != nil {
+	sqldb, err := sql.Open("sqlite3", *dbPath+"?_journal=WAL")
+	if err != nil {
+		fatalf("open database: %v", err)
+	}
+	defer sqldb.Close()
+
+	if _, err := sqldb.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		fatalf("enable WAL mode: %v", err)
+	}
+
+	if _, err := sqldb.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		fatalf("set busy timeout: %v", err)
+	}
+
+	if err := dbpkg.Migrate(ctx, sqldb); err != nil {
+		fatalf("run migrations: %v", err)
+	}
+
+	if err := serve(ctx, sqldb, db, issuer, *addr, *metrics); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics string) error {
-	ksm, err := NewKeysetManager(db)
-	if err != nil {
-		return fmt.Errorf("creating OIDC keyset manager: %w", err)
-	}
+func serve(ctx context.Context, sqldb *sql.DB, db *DB, issuer issuerConfig, addr, metrics string) error {
+	var g run.Group
 
-	oidcHandles := ksm.Handles(KeysetOIDC)
+	cookieHandles, oidcHandles, err := initKeysets(ctx, sqldb, g)
+	if err != nil {
+		return fmt.Errorf("initializing keysets: %w", err)
+	}
 
 	oidcmd := discovery.DefaultCoreMetadata(issuer.URL.String())
 	oidcmd.AuthorizationEndpoint = issuer.URL.String() + "/auth"
@@ -176,7 +211,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 	}
 
 	webSessMgr, err := cookiesession.New[webSession]("idp", func() *keyset.Handle {
-		h, err := ksm.Handles(KeysetCookie).Handle(context.Background())
+		h, err := cookieHandles.Handle(context.Background())
 		if err != nil {
 			// we should not hit this, the load comes from the DB TODO(lstoll)
 			// get a consistent way of looking up handles.
@@ -270,11 +305,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 
 	svr.AddHandlers(mux)
 
-	var g run.Group
-
 	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
-
-	g.Add(ksm.Run, ksm.Interrupt)
 
 	// this will always try and create a session for discovery and stuff,
 	// but we shouldn't save it. but, we need it for logging and stuff. TODO

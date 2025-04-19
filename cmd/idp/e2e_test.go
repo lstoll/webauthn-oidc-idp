@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -18,6 +19,8 @@ import (
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/clitoken"
 	"github.com/lstoll/oidc/core/staticclients"
+	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/oauth2"
 )
 
@@ -99,9 +102,19 @@ func TestE2E(t *testing.T) {
 	serveCtx, serveCancel := context.WithCancel(context.Background())
 	t.Cleanup(serveCancel)
 
+	sqldb, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open in-memory database: %v", err)
+	}
+	defer sqldb.Close()
+
+	if err := dbpkg.Migrate(ctx, sqldb); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := serve(serveCtx, db, issConfig, net.JoinHostPort("localhost", port), ""); err != nil {
+		if err := serve(serveCtx, sqldb, db, issConfig, net.JoinHostPort("localhost", port), ""); err != nil {
 			serveErr <- err
 		}
 	}()
