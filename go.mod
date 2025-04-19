@@ -11,6 +11,7 @@ require (
 	github.com/justinas/nosurf v1.1.1
 	github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9
 	github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1
+	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/common v0.50.0

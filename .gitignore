@@ -5,3 +5,4 @@
 /dynamodbdata
 /dynamodata
 /.env
+go.work*
