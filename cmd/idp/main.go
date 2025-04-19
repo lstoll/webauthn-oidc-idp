@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"embed"
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,6 +21,7 @@ import (
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
+	"github.com/lstoll/webauthn-oidc-idp/web"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -33,9 +32,6 @@ import (
 )
 
 const progname = "webauthn-oidc-idp"
-
-//go:embed web/public/*
-var staticFiles embed.FS
 
 func init() {
 	if version.Version == "" {
@@ -241,11 +237,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 		db:       db,
 	}
 
-	pubContent, err := fs.Sub(fs.FS(staticFiles), "web")
-	if err != nil {
-		return fmt.Errorf("creating public subfs: %w", err)
-	}
-	fs := http.FileServer(http.FS(pubContent))
+	fs := http.FileServer(http.FS(web.PublicFiles))
 	mux.Handle("/public/", fs)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

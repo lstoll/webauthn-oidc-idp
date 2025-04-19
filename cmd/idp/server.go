@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/md5"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
+	"github.com/lstoll/webauthn-oidc-idp/web"
 )
 
 /* keeping this around as some context betweet a oidc/session, and an authentication
@@ -50,10 +50,7 @@ type AuthSessionManager interface {
 } */
 
 var (
-	//go:embed web/templates
-	templates embed.FS
-
-	loginTemplate = template.Must(template.ParseFS(templates, "web/templates/login.tmpl.html"))
+	loginTemplate = template.Must(template.ParseFS(web.Templates, "templates/login.tmpl.html"))
 )
 
 type oidcServer struct {

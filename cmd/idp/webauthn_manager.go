@@ -15,6 +15,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/justinas/nosurf"
 	"github.com/lstoll/cookiesession"
+	"github.com/lstoll/webauthn-oidc-idp/web"
 )
 
 type webauthnManager struct {
@@ -181,11 +182,11 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		},
 	}
 
-	lt, err := template.New("").Funcs(funcs).ParseFS(templates, "web/templates/webauthn/layout.tmpl.html")
+	lt, err := template.New("").Funcs(funcs).ParseFS(web.Templates, "templates/webauthn/layout.tmpl.html")
 	if err != nil {
 		w.httpErr(r.Context(), rw, err)
 	}
-	t, err := lt.ParseFS(templates, "web/templates/webauthn/"+templateName)
+	t, err := lt.ParseFS(web.Templates, "templates/webauthn/"+templateName)
 	if err != nil {
 		w.httpErr(r.Context(), rw, err)
 		return
