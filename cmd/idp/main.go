@@ -131,10 +131,11 @@ func main() {
 		}
 
 		params := queries.CreateUserParams{
-			ID:            must(uuid.NewV7()),
-			Email:         *email,
-			FullName:      *fullname,
-			EnrollmentKey: sql.NullString{String: uuid.NewString(), Valid: true},
+			ID:             must(uuid.NewV7()),
+			Email:          *email,
+			FullName:       *fullname,
+			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
+			WebauthnHandle: must(uuid.NewRandom()),
 		}
 
 		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {

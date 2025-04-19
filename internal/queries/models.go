@@ -38,4 +38,5 @@ type User struct {
 	FullName        string
 	EnrollmentKey   sql.NullString
 	OverrideSubject sql.NullString
+	WebauthnHandle  uuid.UUID
 }

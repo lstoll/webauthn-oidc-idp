@@ -183,10 +183,11 @@ func TestE2E(t *testing.T) {
 	testOk := t.Run("Registration", func(t *testing.T) {
 		// first enroll a user.
 		params := queries.CreateUserParams{
-			ID:            must(uuid.NewV7()),
-			Email:         "test.user@example.com",
-			FullName:      "Test User",
-			EnrollmentKey: sql.NullString{String: uuid.NewString(), Valid: true},
+			ID:             must(uuid.NewV7()),
+			Email:          "test.user@example.com",
+			FullName:       "Test User",
+			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
+			WebauthnHandle: must(uuid.NewRandom()),
 		}
 		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
 			fatalf("create user: %v", err)

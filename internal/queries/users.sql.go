@@ -14,8 +14,8 @@ import (
 )
 
 const createUser = `-- name: CreateUser :exec
-INSERT INTO users (id, email, full_name, enrollment_key, override_subject)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO users (id, email, full_name, enrollment_key, webauthn_handle, override_subject)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateUserParams struct {
@@ -23,6 +23,7 @@ type CreateUserParams struct {
 	Email           string
 	FullName        string
 	EnrollmentKey   sql.NullString
+	WebauthnHandle  uuid.UUID
 	OverrideSubject sql.NullString
 }
 
@@ -32,6 +33,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.Email,
 		arg.FullName,
 		arg.EnrollmentKey,
+		arg.WebauthnHandle,
 		arg.OverrideSubject,
 	)
 	return err
@@ -64,7 +66,7 @@ func (q *Queries) CreateUserCredential(ctx context.Context, arg CreateUserCreden
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, full_name, enrollment_key, override_subject FROM users WHERE id = ?
+SELECT id, email, full_name, enrollment_key, override_subject, webauthn_handle FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -76,12 +78,13 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.FullName,
 		&i.EnrollmentKey,
 		&i.OverrideSubject,
+		&i.WebauthnHandle,
 	)
 	return i, err
 }
 
 const getUserByOverrideSubject = `-- name: GetUserByOverrideSubject :one
-SELECT id, email, full_name, enrollment_key, override_subject FROM users WHERE override_subject = ?
+SELECT id, email, full_name, enrollment_key, override_subject, webauthn_handle FROM users WHERE override_subject = ?
 `
 
 func (q *Queries) GetUserByOverrideSubject(ctx context.Context, overrideSubject sql.NullString) (User, error) {
@@ -93,6 +96,25 @@ func (q *Queries) GetUserByOverrideSubject(ctx context.Context, overrideSubject 
 		&i.FullName,
 		&i.EnrollmentKey,
 		&i.OverrideSubject,
+		&i.WebauthnHandle,
+	)
+	return i, err
+}
+
+const getUserByWebauthnHandle = `-- name: GetUserByWebauthnHandle :one
+SELECT id, email, full_name, enrollment_key, override_subject, webauthn_handle FROM users WHERE webauthn_handle = ?
+`
+
+func (q *Queries) GetUserByWebauthnHandle(ctx context.Context, webauthnHandle uuid.UUID) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByWebauthnHandle, webauthnHandle)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.FullName,
+		&i.EnrollmentKey,
+		&i.OverrideSubject,
+		&i.WebauthnHandle,
 	)
 	return i, err
 }
@@ -134,7 +156,7 @@ func (q *Queries) GetUserCredentials(ctx context.Context, id uuid.UUID) ([]Crede
 }
 
 const getUsers = `-- name: GetUsers :many
-SELECT id, email, full_name, enrollment_key, override_subject FROM users
+SELECT id, email, full_name, enrollment_key, override_subject, webauthn_handle FROM users
 `
 
 func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
@@ -152,6 +174,7 @@ func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
 			&i.FullName,
 			&i.EnrollmentKey,
 			&i.OverrideSubject,
+			&i.WebauthnHandle,
 		); err != nil {
 			return nil, err
 		}

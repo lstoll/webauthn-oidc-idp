@@ -160,27 +160,49 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	userID := string(parsedResponse.Response.UserHandle) // user handle is the webauthn.User#ID we registered with
-	var user *queries.User
-	if err := uuid.Validate(userID); err != nil {
-		u, err := s.queries.GetUserByOverrideSubject(req.Context(), sql.NullString{String: userID, Valid: true})
+	// userHandle is what we registered the credential with. Currently this is a
+	// unique value just for this purpose, but previously could have been the
+	// user ID. which also could now be the override subject. So try them all.
+	// If it's the new handle, it'll be bytes. If it's one of the older ID
+	// types, it'll be a string.
+	// TODO(lstoll) clean this up at some point, might need to re-register some
+	// things.
+	var (
+		user queries.User
+		// validateID is the ID we'll use to validate the user later.
+		// go-webauthn requires it to align with what the credential provided.
+		validateID []byte
+	)
+	// If the userHandle is a valid UUID4 in bytes, use it directly
+	if len(parsedResponse.Response.UserHandle) == 16 && ((parsedResponse.Response.UserHandle[6]&0xf0)>>4) == 4 {
+		// it's a UUID4, likely the distinct webauthn handle
+		userHandle, err := uuid.FromBytes(parsedResponse.Response.UserHandle)
 		if err != nil {
-			s.httpErr(rw, err)
+			s.httpErr(rw, fmt.Errorf("invalid UUIDv4: %v", err))
 			return
 		}
-		user = &u
+		user, err = s.queries.GetUserByWebauthnHandle(req.Context(), userHandle)
+		if err != nil {
+			s.httpErr(rw, fmt.Errorf("getting user by webauthn handle: %v", err))
+			return
+		}
+		validateID = user.WebauthnHandle[:]
+	} else if err := uuid.Validate(string(parsedResponse.Response.UserHandle)); err == nil {
+		// string UUID, likely the user ID
+		user, err = s.queries.GetUser(req.Context(), uuid.MustParse(string(parsedResponse.Response.UserHandle)))
+		if err != nil {
+			s.httpErr(rw, fmt.Errorf("getting user by ID: %v", err))
+			return
+		}
+		validateID = []byte(user.ID.String())
 	} else {
-		userUUID := uuid.MustParse(userID)
-		u, err := s.queries.GetUser(req.Context(), userUUID)
+		// process it as a fallback subject.
+		user, err = s.queries.GetUserByOverrideSubject(req.Context(), sql.NullString{String: string(parsedResponse.Response.UserHandle), Valid: true})
 		if err != nil {
-			s.httpErr(rw, err)
+			s.httpErr(rw, fmt.Errorf("getting user by override subject: %v", err))
 			return
 		}
-		user = &u
-	}
-	if user == nil {
-		s.httpErr(rw, fmt.Errorf("user not found"))
-		return
+		validateID = []byte(user.OverrideSubject.String)
 	}
 
 	// var car protocol.CredentialAssertionResponse
@@ -218,7 +240,8 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	wu := &webauthnUser{
-		qu: *user,
+		qu:         user,
+		overrideID: validateID,
 	}
 	for _, c := range creds {
 		var cred webauthn.Credential
@@ -368,15 +391,17 @@ func gravatarURL(email string) string {
 // webauthnUser is a wrapper around the queries.User type that implements the
 // webauthn.User interface for that library to consume
 type webauthnUser struct {
-	qu queries.User
-	wc []webauthn.Credential
+	qu         queries.User
+	overrideID []byte
+	wc         []webauthn.Credential
 }
 
+// WebAuthnID returns the webauthn user handle for the user
 func (u *webauthnUser) WebAuthnID() []byte {
-	if u.qu.OverrideSubject.Valid && u.qu.OverrideSubject.String != "" {
-		return []byte(u.qu.OverrideSubject.String)
+	if len(u.overrideID) > 0 {
+		return u.overrideID
 	}
-	return []byte(u.qu.ID.String())
+	return u.qu.WebauthnHandle[:]
 }
 
 func (u *webauthnUser) WebAuthnName() string {

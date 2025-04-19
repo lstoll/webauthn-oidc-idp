@@ -17,7 +17,8 @@ CREATE TABLE users
     email TEXT UNIQUE NOT NULL, -- Email address for the user
     full_name TEXT NOT NULL, -- Full name for the user
     enrollment_key TEXT, -- Key used to enroll tokens for the user
-    override_subject TEXT UNIQUE -- Subject to use for the user, if provided
+    override_subject TEXT UNIQUE, -- Subject to use for the user, if provided
+    webauthn_handle TEXT UNIQUE NOT NULL -- webauthn user handle, registered with authenticators. uuidv4.
 );
 
 CREATE TABLE credentials

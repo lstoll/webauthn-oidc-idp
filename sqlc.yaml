@@ -13,6 +13,10 @@ sql:
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
+          - column: "users.webauthn_handle"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
           - column: "credentials.id"
             go_type:
               import: "github.com/google/uuid"

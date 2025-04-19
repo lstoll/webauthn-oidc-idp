@@ -45,9 +45,10 @@ func migrateData(ctx context.Context, filedb *DB, sqldb *sql.DB) error {
 			}
 
 			up := queries.CreateUserParams{
-				ID:       userID,
-				Email:    user.Email,
-				FullName: user.FullName,
+				ID:             userID,
+				Email:          user.Email,
+				FullName:       user.FullName,
+				WebauthnHandle: must(uuid.NewRandom()),
 			}
 			if userHasNonUUIDID {
 				up.OverrideSubject = sql.NullString{
