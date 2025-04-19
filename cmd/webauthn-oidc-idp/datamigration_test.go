@@ -74,4 +74,9 @@ func TestMigrateData(t *testing.T) {
 			}
 		}
 	}
+
+	// running again should be a no-op
+	if err := migrateData(t.Context(), filedb, sqldb); err != nil {
+		t.Fatalf("failed to migrate data: %v", err)
+	}
 }

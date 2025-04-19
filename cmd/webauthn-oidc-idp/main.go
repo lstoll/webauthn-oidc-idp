@@ -122,6 +122,10 @@ func main() {
 		fatalf("run migrations: %v", err)
 	}
 
+	if err := migrateData(ctx, db, sqldb); err != nil {
+		fatalf("failed to migrate data: %v", err)
+	}
+
 	if *enroll {
 		if *email == "" {
 			fatal("required flag missing: email")
