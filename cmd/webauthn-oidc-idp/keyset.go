@@ -14,8 +14,6 @@ import (
 	"github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
 )
 
-const keysetRotateCheckInterval = 1 * time.Hour
-
 type Keyset struct {
 	// Name of the keyset, used to refer to it in the store
 	Name string
