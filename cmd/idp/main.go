@@ -58,7 +58,7 @@ func main() {
 	addCredential := flag.Bool("add-credential", false, "Generate a new credential enrollment URL for a user")
 	userID := flag.String("user-id", "", "ID of user to add credential to.")
 	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
-	dbPath := flag.String("db", "", "Path to SQLite database file. Overrides config file setting.")
+	dbPath := flag.String("db-path", "", "Path to SQLite database file. Overrides config file setting.")
 
 	// Set flags from environment variables with IDP_ prefix
 	flag.VisitAll(func(f *flag.Flag) {

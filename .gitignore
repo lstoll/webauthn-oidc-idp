@@ -6,3 +6,8 @@
 /dynamodata
 /.env
 go.work*
+
+# for local/direct deploys
+fly.toml
+config.fly.json
+Dockerfile.fly

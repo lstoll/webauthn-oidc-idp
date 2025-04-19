@@ -47,6 +47,8 @@ github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1 h1:tg2qDMn3C
 github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1/go.mod h1:ZQ/Awk92pRKZizlR6HD/TZpSLqvrMa/tlXDJod6mk0Q=
 github.com/lstoll/tinkrotate v0.0.0-20250419133550-553a9fe5d206 h1:ldq1byFwxzfVQcD1cOgPYvq/vhR1jqxrWxrFfBRPgtw=
 github.com/lstoll/tinkrotate v0.0.0-20250419133550-553a9fe5d206/go.mod h1:XycaAmpkjpJxxDZ73s+lhEh7To/mwt7e7U60BZ7OXoU=
+github.com/lstoll/tinkrotate v0.0.0-20250419171507-c26c0c6bbbde h1:vNrFx6TLJsHvPc64/nA8RbgcwoHy2ukBCOP9GeBacWs=
+github.com/lstoll/tinkrotate v0.0.0-20250419171507-c26c0c6bbbde/go.mod h1:XycaAmpkjpJxxDZ73s+lhEh7To/mwt7e7U60BZ7OXoU=
 github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=
 github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJJLY9Nlc=
 github.com/mattn/go-sqlite3 v1.14.28 h1:ThEiQrnbtumT+QMknw63Befp/ce/nUPgBPMlRFEum7A=
