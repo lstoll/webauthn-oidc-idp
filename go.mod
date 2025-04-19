@@ -1,6 +1,6 @@
 module github.com/lstoll/webauthn-oidc-idp
 
-go 1.22.0
+go 1.24.0
 
 require (
 	crawshaw.dev/jsonfile v0.0.0-20240206193014-699d1dad804e
