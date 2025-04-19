@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
-	"embed"
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,6 +22,10 @@ import (
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
+	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"github.com/lstoll/webauthn-oidc-idp/web"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -33,9 +36,6 @@ import (
 )
 
 const progname = "webauthn-oidc-idp"
-
-//go:embed web/public/*
-var staticFiles embed.FS
 
 func init() {
 	if version.Version == "" {
@@ -59,6 +59,17 @@ func main() {
 	addCredential := flag.Bool("add-credential", false, "Generate a new credential enrollment URL for a user")
 	userID := flag.String("user-id", "", "ID of user to add credential to.")
 	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
+	dbPath := flag.String("db-path", "", "Path to SQLite database file. Overrides config file setting.")
+
+	// Set flags from environment variables with IDP_ prefix
+	flag.VisitAll(func(f *flag.Flag) {
+		envName := "IDP_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+		if val, ok := os.LookupEnv(envName); ok {
+			if err := f.Value.Set(val); err != nil {
+				fatalf("set flag %s from env %s: %v", f.Name, envName, err)
+			}
+		}
+	})
 
 	flag.Parse()
 
@@ -89,6 +100,32 @@ func main() {
 		fatalf("open database at %s: %v", cfg.Database, err)
 	}
 
+	if *dbPath == "" {
+		fatal("required flag missing: db")
+	}
+
+	sqldb, err := sql.Open("sqlite3", *dbPath+"?_journal=WAL")
+	if err != nil {
+		fatalf("open database: %v", err)
+	}
+	defer sqldb.Close()
+
+	if _, err := sqldb.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		fatalf("enable WAL mode: %v", err)
+	}
+
+	if _, err := sqldb.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		fatalf("set busy timeout: %v", err)
+	}
+
+	if err := dbpkg.Migrate(ctx, sqldb); err != nil {
+		fatalf("run migrations: %v", err)
+	}
+
+	if err := migrateData(ctx, db, sqldb); err != nil {
+		fatalf("failed to migrate data: %v", err)
+	}
+
 	if *enroll {
 		if *email == "" {
 			fatal("required flag missing: email")
@@ -97,45 +134,69 @@ func main() {
 			fatal("required flag missing: fullname")
 		}
 
-		user, err := db.CreateUser(User{
-			Email:    *email,
-			FullName: *fullname,
-		})
-		if err != nil {
+		params := queries.CreateUserParams{
+			ID:             must(uuid.NewV7()),
+			Email:          *email,
+			FullName:       *fullname,
+			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
+			WebauthnHandle: must(uuid.NewRandom()),
+		}
+
+		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
 			fatalf("create user: %v", err)
 		}
-		reloadDB(*addr)
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
+
+		fmt.Printf("New user created: %s\n", params.ID)
+		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, params.ID.String(), params.EnrollmentKey.String))
 		return
 	} else if *addCredential {
 		if *userID == "" {
 			fatal("required flag missing: user-id")
 		}
-		user, err := db.GetUserByID(*userID)
+
+		userUUID, err := uuid.Parse(*userID)
+		if err != nil {
+			fatalf("parse user-id: %v", err)
+		}
+
+		q := queries.New(sqldb)
+
+		_, err = q.GetUser(ctx, userUUID)
 		if err != nil {
 			fatalf("get user %s: %w", userID, err)
 		}
 
-		user.EnrollmentKey = uuid.NewString()
+		ek := uuid.NewString()
 
-		if err := db.UpdateUser(user); err != nil {
-			fatalf("update user %s: %w", userID, err)
+		if err := q.SetUserEnrollmentKey(ctx, sql.NullString{String: ek, Valid: true}, userUUID); err != nil {
+			fatalf("set user enrollment key: %v", err)
 		}
 
-		reloadDB(*addr)
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
+		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, userUUID.String(), ek))
 		return
 	} else if *listCredential {
 		if *userID == "" {
 			fatal("required flag missing: user-id")
 		}
-		user, err := db.GetUserByID(*userID)
+		userUUID, err := uuid.Parse(*userID)
+		if err != nil {
+			fatalf("parse user-id: %v", err)
+		}
+
+		q := queries.New(sqldb)
+
+		_, err = q.GetUser(ctx, userUUID)
 		if err != nil {
 			fatalf("get user %s: %w", userID, err)
 		}
 
-		for _, c := range user.Credentials {
-			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.AddedAt)
+		creds, err := q.GetUserCredentials(ctx, userUUID)
+		if err != nil {
+			fatalf("get user credentials: %v", err)
+		}
+
+		for _, c := range creds {
+			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.CreatedAt)
 		}
 		return
 	}
@@ -146,18 +207,18 @@ func main() {
 
 	issuer := cfg.Issuer[0]
 
-	if err := serve(ctx, db, issuer, *addr, *metrics); err != nil {
+	if err := serve(ctx, sqldb, db, issuer, *addr, *metrics); err != nil {
 		fatalf("start server: %v", err)
 	}
 }
 
-func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics string) error {
-	ksm, err := NewKeysetManager(db)
-	if err != nil {
-		return fmt.Errorf("creating OIDC keyset manager: %w", err)
-	}
+func serve(ctx context.Context, sqldb *sql.DB, db *DB, issuer issuerConfig, addr, metrics string) error {
+	var g run.Group
 
-	oidcHandles := ksm.Handles(KeysetOIDC)
+	cookieHandles, oidcHandles, err := initKeysets(ctx, sqldb, g)
+	if err != nil {
+		return fmt.Errorf("initializing keysets: %w", err)
+	}
 
 	oidcmd := discovery.DefaultCoreMetadata(issuer.URL.String())
 	oidcmd.AuthorizationEndpoint = issuer.URL.String() + "/auth"
@@ -180,7 +241,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 	}
 
 	webSessMgr, err := cookiesession.New[webSession]("idp", func() *keyset.Handle {
-		h, err := ksm.Handles(KeysetCookie).Handle(context.Background())
+		h, err := cookieHandles.Handle(context.Background())
 		if err != nil {
 			// we should not hit this, the load comes from the DB TODO(lstoll)
 			// get a consistent way of looking up handles.
@@ -225,6 +286,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 		db:       db,
 		webauthn: wn,
 		sessmgr:  webSessMgr,
+		queries:  queries.New(sqldb),
 	}
 
 	mgr.AddHandlers(mux)
@@ -239,13 +301,10 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 		// upstreamPolicy:  []byte(ucp),
 		webauthn: wn,
 		db:       db,
+		queries:  queries.New(sqldb),
 	}
 
-	pubContent, err := fs.Sub(fs.FS(staticFiles), "web")
-	if err != nil {
-		return fmt.Errorf("creating public subfs: %w", err)
-	}
-	fs := http.FileServer(http.FS(pubContent))
+	fs := http.FileServer(http.FS(web.PublicFiles))
 	mux.Handle("/public/", fs)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -278,11 +337,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 
 	svr.AddHandlers(mux)
 
-	var g run.Group
-
 	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
-
-	g.Add(ksm.Run, ksm.Interrupt)
 
 	// this will always try and create a session for discovery and stuff,
 	// but we shouldn't save it. but, we need it for logging and stuff. TODO
@@ -329,7 +384,7 @@ func serve(ctx context.Context, db *DB, issuer issuerConfig, addr, metrics strin
 	return g.Run()
 }
 
-func registrationURL(iss *url.URL, user User) *url.URL {
+func registrationURL(iss *url.URL, userID string, enrollmentKey string) *url.URL {
 	u := *iss
 	if !strings.HasSuffix(u.Path, "/") {
 		u.Path += "/"
@@ -339,8 +394,8 @@ func registrationURL(iss *url.URL, user User) *url.URL {
 		panic(err)
 	}
 	q := u2.Query()
-	q.Add("user_id", user.ID)
-	q.Add("enrollment_token", user.EnrollmentKey)
+	q.Add("user_id", userID)
+	q.Add("enrollment_token", enrollmentKey)
 	u2.RawQuery = q.Encode()
 	return u2
 }

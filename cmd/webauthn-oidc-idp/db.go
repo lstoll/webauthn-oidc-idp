@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 
 	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"github.com/lstoll/oidc/core"
 )
 
@@ -30,6 +28,9 @@ var (
 type schema struct {
 	// Version is the schemaVersion of the on-disk database.
 	Version uint `json:"version"`
+
+	// UsersMigrated is true if the users have been migrated to the SQL database.
+	UsersMigrated bool `json:"usersMigrated"`
 
 	// Users stores all users in the system, along with their WebAuthn credentials.
 	// The key is the user's ID.
@@ -168,7 +169,7 @@ func (db *DB) Reload() error {
 	})
 }
 
-func (db *DB) GetUserByID(userID string) (User, error) {
+/*func (db *DB) GetUserByID(userID string) (User, error) {
 	var (
 		v  User
 		ok bool
@@ -289,7 +290,7 @@ func (db *DB) ListUsers() []User {
 		}
 	})
 	return users
-}
+}*/
 
 func (db *DB) Authenticate(sessionID string, auth AuthenticatedUser) error {
 	return db.f.Write(func(db *schema) error {

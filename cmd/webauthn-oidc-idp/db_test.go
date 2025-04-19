@@ -3,10 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
-
-	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 func TestOpenDB(t *testing.T) {
@@ -29,7 +26,7 @@ func TestOpenDB(t *testing.T) {
 	}
 }
 
-func TestReloadDB(t *testing.T) {
+/*func TestReloadDB(t *testing.T) {
 	t.Parallel()
 
 	file := filepath.Join(t.TempDir(), "db.json")
@@ -55,9 +52,9 @@ func TestReloadDB(t *testing.T) {
 	if want, got := 1, len(db.ListUsers()); got != want {
 		t.Fatalf("want %d users after reload, got: %d", want, got)
 	}
-}
+}*/
 
-func TestUsers(t *testing.T) {
+/*func TestUsers(t *testing.T) {
 	t.Parallel()
 
 	db := openTestDB(t)
@@ -137,7 +134,7 @@ func TestUsers(t *testing.T) {
 	if got := len(users[idx].Credentials); got != 0 {
 		t.Errorf("want user to have no credentials left, got: %d", got)
 	}
-}
+}*/
 
 func TestAuthenticatedUsers(t *testing.T) {
 	t.Parallel()

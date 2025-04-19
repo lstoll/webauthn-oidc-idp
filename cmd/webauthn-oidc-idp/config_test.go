@@ -8,7 +8,7 @@ import (
 func TestLoadConfig(t *testing.T) {
 	t.Setenv("ENCRYPTION_KEY", "secret")
 
-	b, err := os.ReadFile("config.json")
+	b, err := os.ReadFile("testdata/config.json")
 	if err != nil {
 		t.Fatalf("read config file: %v", err)
 	}

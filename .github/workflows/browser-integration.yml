@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -23,9 +26,7 @@ jobs:
     - name: Set up Chrome
       uses: browser-actions/setup-chrome@v1
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
 
     - name: Run Browser Integration Test
       run: |
-        TEST_E2E_HEADLESS=1 go test -run=TestE2E
+        TEST_E2E_HEADLESS=1 go test -run=TestE2E ./...
