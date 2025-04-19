@@ -9,17 +9,19 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/justinas/nosurf"
 	"github.com/lstoll/cookiesession"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/web"
 )
 
 type webauthnManager struct {
 	db       *DB
+	queries  *queries.Queries
 	webauthn *webauthn.WebAuthn
 
 	sessmgr *cookiesession.Manager[webSession, *webSession]
@@ -42,12 +44,12 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 	et := req.URL.Query().Get("enrollment_token")
 	if uid != "" && et != "" {
 		// we want to enroll a user. Find them, and match the token
-		user, err := w.db.GetUserByID(uid)
+		user, err := w.queries.GetUser(req.Context(), uuid.MustParse(uid))
 		if err != nil {
 			w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", uid, err))
 			return
 		}
-		if user.EnrollmentKey == "" || subtle.ConstantTimeCompare([]byte(et), []byte(user.EnrollmentKey)) == 0 {
+		if !user.EnrollmentKey.Valid || user.EnrollmentKey.String == "" || subtle.ConstantTimeCompare([]byte(et), []byte(user.EnrollmentKey.String)) == 0 {
 			w.httpUnauth(rw, "either previous enrollment completed fine, or invalid enrollment")
 			return
 		}
@@ -70,7 +72,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	user, err := w.db.GetUserByID(sess.PendingWebauthnEnrollment.ForUserID)
+	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(sess.PendingWebauthnEnrollment.ForUserID))
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
 		return
@@ -89,7 +91,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 	}
 	conveyancePref := protocol.ConveyancePreference(protocol.PreferDirectAttestation)
 
-	options, sessionData, err := w.webauthn.BeginRegistration(user, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
+	options, sessionData, err := w.webauthn.BeginRegistration(&webauthnUser{qu: user}, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
@@ -113,7 +115,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	user, err := w.db.GetUserByID(sess.PendingWebauthnEnrollment.ForUserID) // TODO - guard the allow unactive for enrol only!
+	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(sess.PendingWebauthnEnrollment.ForUserID)) // TODO - guard the allow unactive for enrol only!
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
 		return
@@ -136,13 +138,24 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		w.httpErr(req.Context(), rw, fmt.Errorf("parsing credential creation response: %w", err))
 		return
 	}
-	credential, err := w.webauthn.CreateCredential(user, sessionData, parsedResponse)
+	credential, err := w.webauthn.CreateCredential(&webauthnUser{qu: user}, sessionData, parsedResponse)
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("creating credential: %w", err))
 		return
 	}
 
-	if err := w.db.CreateUserCredential(user.ID, keyName, WebauthnCredential{Credential: *credential, Name: keyName, AddedAt: time.Now()}); err != nil {
+	cb, err := json.Marshal(credential)
+	if err != nil {
+		w.httpErr(req.Context(), rw, fmt.Errorf("marshalling credential: %w", err))
+		return
+	}
+
+	if err := w.queries.CreateUserCredential(req.Context(), queries.CreateUserCredentialParams{
+		UserID:         user.ID,
+		CredentialID:   credential.ID,
+		CredentialData: cb,
+		Name:           keyName,
+	}); err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
 	}

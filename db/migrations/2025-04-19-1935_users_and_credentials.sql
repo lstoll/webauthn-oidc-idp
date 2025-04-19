@@ -1,15 +1,3 @@
-CREATE TABLE migrations (
-		idx integer primary key not null,
-		at datetime not null
-		);
-
-CREATE TABLE tink_keysets (
-    id TEXT PRIMARY KEY,
-    keyset_data BLOB NOT NULL,
-    metadata_data BLOB NOT NULL,
-    version INTEGER NOT NULL
-);
-
 CREATE TABLE users
 -- Users of the system
 (
@@ -31,4 +19,3 @@ CREATE TABLE credentials
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, -- When the credential was created
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
-

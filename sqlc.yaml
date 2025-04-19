@@ -7,3 +7,17 @@ sql:
       go:
         package: "queries"
         out: "internal/queries"
+        query_parameter_limit: 3
+        overrides:
+          - column: "users.id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "credentials.id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "credentials.user_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"

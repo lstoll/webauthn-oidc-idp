@@ -5,10 +5,37 @@
 package queries
 
 import (
+	"database/sql"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+type Credential struct {
+	ID             uuid.UUID
+	CredentialID   []byte
+	UserID         uuid.UUID
+	Name           string
+	CredentialData []byte
+	CreatedAt      time.Time
+}
 
 type Migration struct {
 	Idx int64
 	At  time.Time
+}
+
+type TinkKeyset struct {
+	ID           string
+	KeysetData   []byte
+	MetadataData []byte
+	Version      int64
+}
+
+type User struct {
+	ID              uuid.UUID
+	Email           string
+	FullName        string
+	EnrollmentKey   sql.NullString
+	OverrideSubject sql.NullString
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/web"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/run"
@@ -99,65 +100,9 @@ func main() {
 		fatalf("open database at %s: %v", cfg.Database, err)
 	}
 
-	if *enroll {
-		if *email == "" {
-			fatal("required flag missing: email")
-		}
-		if *fullname == "" {
-			fatal("required flag missing: fullname")
-		}
-
-		user, err := db.CreateUser(User{
-			Email:    *email,
-			FullName: *fullname,
-		})
-		if err != nil {
-			fatalf("create user: %v", err)
-		}
-		reloadDB(*addr)
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
-		return
-	} else if *addCredential {
-		if *userID == "" {
-			fatal("required flag missing: user-id")
-		}
-		user, err := db.GetUserByID(*userID)
-		if err != nil {
-			fatalf("get user %s: %w", userID, err)
-		}
-
-		user.EnrollmentKey = uuid.NewString()
-
-		if err := db.UpdateUser(user); err != nil {
-			fatalf("update user %s: %w", userID, err)
-		}
-
-		reloadDB(*addr)
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, user))
-		return
-	} else if *listCredential {
-		if *userID == "" {
-			fatal("required flag missing: user-id")
-		}
-		user, err := db.GetUserByID(*userID)
-		if err != nil {
-			fatalf("get user %s: %w", userID, err)
-		}
-
-		for _, c := range user.Credentials {
-			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.AddedAt)
-		}
-		return
-	}
-
-	if *addr == "" {
-		fatal("required flag missing: http")
-	}
 	if *dbPath == "" {
 		fatal("required flag missing: db")
 	}
-
-	issuer := cfg.Issuer[0]
 
 	sqldb, err := sql.Open("sqlite3", *dbPath+"?_journal=WAL")
 	if err != nil {
@@ -176,6 +121,86 @@ func main() {
 	if err := dbpkg.Migrate(ctx, sqldb); err != nil {
 		fatalf("run migrations: %v", err)
 	}
+
+	if *enroll {
+		if *email == "" {
+			fatal("required flag missing: email")
+		}
+		if *fullname == "" {
+			fatal("required flag missing: fullname")
+		}
+
+		params := queries.CreateUserParams{
+			ID:            must(uuid.NewV7()),
+			Email:         *email,
+			FullName:      *fullname,
+			EnrollmentKey: sql.NullString{String: uuid.NewString(), Valid: true},
+		}
+
+		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
+			fatalf("create user: %v", err)
+		}
+
+		fmt.Printf("New user created: %s\n", params.ID)
+		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, params.ID.String(), params.EnrollmentKey.String))
+		return
+	} else if *addCredential {
+		if *userID == "" {
+			fatal("required flag missing: user-id")
+		}
+
+		userUUID, err := uuid.Parse(*userID)
+		if err != nil {
+			fatalf("parse user-id: %v", err)
+		}
+
+		q := queries.New(sqldb)
+
+		_, err = q.GetUser(ctx, userUUID)
+		if err != nil {
+			fatalf("get user %s: %w", userID, err)
+		}
+
+		ek := uuid.NewString()
+
+		if err := q.SetUserEnrollmentKey(ctx, sql.NullString{String: ek, Valid: true}, userUUID); err != nil {
+			fatalf("set user enrollment key: %v", err)
+		}
+
+		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, userUUID.String(), ek))
+		return
+	} else if *listCredential {
+		if *userID == "" {
+			fatal("required flag missing: user-id")
+		}
+		userUUID, err := uuid.Parse(*userID)
+		if err != nil {
+			fatalf("parse user-id: %v", err)
+		}
+
+		q := queries.New(sqldb)
+
+		_, err = q.GetUser(ctx, userUUID)
+		if err != nil {
+			fatalf("get user %s: %w", userID, err)
+		}
+
+		creds, err := q.GetUserCredentials(ctx, userUUID)
+		if err != nil {
+			fatalf("get user credentials: %v", err)
+		}
+
+		for _, c := range creds {
+			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.CreatedAt)
+		}
+		return
+	}
+
+	if *addr == "" {
+		fatal("required flag missing: http")
+	}
+
+	issuer := cfg.Issuer[0]
 
 	if err := serve(ctx, sqldb, db, issuer, *addr, *metrics); err != nil {
 		fatalf("start server: %v", err)
@@ -256,6 +281,7 @@ func serve(ctx context.Context, sqldb *sql.DB, db *DB, issuer issuerConfig, addr
 		db:       db,
 		webauthn: wn,
 		sessmgr:  webSessMgr,
+		queries:  queries.New(sqldb),
 	}
 
 	mgr.AddHandlers(mux)
@@ -270,6 +296,7 @@ func serve(ctx context.Context, sqldb *sql.DB, db *DB, issuer issuerConfig, addr
 		// upstreamPolicy:  []byte(ucp),
 		webauthn: wn,
 		db:       db,
+		queries:  queries.New(sqldb),
 	}
 
 	fs := http.FileServer(http.FS(web.PublicFiles))
@@ -352,7 +379,7 @@ func serve(ctx context.Context, sqldb *sql.DB, db *DB, issuer issuerConfig, addr
 	return g.Run()
 }
 
-func registrationURL(iss *url.URL, user User) *url.URL {
+func registrationURL(iss *url.URL, userID string, enrollmentKey string) *url.URL {
 	u := *iss
 	if !strings.HasSuffix(u.Path, "/") {
 		u.Path += "/"
@@ -362,8 +389,8 @@ func registrationURL(iss *url.URL, user User) *url.URL {
 		panic(err)
 	}
 	q := u2.Query()
-	q.Add("user_id", user.ID)
-	q.Add("enrollment_token", user.EnrollmentKey)
+	q.Add("user_id", userID)
+	q.Add("enrollment_token", enrollmentKey)
 	u2.RawQuery = q.Encode()
 	return u2
 }
