@@ -7,6 +7,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20250403032234-65de8f5d025b
 	github.com/chromedp/chromedp v0.13.7
 	github.com/go-webauthn/webauthn v0.13.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/justinas/nosurf v1.1.1
 	github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9
@@ -16,6 +17,7 @@ require (
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/prometheus/common v0.62.0
+	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
 	github.com/tink-crypto/tink-go/v2 v2.4.0
 	golang.org/x/oauth2 v0.24.0
 	golang.org/x/sys v0.33.0

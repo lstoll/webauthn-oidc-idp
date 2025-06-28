@@ -6,13 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -31,26 +30,50 @@ func init() {
 	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(progname, "-", "_")))
 }
 
+type tenant struct {
+	DB         *sql.DB
+	IssuerHost *url.URL
+}
+
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Root flags that apply to all commands
 	rootFlags := flag.NewFlagSet("root", flag.ExitOnError)
 	debug := rootFlags.Bool("debug", false, "Enable debug logging")
-	configFile := rootFlags.String("config", "config.json", "Path to the config file.")
+	configFile := rootFlags.String("config", "config.json", "Path to the config file. If not specified, db-path and issuer-host must be specified.")
+	dbPath := rootFlags.String("db-path", "", "Path to database file, for single tenant mode. Not needed if config set")
+	issuerHost := rootFlags.String("issuer-host", "", "Host name of the issuer, for single tenant mode. Not needed if config set")
+	selectedHost := rootFlags.String("selected-host", "", "In multi-tenant mode, the host to select for administrative operations. Not used for serving.")
 
-	// Command1 flags
-	cmd1Flags := flag.NewFlagSet("command1", flag.ExitOnError)
-	cmd1String := cmd1Flags.String("string", "default", "A string flag for command1")
-	cmd1Int := cmd1Flags.Int("int", 42, "An integer flag for command1")
+	serveArgs := struct {
+		Addr    string
+		Metrics string
+	}{}
+	serveFlags := flag.NewFlagSet("serve", flag.ExitOnError)
+	serveFlags.StringVar(&serveArgs.Addr, "http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
+	serveFlags.StringVar(&serveArgs.Metrics, "metrics", "", "Expose Prometheus metrics on the given host:port.")
 
-	// Command2 flags
-	cmd2Flags := flag.NewFlagSet("command2", flag.ExitOnError)
-	cmd2Bool := cmd2Flags.Bool("bool", false, "A boolean flag for command2")
-	cmd2Float := cmd2Flags.Float64("float", 3.14, "A float flag for command2")
+	enrollFlags := flag.NewFlagSet("enroll-user", flag.ExitOnError)
+	enrollArgs := idp.EnrollArgs{}
+	enrollFlags.StringVar(&enrollArgs.Email, "email", "", "Email address for the user.")
+	enrollFlags.StringVar(&enrollArgs.FullName, "fullname", "", "Full name of the user.")
+
+	addCredentialFlags := flag.NewFlagSet("add-credential", flag.ExitOnError)
+	addCredentialArgs := idp.AddCredentialArgs{}
+	addCredentialFlags.StringVar(&addCredentialArgs.UserID, "user-id", "", "ID of user to add credential to.")
+
+	listCredentialsFlags := flag.NewFlagSet("list-credentials", flag.ExitOnError)
+	listCredentialsArgs := idp.ListCredentialsArgs{}
+	listCredentialsFlags.StringVar(&listCredentialsArgs.UserID, "user-id", "", "ID of user to list credentials for.")
 
 	// Process environment variables for all flagsets
 	setFlagsFromEnv(rootFlags)
-	setFlagsFromEnv(cmd1Flags)
-	setFlagsFromEnv(cmd2Flags)
+	setFlagsFromEnv(serveFlags)
+	setFlagsFromEnv(enrollFlags)
+	setFlagsFromEnv(addCredentialFlags)
+	setFlagsFromEnv(listCredentialsFlags)
 
 	// Parse root flags first
 	rootFlags.Parse(os.Args[1:])
@@ -59,32 +82,125 @@ func main() {
 	if len(rootFlags.Args()) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: %s <command> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Commands:\n")
-		fmt.Fprintf(os.Stderr, "  command1    First sample command\n")
-		fmt.Fprintf(os.Stderr, "  command2    Second sample command\n")
+		fmt.Fprintf(os.Stderr, "  serve    Serve the IDP\n")
+		fmt.Fprintf(os.Stderr, "  version  Print version information\n")
+		fmt.Fprintf(os.Stderr, "  enroll-user  Enroll a user into the system\n")
+		fmt.Fprintf(os.Stderr, "  add-credential  Add a credential to a user\n")
+		fmt.Fprintf(os.Stderr, "  list-credentials  List credentials for a user\n")
 		os.Exit(1)
 	}
+
+	var level slog.Leveler
+	if *debug {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	// Get the subcommand
 	subcommand := rootFlags.Args()[0]
 
-	switch subcommand {
-	case "command1":
-		// Parse command1 flags with remaining args
-		cmd1Flags.Parse(rootFlags.Args()[1:])
-		fmt.Printf("Executing command1\n")
-		fmt.Printf("  Root debug flag: %v\n", *debug)
-		fmt.Printf("  Root config file: %s\n", *configFile)
-		fmt.Printf("  Command1 string flag: %s\n", *cmd1String)
-		fmt.Printf("  Command1 int flag: %d\n", *cmd1Int)
+	var cfg *config
 
-	case "command2":
-		// Parse command2 flags with remaining args
-		cmd2Flags.Parse(rootFlags.Args()[1:])
-		fmt.Printf("Executing command2\n")
-		fmt.Printf("  Root debug flag: %v\n", *debug)
-		fmt.Printf("  Root config file: %s\n", *configFile)
-		fmt.Printf("  Command2 bool flag: %v\n", *cmd2Bool)
-		fmt.Printf("  Command2 float flag: %f\n", *cmd2Float)
+	if *configFile == "" {
+		if *dbPath == "" || *issuerHost == "" {
+			fatal("required flag missing: db-path or issuer-host")
+		}
+		// set up directly.
+		*selectedHost = *issuerHost
+		// TODO - if we're in this case, the active tenant would be this one.
+		// Need a way to signal to the later code to not check the flag.
+		fatal("TODO: enable simple single tenant mode when we no longer depend on legacy config clients")
+	}
+	if *configFile != "" {
+		if *dbPath != "" || *issuerHost != "" {
+			fatal("db-path and issuer-host cannot be used with config file")
+		}
+		b, err := os.ReadFile(*configFile)
+		if err != nil {
+			fatalf("read config file %s: %v", *configFile, err)
+		}
+		c, err := loadConfig(b)
+		if err != nil {
+			fatalf("load config file %s: %v", *configFile, err)
+		}
+		cfg = c
+	}
+
+	if len(cfg.Tenants) != 1 {
+		fatal("TODO: enable multi-tenant mode")
+	}
+
+	// load all the database for the tenants
+	var activeTenant *configTenant
+	for _, tenant := range cfg.Tenants {
+		var err error
+		tenant.db, err = sql.Open("sqlite3", tenant.DBPath+"?_journal=WAL")
+		if err != nil {
+			fatalf("open database %s for tenant %s: %v", tenant.DBPath, tenant.Hostname, err)
+		}
+
+		if _, err := tenant.db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+			fatalf("enable WAL mode: %v", err)
+		}
+
+		if _, err := tenant.db.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+			fatalf("set busy timeout: %v", err)
+		}
+
+		if err := dbpkg.Migrate(ctx, tenant.db); err != nil {
+			fatalf("run migrations: %v", err)
+		}
+
+		tenant.legacyDB, err = idp.OpenDB(tenant.ImportDBPath)
+		if err != nil {
+			fatalf("open legacy database for tenant %s at %s: %v", tenant.Hostname, tenant.ImportDBPath, err)
+		}
+
+		if tenant.Hostname == *selectedHost {
+			activeTenant = tenant
+		}
+	}
+
+	if activeTenant == nil && subcommand != "serve" {
+		fatalf("no active tenant found for host %s", *selectedHost)
+	}
+
+	switch subcommand {
+	case "serve":
+		serveFlags.Parse(rootFlags.Args()[1:])
+		// TODO - this should loop, and set up an IDP for each one.
+		serveTenant := cfg.Tenants[0]
+
+		if err := idp.ServeCmd(ctx, serveTenant.db, serveTenant.legacyDB, serveTenant.issuerURL, serveTenant.ImportedClients, serveArgs.Addr, serveArgs.Metrics); err != nil {
+			fatalf("start server: %v", err)
+		}
+
+	case "version":
+		fmt.Fprintln(os.Stdout, version.Print(progname))
+		os.Exit(0)
+
+	case "enroll-user":
+		enrollFlags.Parse(rootFlags.Args()[1:])
+		enrollArgs.Issuer = activeTenant.issuerURL
+		result, err := idp.EnrollCmd(ctx, activeTenant.db, enrollArgs)
+		if err != nil {
+			fatalf("enroll user: %v", err)
+		}
+		fmt.Printf("New user created: %s\n", result.UserID)
+		fmt.Printf("Enrollment URL: %s\n", result.EnrollmentURL)
+
+	case "add-credential":
+		addCredentialFlags.Parse(rootFlags.Args()[1:])
+		addCredentialArgs.Issuer = activeTenant.issuerURL
+		if err := idp.AddCredentialCmd(ctx, activeTenant.db, addCredentialArgs); err != nil {
+			fatalf("add credential: %v", err)
+		}
+
+	case "list-credentials":
+		listCredentialsFlags.Parse(rootFlags.Args()[1:])
+		if err := idp.ListCredentialsCmd(ctx, activeTenant.db, listCredentialsArgs); err != nil {
+			fatalf("list credentials: %v", err)
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", subcommand)
@@ -103,168 +219,6 @@ func setFlagsFromEnv(fs *flag.FlagSet) {
 			}
 		}
 	})
-}
-
-func oldMain() {
-	ver := flag.Bool("version", false, "Print the version and exit.")
-	debug := flag.Bool("debug", false, "Enable debug logging")
-	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
-	metrics := flag.String("metrics", "", "Expose Prometheus metrics on the given host:port.")
-	configFile := flag.String("config", "config.json", "Path to the config file.")
-	enroll := flag.Bool("enroll", false, "Enroll a user into the system.")
-	email := flag.String("email", "", "Email address for the user.")
-	fullname := flag.String("fullname", "", "Full name of the user.")
-	addCredential := flag.Bool("add-credential", false, "Generate a new credential enrollment URL for a user")
-	userID := flag.String("user-id", "", "ID of user to add credential to.")
-	listCredential := flag.Bool("list-credentials", false, "List credentials for the user-id")
-	dbPath := flag.String("db-path", "", "Path to SQLite database file. Overrides config file setting.")
-
-	// Set flags from environment variables with IDP_ prefix
-	flag.VisitAll(func(f *flag.Flag) {
-		envName := "IDP_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
-		if val, ok := os.LookupEnv(envName); ok {
-			if err := f.Value.Set(val); err != nil {
-				fatalf("set flag %s from env %s: %v", f.Name, envName, err)
-			}
-		}
-	})
-
-	flag.Parse()
-
-	if *ver {
-		fmt.Fprintln(os.Stdout, version.Print(progname))
-		os.Exit(0)
-	}
-
-	b, err := os.ReadFile(*configFile)
-	if err != nil {
-		fatalf("read config file: %v", err)
-	}
-	var cfg config
-	if err := loadConfig(b, &cfg); err != nil {
-		fatalf("load config file: %v", err)
-	}
-
-	var level slog.Leveler
-	if *debug {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-
-	ctx := context.Background()
-
-	// legacy database
-	db, err := idp.OpenDB(cfg.Database)
-	if err != nil {
-		fatalf("open database at %s: %v", cfg.Database, err)
-	}
-
-	if *dbPath == "" {
-		fatal("required flag missing: db")
-	}
-
-	sqldb, err := sql.Open("sqlite3", *dbPath+"?_journal=WAL")
-	if err != nil {
-		fatalf("open database: %v", err)
-	}
-	defer sqldb.Close()
-
-	if _, err := sqldb.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		fatalf("enable WAL mode: %v", err)
-	}
-
-	if _, err := sqldb.Exec("PRAGMA busy_timeout=5000;"); err != nil {
-		fatalf("set busy timeout: %v", err)
-	}
-
-	if err := dbpkg.Migrate(ctx, sqldb); err != nil {
-		fatalf("run migrations: %v", err)
-	}
-
-	if *enroll {
-		if *email == "" {
-			fatal("required flag missing: email")
-		}
-		if *fullname == "" {
-			fatal("required flag missing: fullname")
-		}
-
-		params := queries.CreateUserParams{
-			ID:             must(uuid.NewV7()),
-			Email:          *email,
-			FullName:       *fullname,
-			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
-			WebauthnHandle: must(uuid.NewRandom()),
-		}
-
-		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
-			fatalf("create user: %v", err)
-		}
-
-		fmt.Printf("New user created: %s\n", params.ID)
-		fmt.Printf("Enroll at: %s\n", idp.RegistrationURL(cfg.Issuer[0].URL, params.ID.String(), params.EnrollmentKey.String))
-		return
-	} else if *addCredential {
-		if *userID == "" {
-			fatal("required flag missing: user-id")
-		}
-
-		userUUID, err := uuid.Parse(*userID)
-		if err != nil {
-			fatalf("parse user-id: %v", err)
-		}
-
-		q := queries.New(sqldb)
-
-		_, err = q.GetUser(ctx, userUUID)
-		if err != nil {
-			fatalf("get user %s: %w", userID, err)
-		}
-
-		ek := uuid.NewString()
-
-		if err := q.SetUserEnrollmentKey(ctx, sql.NullString{String: ek, Valid: true}, userUUID); err != nil {
-			fatalf("set user enrollment key: %v", err)
-		}
-
-		fmt.Printf("Enroll at: %s\n", idp.RegistrationURL(cfg.Issuer[0].URL, userUUID.String(), ek))
-		return
-	} else if *listCredential {
-		if *userID == "" {
-			fatal("required flag missing: user-id")
-		}
-		userUUID, err := uuid.Parse(*userID)
-		if err != nil {
-			fatalf("parse user-id: %v", err)
-		}
-
-		q := queries.New(sqldb)
-
-		_, err = q.GetUser(ctx, userUUID)
-		if err != nil {
-			fatalf("get user %s: %w", userID, err)
-		}
-
-		creds, err := q.GetUserCredentials(ctx, userUUID)
-		if err != nil {
-			fatalf("get user credentials: %v", err)
-		}
-
-		for _, c := range creds {
-			fmt.Printf("credential: %s (added at %s)\n", c.Name, c.CreatedAt)
-		}
-		return
-	}
-
-	if *addr == "" {
-		fatal("required flag missing: http")
-	}
-
-	issuer := cfg.Issuer[0]
-
-	if err := idp.ServeCmd(ctx, sqldb, db, issuer.URL, issuer.Clients, *addr, *metrics); err != nil {
-		fatalf("start server: %v", err)
-	}
 }
 
 func fatal(s string) {

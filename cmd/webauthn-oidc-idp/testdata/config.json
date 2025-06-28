@@ -1,0 +1,9 @@
+{
+  "tenants": [
+    {
+      "hostname": "localhost",
+      "dbPath": "db/test.db",
+      "importConfigPath": "testdata/legacyConfig.json"
+    }
+  ]
+}

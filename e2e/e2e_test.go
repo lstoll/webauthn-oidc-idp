@@ -18,7 +18,6 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
-	"github.com/google/uuid"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/clitoken"
 	"github.com/lstoll/oidc/core/staticclients"
@@ -182,23 +181,20 @@ func TestE2E(t *testing.T) {
 
 	testOk := t.Run("Registration", func(t *testing.T) {
 		// first enroll a user.
-		params := queries.CreateUserParams{
-			ID:             must(uuid.NewV7()),
-			Email:          "test.user@example.com",
-			FullName:       "Test User",
-			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
-			WebauthnHandle: must(uuid.NewRandom()),
+		result, err := idp.EnrollCmd(ctx, sqldb, idp.EnrollArgs{
+			Email:    "test.user@example.com",
+			FullName: "Test User",
+			Issuer:   issU,
+		})
+		if err != nil {
+			t.Fatalf("enrolling user: %v", err)
 		}
-		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
-			t.Fatalf("create user: %v", err)
-		}
-		ep := idp.RegistrationURL(issU, params.ID.String(), params.EnrollmentKey.String)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {
 			err := chromedp.Run(ctx,
-				chromedp.Navigate(ep.String()),
+				chromedp.Navigate(result.EnrollmentURL.String()),
 				chromedp.WaitVisible(`//button[text()='Register Key']`),
 				chromedp.SendKeys(`//input[@id='keyName']`, "Test Passkey"),
 				chromedp.Click(`//button[text()='Register Key']`),
@@ -227,11 +223,11 @@ func TestE2E(t *testing.T) {
 		case <-doneC:
 		}
 
-		_, err := queries.New(sqldb).GetUser(ctx, params.ID)
+		_, err = queries.New(sqldb).GetUser(ctx, result.UserID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		creds, err := queries.New(sqldb).GetUserCredentials(ctx, params.ID)
+		creds, err := queries.New(sqldb).GetUserCredentials(ctx, result.UserID)
 		if err != nil {
 			t.Fatal(err)
 		}
