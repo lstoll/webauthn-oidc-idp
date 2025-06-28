@@ -10,4 +10,5 @@ go.work*
 # for local/direct deploys
 fly.toml
 config.fly.json
+legacy-config.fly.json
 Dockerfile.fly

@@ -19,7 +19,7 @@ FROM debian:bookworm
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates sqlite3
+    apt-get install -y ca-certificates sqlite3 procps
 
 COPY --from=build /go/bin/webauthn-oidc-idp /usr/bin/
 
