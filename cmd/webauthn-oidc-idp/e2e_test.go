@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
+	goruntime "runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -15,9 +17,13 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
+	"github.com/google/uuid"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/clitoken"
 	"github.com/lstoll/oidc/core/staticclients"
+	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/oauth2"
 )
 
@@ -42,6 +48,9 @@ func TestE2E(t *testing.T) {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if !runE2EHeadless {
 		opts = append(opts, chromedp.Flag("headless", false))
+	}
+	if goruntime.GOOS == "linux" && os.Getenv("GITHUB_ACTIONS") != "" {
+		opts = append(opts, chromedp.Flag("no-sandbox", true))
 	}
 	allocCtx, execCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(execCancel)
@@ -99,9 +108,19 @@ func TestE2E(t *testing.T) {
 	serveCtx, serveCancel := context.WithCancel(context.Background())
 	t.Cleanup(serveCancel)
 
+	sqldb, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open in-memory database: %v", err)
+	}
+	defer sqldb.Close()
+
+	if err := dbpkg.Migrate(ctx, sqldb); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := serve(serveCtx, db, issConfig, net.JoinHostPort("localhost", port), ""); err != nil {
+		if err := serve(serveCtx, sqldb, db, issConfig, net.JoinHostPort("localhost", port), ""); err != nil {
 			serveErr <- err
 		}
 	}()
@@ -165,17 +184,19 @@ func TestE2E(t *testing.T) {
 
 	/* start testing */
 
-	var user User
 	testOk := t.Run("Registration", func(t *testing.T) {
 		// first enroll a user.
-		user, err = db.CreateUser(User{
-			Email:    "test.user@example.com",
-			FullName: "Test User",
-		})
-		if err != nil {
-			t.Fatal(err)
+		params := queries.CreateUserParams{
+			ID:             must(uuid.NewV7()),
+			Email:          "test.user@example.com",
+			FullName:       "Test User",
+			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
+			WebauthnHandle: must(uuid.NewRandom()),
 		}
-		ep := registrationURL(issConfig.URL, user)
+		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
+			fatalf("create user: %v", err)
+		}
+		ep := registrationURL(issConfig.URL, params.ID.String(), params.EnrollmentKey.String)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
@@ -210,12 +231,16 @@ func TestE2E(t *testing.T) {
 		case <-doneC:
 		}
 
-		user, err = db.GetUserByID(user.ID)
+		_, err := queries.New(sqldb).GetUser(ctx, params.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(user.Credentials) != 1 {
-			t.Fatalf("expected user to have 1 credential, got: %d", len(user.Credentials))
+		creds, err := queries.New(sqldb).GetUserCredentials(ctx, params.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(creds) != 1 {
+			t.Fatalf("expected user to have 1 credential, got: %d", len(creds))
 		}
 	})
 	if !testOk {

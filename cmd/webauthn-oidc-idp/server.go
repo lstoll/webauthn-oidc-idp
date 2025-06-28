@@ -2,7 +2,7 @@ package main
 
 import (
 	"crypto/md5"
-	"embed"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +15,12 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"github.com/lstoll/webauthn-oidc-idp/web"
 )
 
 /* keeping this around as some context betweet a oidc/session, and an authentication
@@ -50,10 +53,7 @@ type AuthSessionManager interface {
 } */
 
 var (
-	//go:embed web/templates
-	templates embed.FS
-
-	loginTemplate = template.Must(template.ParseFS(templates, "web/templates/login.tmpl.html"))
+	loginTemplate = template.Must(template.ParseFS(web.Templates, "templates/login.tmpl.html"))
 )
 
 type oidcServer struct {
@@ -67,6 +67,7 @@ type oidcServer struct {
 	sessmgr         *cookiesession.Manager[webSession, *webSession]
 	webauthn        *webauthn.WebAuthn
 	db              *DB
+	queries         *queries.Queries
 }
 
 func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
@@ -159,12 +160,49 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	userID := string(parsedResponse.Response.UserHandle) // user handle is the webauthn.User#ID we registered with
-
-	user, err := s.db.GetUserByID(userID)
-	if err != nil {
-		s.httpErr(rw, err)
-		return
+	// userHandle is what we registered the credential with. Currently this is a
+	// unique value just for this purpose, but previously could have been the
+	// user ID. which also could now be the override subject. So try them all.
+	// If it's the new handle, it'll be bytes. If it's one of the older ID
+	// types, it'll be a string.
+	// TODO(lstoll) clean this up at some point, might need to re-register some
+	// things.
+	var (
+		user queries.User
+		// validateID is the ID we'll use to validate the user later.
+		// go-webauthn requires it to align with what the credential provided.
+		validateID []byte
+	)
+	// If the userHandle is a valid UUID4 in bytes, use it directly
+	if len(parsedResponse.Response.UserHandle) == 16 && ((parsedResponse.Response.UserHandle[6]&0xf0)>>4) == 4 {
+		// it's a UUID4, likely the distinct webauthn handle
+		userHandle, err := uuid.FromBytes(parsedResponse.Response.UserHandle)
+		if err != nil {
+			s.httpErr(rw, fmt.Errorf("invalid UUIDv4: %v", err))
+			return
+		}
+		user, err = s.queries.GetUserByWebauthnHandle(req.Context(), userHandle)
+		if err != nil {
+			s.httpErr(rw, fmt.Errorf("getting user by webauthn handle: %v", err))
+			return
+		}
+		validateID = user.WebauthnHandle[:]
+	} else if err := uuid.Validate(string(parsedResponse.Response.UserHandle)); err == nil {
+		// string UUID, likely the user ID
+		user, err = s.queries.GetUser(req.Context(), uuid.MustParse(string(parsedResponse.Response.UserHandle)))
+		if err != nil {
+			s.httpErr(rw, fmt.Errorf("getting user by ID: %v", err))
+			return
+		}
+		validateID = []byte(user.ID.String())
+	} else {
+		// process it as a fallback subject.
+		user, err = s.queries.GetUserByOverrideSubject(req.Context(), sql.NullString{String: string(parsedResponse.Response.UserHandle), Valid: true})
+		if err != nil {
+			s.httpErr(rw, fmt.Errorf("getting user by override subject: %v", err))
+			return
+		}
+		validateID = []byte(user.OverrideSubject.String)
 	}
 
 	// var car protocol.CredentialAssertionResponse
@@ -194,15 +232,40 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// 	return
 	// }
 	sessionData.UserID = parsedResponse.Response.UserHandle // need this for the validation
-	credential, err := s.webauthn.ValidateLogin(user, sessionData, parsedResponse)
+
+	creds, err := s.queries.GetUserCredentials(req.Context(), user.ID)
+	if err != nil {
+		s.httpErr(rw, fmt.Errorf("getting user credentials: %v", err))
+		return
+	}
+
+	wu := &webauthnUser{
+		qu:         user,
+		overrideID: validateID,
+	}
+	for _, c := range creds {
+		var cred webauthn.Credential
+		if err := json.Unmarshal(c.CredentialData, &cred); err != nil {
+			s.httpErr(rw, fmt.Errorf("unmarshalling credential: %v", err))
+			return
+		}
+		wu.wc = append(wu.wc, cred)
+	}
+
+	credential, err := s.webauthn.ValidateLogin(wu, sessionData, parsedResponse)
 	if err != nil {
 		s.httpErr(rw, fmt.Errorf("validating login: %v", err))
 		return
 	}
 
-	// update the credential for the counter etc.
-	if err := s.db.UpdateUserCredential(user.ID, *credential); err != nil {
-		s.httpErr(rw, err)
+	cb, err := json.Marshal(credential)
+	if err != nil {
+		s.httpErr(rw, fmt.Errorf("marshalling credential: %v", err))
+		return
+	}
+
+	if err := s.queries.UpdateCredentialDataByCredentialID(req.Context(), cb, credential.ID); err != nil {
+		s.httpErr(rw, fmt.Errorf("updating credential: %v", err))
 		return
 	}
 
@@ -211,7 +274,7 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// interface iirc. Or maybe it's an OIDC library limitation, either way we
 	// should look at how to flatten it.
 	sess.WebauthnLogin.AuthdUser = &webauthnLogin{
-		UserID:      user.ID,
+		UserID:      user.ID.String(),
 		SessionID:   sess.WebauthnLogin.LoginSessionID,
 		ValidBefore: time.Now().Add(15 * time.Second), // TODO - policy etc.
 	}
@@ -237,7 +300,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	user, err := s.db.GetUserByID(authdUser.UserID)
+	user, err := s.queries.GetUser(req.Context(), uuid.MustParse(authdUser.UserID))
 	if err != nil {
 		s.httpErr(rw, err)
 		return
@@ -251,10 +314,14 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 
 	// finalize it. this will redirect the user to the appropriate place
 	auth := AuthenticatedUser{
-		Subject:  user.ID,
 		Email:    user.Email,
 		FullName: user.FullName,
 		// TODO other fields
+	}
+	if user.OverrideSubject.Valid && user.OverrideSubject.String != "" {
+		auth.Subject = user.OverrideSubject.String
+	} else {
+		auth.Subject = user.ID.String()
 	}
 
 	// todo - what is/was this actually doing? It's on
@@ -277,7 +344,7 @@ func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
 
 func (s *oidcServer) userinfo(w http.ResponseWriter, req *http.Request) {
 	err := s.oidcsvr.Userinfo(w, req, func(w io.Writer, uireq *core.UserinfoRequest) error {
-		u, err := s.db.GetUserByID(uireq.Subject)
+		u, err := s.queries.GetUser(req.Context(), uuid.MustParse(uireq.Subject))
 		if err != nil {
 			return fmt.Errorf("getting user %s: %w", uireq.Subject, err)
 		}
@@ -319,4 +386,36 @@ func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
 func gravatarURL(email string) string {
 	hash := md5.Sum([]byte(email))
 	return fmt.Sprintf("https://www.gravatar.com/avatar/%x.png", hash)
+}
+
+// webauthnUser is a wrapper around the queries.User type that implements the
+// webauthn.User interface for that library to consume
+type webauthnUser struct {
+	qu         queries.User
+	overrideID []byte
+	wc         []webauthn.Credential
+}
+
+// WebAuthnID returns the webauthn user handle for the user
+func (u *webauthnUser) WebAuthnID() []byte {
+	if len(u.overrideID) > 0 {
+		return u.overrideID
+	}
+	return u.qu.WebauthnHandle[:]
+}
+
+func (u *webauthnUser) WebAuthnName() string {
+	return u.qu.Email
+}
+
+func (u *webauthnUser) WebAuthnDisplayName() string {
+	return u.qu.FullName
+}
+
+func (u *webauthnUser) WebAuthnIcon() string {
+	return ""
+}
+
+func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
+	return u.wc
 }

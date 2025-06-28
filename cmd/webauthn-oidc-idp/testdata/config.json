@@ -1,0 +1,20 @@
+{
+	"database": "db/dev.json",
+	"issuers": [
+		{
+			"url": "http://localhost:8085",
+			"clients": [
+				{
+					"id": "client-id",
+					"clientSecrets": ["client-secret"],
+					"redirectURLs": ["http://localhost:8084/callback"]
+				},
+				{
+					"id": "cli",
+					"public": true,
+					"permitLocalhostRedirect": true
+				}
+			]
+		}
+	]
+}

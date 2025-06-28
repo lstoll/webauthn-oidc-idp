@@ -1,32 +1,24 @@
-run:
-  deadline: 5m
-  modules-download-mode: readonly
-
-output:
-  format: colored-line-number
-  sort-results: true
-
-issues:
-  exclude-use-default: true
-
-linters-settings:
-  sloglint:
-    attr-only: true
-    static-msg: true
-
+version: "2"
 linters:
-  enable:
-    - errcheck
-    - revive
-    - goimports
-    - govet
-    - misspell
-    - unused
-    - unparam
-    - staticcheck
-    - gosimple
-    - stylecheck
-    - sloglint
-    - nilerr
-    - tenv
-    - thelper
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+        source: ^\s*defer\s+
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
