@@ -18,6 +18,7 @@ import (
 	"github.com/lstoll/oidc/discovery"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
@@ -71,7 +72,11 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 	if err != nil {
 		return fmt.Errorf("creating web server: %w", err)
 	}
-	// TODO - websvr should respect Fly-Request-ID
+	if err := websvr.BaseMiddleware.Replace(web.MiddlewareRequestIDName, (&requestid.Middleware{
+		TrustedHeaders: []string{"Fly-Request-ID"},
+	}).Handler); err != nil {
+		return fmt.Errorf("replacing request id middleware: %w", err)
+	}
 
 	oidcmd := discovery.DefaultCoreMetadata(issuerURL.String())
 	oidcmd.AuthorizationEndpoint = issuerURL.String() + "/auth"
