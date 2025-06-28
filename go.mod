@@ -10,9 +10,9 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/justinas/nosurf v1.1.1
-	github.com/lstoll/cookiesession v0.0.0-20240302214249-23c5d01c3fb9
 	github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
+	github.com/lstoll/web v0.0.0-20250626220328-c73bfcffd053
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/client_golang v1.22.0
@@ -25,6 +25,7 @@ require (
 )
 
 require (
+	filippo.io/csrf v0.0.0-20250517103426-cfb6fbb0fbe3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
@@ -41,7 +42,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
 )
 
 replace crawshaw.dev/jsonfile => github.com/sr/jsonfile v0.0.0-20240301210704-69e8a5b5b148
