@@ -3,34 +3,77 @@ package idp
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/justinas/nosurf"
-	"github.com/lstoll/cookiesession"
+	"github.com/lstoll/web"
+	"github.com/lstoll/web/session"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
-	"github.com/lstoll/webauthn-oidc-idp/web"
+	webcontent "github.com/lstoll/webauthn-oidc-idp/web"
 )
+
+func init() {
+	gob.Register(&pendingWebauthnEnrollment{})
+	gob.Register(&webauthnLoginData{})
+}
+
+const pendingWebauthnEnrollmentSessionKey = "pending_webauthn_enrollment"
+
+// pendingWebauthnEnrollment tracks enrollment info across an authenticator
+// registration.
+type pendingWebauthnEnrollment struct {
+	ForUserID           string                `json:"for_user_id,omitempty"`
+	KeyName             string                `json:"key_name,omitempty"`
+	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
+	// ReturnTo redirects the user here after the key is registered.
+	ReturnTo string `json:"return_to,omitempty"`
+}
+
+const webauthnLoginDataSessionKey = "webauthn_login"
+
+// webauthnLogin tracks data for a login session
+type webauthnLoginData struct {
+	// LoginSessionID is the current OIDC session ID for the flow
+	LoginSessionID string `json:"login_session_id"`
+	// WebauthnSessionData is the data for the in-process login
+	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
+	// AuthdUser tracks information about the user we just authenticated, for
+	// when we send the user to the login finished page.
+	AuthdUser *webauthnLogin `json:"authd_user,omitempty"`
+}
+
+type webauthnLogin struct {
+	UserID      string
+	ValidBefore time.Time
+	SessionID   string
+}
+
+type webSession struct {
+	PendingWebauthnEnrollment *pendingWebauthnEnrollment `json:"pending_webauthn_enrollment,omitempty"`
+	WebauthnLogin             *webauthnLoginData         `json:"webauthn_login,omitempty"`
+}
 
 type webauthnManager struct {
 	db       *DB
 	queries  *queries.Queries
 	webauthn *webauthn.WebAuthn
-
-	sessmgr *cookiesession.Manager[webSession, *webSession]
 }
 
-func (w *webauthnManager) AddHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/registration/begin", w.beginRegistration)
-	mux.HandleFunc("/registration/finish", w.finishRegistration)
-	mux.HandleFunc("GET /registration", w.registration)
+func (w *webauthnManager) AddHandlers(websvr *web.Server) {
+	websvr.HandleFunc("/registration/begin", w.beginRegistration)
+	websvr.HandleFunc("/registration/finish", w.finishRegistration)
+	websvr.HandleFunc("GET /registration", w.registration)
 }
 
 // registration is a page used to add a new key. It should handle either a user
@@ -53,11 +96,11 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 			w.httpUnauth(rw, "either previous enrollment completed fine, or invalid enrollment")
 			return
 		}
-		sess := w.sessmgr.Get(req.Context())
-		sess.PendingWebauthnEnrollment = &pendingWebauthnEnrollment{
+		sess := session.MustFromContext(req.Context())
+		sess.Set(pendingWebauthnEnrollmentSessionKey, &pendingWebauthnEnrollment{
 			ForUserID: uid,
-		}
-		w.sessmgr.Save(req.Context(), sess)
+		})
+		log.Printf("set pendingWebauthnEnrollmentSessionKey: %#v", sess)
 	}
 	// list keys will send the pending enrollment ID
 
@@ -65,16 +108,19 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 }
 
 func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
-	sess := w.sessmgr.Get(req.Context())
+	sess := session.MustFromContext(req.Context())
 
-	if sess.PendingWebauthnEnrollment == nil || sess.PendingWebauthnEnrollment.ForUserID == "" {
+	log.Printf("beginRegistration: %#v", sess)
+
+	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
+	if !ok || pwe.ForUserID == "" {
 		w.httpUnauth(rw, "no enroll to user id set in session")
 		return
 	}
 
-	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(sess.PendingWebauthnEnrollment.ForUserID))
+	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(pwe.ForUserID))
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", pwe.ForUserID, err))
 		return
 	}
 
@@ -97,9 +143,9 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	sess.PendingWebauthnEnrollment.KeyName = keyName
-	sess.PendingWebauthnEnrollment.WebauthnSessionData = sessionData
-	w.sessmgr.Save(req.Context(), sess)
+	pwe.KeyName = keyName
+	pwe.WebauthnSessionData = sessionData
+	sess.Set(pendingWebauthnEnrollmentSessionKey, pwe)
 
 	if err := json.NewEncoder(rw).Encode(options); err != nil {
 		w.httpErr(req.Context(), rw, err)
@@ -108,30 +154,30 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 }
 
 func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
-	sess := w.sessmgr.Get(req.Context())
+	sess := session.MustFromContext(req.Context())
 
-	if sess.PendingWebauthnEnrollment == nil || sess.PendingWebauthnEnrollment.ForUserID == "" {
+	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
+	if !ok || pwe.ForUserID == "" {
 		w.httpUnauth(rw, "no enroll to user id set in session")
 		return
 	}
 
-	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(sess.PendingWebauthnEnrollment.ForUserID)) // TODO - guard the allow unactive for enrol only!
+	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(pwe.ForUserID)) // TODO - guard the allow unactive for enrol only!
 	if err != nil {
-		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", sess.PendingWebauthnEnrollment.ForUserID, err))
+		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", pwe.ForUserID, err))
 		return
 	}
 
-	if sess.PendingWebauthnEnrollment.WebauthnSessionData == nil {
+	if pwe.WebauthnSessionData == nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("session data not in session"))
 		return
 	}
-	sessionData := *sess.PendingWebauthnEnrollment.WebauthnSessionData
-	keyName := sess.PendingWebauthnEnrollment.KeyName
+	sessionData := *pwe.WebauthnSessionData
+	keyName := pwe.KeyName
 
 	// purge the data from the session
-	returnTo := sess.PendingWebauthnEnrollment.ReturnTo
-	sess.PendingWebauthnEnrollment = nil
-	w.sessmgr.Save(req.Context(), sess)
+	returnTo := pwe.ReturnTo
+	sess.Set(pendingWebauthnEnrollmentSessionKey, nil)
 
 	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(req.Body)
 	if err != nil {
@@ -195,11 +241,11 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		},
 	}
 
-	lt, err := template.New("").Funcs(funcs).ParseFS(web.Templates, "templates/webauthn/layout.tmpl.html")
+	lt, err := template.New("").Funcs(funcs).ParseFS(webcontent.Templates, "templates/webauthn/layout.tmpl.html")
 	if err != nil {
 		w.httpErr(r.Context(), rw, err)
 	}
-	t, err := lt.ParseFS(web.Templates, "templates/webauthn/"+templateName)
+	t, err := lt.ParseFS(webcontent.Templates, "templates/webauthn/"+templateName)
 	if err != nil {
 		w.httpErr(r.Context(), rw, err)
 		return

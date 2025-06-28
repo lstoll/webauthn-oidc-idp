@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,16 +12,18 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
 	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/oidc/discovery"
+	"github.com/lstoll/web"
+	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/session"
+	"github.com/lstoll/web/session/sqlkv"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
-	"github.com/lstoll/webauthn-oidc-idp/web"
+	webcontent "github.com/lstoll/webauthn-oidc-idp/web"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/tink-crypto/tink-go/v2/keyset"
 	"golang.org/x/sys/unix"
 )
 
@@ -34,10 +35,43 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		return fmt.Errorf("failed to migrate data: %v", err)
 	}
 
-	cookieHandles, oidcHandles, err := initKeysets(ctx, sqldb, g)
+	_, oidcHandles, err := initKeysets(ctx, sqldb, g)
 	if err != nil {
 		return fmt.Errorf("initializing keysets: %w", err)
 	}
+
+	sesskv := sqlkv.New(sqldb, &sqlkv.Opts{
+		TableName: "web_sessions",
+		Dialect:   sqlkv.SQLite,
+	})
+
+	sessionManager, err := session.NewKVManager(sesskv, nil)
+	if err != nil {
+		return fmt.Errorf("creating session manager: %w", err)
+	}
+
+	cspOpts := []csp.HandlerOpt{
+		csp.DefaultSrc(`'none'`),
+		csp.ImgSrc(`'self'`),
+		csp.ConnectSrc(`'self'`),
+		csp.FontSrc(`'self'`),
+		csp.BaseURI(`'self'`),
+		csp.FrameAncestors(`'none'`),
+		// end defaults
+		csp.ScriptSrc("'self' 'unsafe-inline'"), // TODO - use a nonce
+		csp.StyleSrc("'self' 'unsafe-inline'"),  // TODO - use a nonce
+	}
+
+	websvr, err := web.NewServer(&web.Config{
+		BaseURL:        issuerURL,
+		SessionManager: sessionManager,
+		Static:         webcontent.PublicFiles, // TODO - lstoll/web should not panic when not set
+		CSPOpts:        cspOpts,
+	})
+	if err != nil {
+		return fmt.Errorf("creating web server: %w", err)
+	}
+	// TODO - websvr should respect Fly-Request-ID
 
 	oidcmd := discovery.DefaultCoreMetadata(issuerURL.String())
 	oidcmd.AuthorizationEndpoint = issuerURL.String() + "/auth"
@@ -59,31 +93,8 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		return fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
 
-	webSessMgr, err := cookiesession.New[webSession]("idp", func() *keyset.Handle {
-		h, err := cookieHandles.Handle(context.Background())
-		if err != nil {
-			// we should not hit this, the load comes from the DB TODO(lstoll)
-			// get a consistent way of looking up handles.
-			slog.Error("refreshing keyset", "err", err)
-			os.Exit(1)
-		}
-		return h
-	}, cookiesession.Options{
-		MaxAge:   0, // Scopes it to browser lifecycle, which I think is good for now
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-		Insecure: issuerURL.Hostname() == "localhost", // safari is picky about this
-	})
-	if err != nil {
-		return fmt.Errorf("creating cookie session for webauthn: %w", err)
-	}
-
-	mux := http.NewServeMux()
-
-	mux.Handle("GET /.well-known/openid-configuration", discoh)
-	mux.Handle("GET /.well-known/jwks.json", discoh)
-
-	heh := &httpErrHandler{}
+	websvr.HandleRaw("GET /.well-known/openid-configuration", discoh)
+	websvr.HandleRaw("GET /.well-known/jwks.json", discoh)
 
 	wn, err := webauthn.New(&webauthn.Config{
 		RPDisplayName: issuerURL.Hostname(), // Display Name for your site
@@ -104,69 +115,36 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 	mgr := &webauthnManager{
 		db:       db,
 		webauthn: wn,
-		sessmgr:  webSessMgr,
 		queries:  queries.New(sqldb),
 	}
 
-	mgr.AddHandlers(mux)
+	mgr.AddHandlers(websvr)
 
 	svr := oidcServer{
 		issuer:          issuerURL.String(),
 		oidcsvr:         oidcsvr,
-		eh:              heh,
 		tokenValidFor:   15 * time.Minute,
 		refreshValidFor: 12 * time.Hour,
-		sessmgr:         webSessMgr,
 		// upstreamPolicy:  []byte(ucp),
 		webauthn: wn,
 		db:       db,
 		queries:  queries.New(sqldb),
 	}
 
-	fs := http.FileServer(http.FS(web.PublicFiles))
-	mux.Handle("/public/", fs)
+	fs := http.FileServer(http.FS(webcontent.PublicFiles))
+	websvr.HandleRaw("/public/", fs)
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	websvr.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
 
-	_, loopback, err := net.ParseCIDR("127.0.0.0/8")
-	if err != nil {
-		return err
-	}
-	mux.HandleFunc("/reloaddb", func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		if !loopback.Contains(net.ParseIP(ip)) {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-
-		if err := db.Reload(); err != nil {
-			slog.ErrorContext(r.Context(), "database reload failed", slog.Any("error", err))
-			http.Error(w, fmt.Sprintf("reload failed: %v", err), http.StatusInternalServerError)
-		} else {
-			slog.InfoContext(r.Context(), "database reloaded")
-		}
-	})
-
-	svr.AddHandlers(mux)
+	svr.AddHandlers(websvr)
 
 	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
 
-	// this will always try and create a session for discovery and stuff,
-	// but we shouldn't save it. but, we need it for logging and stuff. TODO
-	// at some point consider splitting the middleware, but then we might
-	// need to dup the middleware wrap or something.
-	hh := baseMiddleware(mux, webSessMgr)
-
 	hs := &http.Server{
 		Addr:    addr,
-		Handler: hh,
+		Handler: websvr,
 	}
 
 	g.Add(func() error {

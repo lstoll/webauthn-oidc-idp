@@ -232,6 +232,7 @@ func TestE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(creds) != 1 {
+			time.Sleep(10 * time.Second)
 			t.Fatalf("expected user to have 1 credential, got: %d", len(creds))
 		}
 	})

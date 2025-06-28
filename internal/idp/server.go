@@ -16,11 +16,12 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/lstoll/cookiesession"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/core"
+	"github.com/lstoll/web"
+	"github.com/lstoll/web/session"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
-	"github.com/lstoll/webauthn-oidc-idp/web"
+	webcontent "github.com/lstoll/webauthn-oidc-idp/web"
 )
 
 /* keeping this around as some context betweet a oidc/session, and an authentication
@@ -53,7 +54,7 @@ type AuthSessionManager interface {
 } */
 
 var (
-	loginTemplate = template.Must(template.ParseFS(web.Templates, "templates/login.tmpl.html"))
+	loginTemplate = template.Must(template.ParseFS(webcontent.Templates, "templates/login.tmpl.html"))
 )
 
 type oidcServer struct {
@@ -63,8 +64,6 @@ type oidcServer struct {
 	// asm             AuthSessionManager
 	tokenValidFor   time.Duration
 	refreshValidFor time.Duration
-	eh              *httpErrHandler
-	sessmgr         *cookiesession.Manager[webSession, *webSession]
 	webauthn        *webauthn.WebAuthn
 	db              *DB
 	queries         *queries.Queries
@@ -79,11 +78,10 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 
 	// stash in session, so we can pull it out in the login handler without
 	// threading it through the user code. make sure to clear it though!
-	sess := s.sessmgr.Get(req.Context())
-	sess.WebauthnLogin = &webauthnLoginData{
+	sess := session.MustFromContext(req.Context())
+	sess.Set(webauthnLoginDataSessionKey, &webauthnLoginData{
 		LoginSessionID: ar.SessionID,
-	}
-	s.sessmgr.Save(req.Context(), sess)
+	})
 
 	if err := loginTemplate.Execute(w, struct{ SessionID string }{SessionID: ar.SessionID}); err != nil {
 		slog.Error("execute login.html.tmpl", "err", err)
@@ -118,17 +116,17 @@ func (s *oidcServer) token(w http.ResponseWriter, req *http.Request) {
 		}, nil
 	})
 	if err != nil {
-		s.eh.Error(w, req, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/auth", s.authorization)
-	mux.HandleFunc("/token", s.token)
-	mux.HandleFunc("/start", s.startLogin)
-	mux.HandleFunc("/finish", s.finishLogin)
-	mux.HandleFunc("/loggedin", s.loggedIn)
-	mux.HandleFunc("GET /userinfo", s.userinfo)
+func (s *oidcServer) AddHandlers(websvr *web.Server) {
+	websvr.HandleFunc("/auth", s.authorization)
+	websvr.HandleFunc("/token", s.token)
+	websvr.HandleFunc("/start", s.startLogin)
+	websvr.HandleFunc("/finish", s.finishLogin)
+	websvr.HandleFunc("/loggedin", s.loggedIn)
+	websvr.HandleFunc("GET /userinfo", s.userinfo)
 }
 
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
@@ -139,13 +137,14 @@ func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	sess := s.sessmgr.Get(req.Context())
-	if sess.WebauthnLogin == nil {
+	sess := session.MustFromContext(req.Context())
+	wl, ok := sess.Get(webauthnLoginDataSessionKey).(*webauthnLoginData)
+	if !ok || wl.WebauthnSessionData == nil {
 		s.httpErr(rw, errors.New("no active login session"))
 		return
 	}
-	sess.WebauthnLogin.WebauthnSessionData = sessionData
-	s.sessmgr.Save(req.Context(), sess)
+	wl.WebauthnSessionData = sessionData
+	sess.Set(webauthnLoginDataSessionKey, wl)
 
 	if err := json.NewEncoder(rw).Encode(response); err != nil {
 		s.httpErr(rw, err)
@@ -213,18 +212,14 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// }
 	// log.Printf("car: %#v", car)
 
-	sess := s.sessmgr.Get(req.Context())
-	if sess == nil {
+	sess := session.MustFromContext(req.Context())
+	wl, ok := sess.Get(webauthnLoginDataSessionKey).(*webauthnLoginData)
+	if !ok || wl.WebauthnSessionData == nil {
 		s.httpErr(rw, fmt.Errorf("session data not in session"))
 		return
 	}
-	if sess.WebauthnLogin == nil || sess.WebauthnLogin.WebauthnSessionData == nil {
-		s.httpErr(rw, errors.New("no valid webauthn login in session"))
-		return
-	}
-	sessionData := *sess.WebauthnLogin.WebauthnSessionData
-	sess.WebauthnLogin.WebauthnSessionData = nil
-	s.sessmgr.Save(req.Context(), sess)
+	sessionData := *wl.WebauthnSessionData
+	sess.Set(webauthnLoginDataSessionKey, nil)
 
 	// parsedResponse, err := protocol.ParseCredentialRequestResponseBody(req.Body)
 	// if err != nil {
@@ -273,27 +268,26 @@ func (s *oidcServer) finishLogin(rw http.ResponseWriter, req *http.Request) {
 	// finalize page. Having this extra step was a result of the providers
 	// interface iirc. Or maybe it's an OIDC library limitation, either way we
 	// should look at how to flatten it.
-	sess.WebauthnLogin.AuthdUser = &webauthnLogin{
+	wl.AuthdUser = &webauthnLogin{
 		UserID:      user.ID.String(),
-		SessionID:   sess.WebauthnLogin.LoginSessionID,
+		SessionID:   wl.LoginSessionID,
 		ValidBefore: time.Now().Add(15 * time.Second), // TODO - policy etc.
 	}
-	sess.WebauthnLogin.LoginSessionID = ""
-	s.sessmgr.Save(req.Context(), sess)
+	wl.LoginSessionID = ""
+	sess.Set(webauthnLoginDataSessionKey, wl)
 
 	// OK (respond with URL here)
 }
 
 func (s *oidcServer) loggedIn(rw http.ResponseWriter, req *http.Request) {
-	sess := s.sessmgr.Get(req.Context())
-
-	if sess.WebauthnLogin == nil || sess.WebauthnLogin.AuthdUser == nil {
+	sess := session.MustFromContext(req.Context())
+	wl, ok := sess.Get(webauthnLoginDataSessionKey).(*webauthnLoginData)
+	if !ok || wl.AuthdUser == nil {
 		s.httpErr(rw, fmt.Errorf("can't find authd_user in session"))
 		return
 	}
-	authdUser := *sess.WebauthnLogin.AuthdUser
-	sess.WebauthnLogin = nil
-	s.sessmgr.Save(req.Context(), sess)
+	authdUser := *wl.AuthdUser
+	sess.Set(webauthnLoginDataSessionKey, nil)
 
 	if authdUser.ValidBefore.Before(time.Now()) {
 		s.httpErr(rw, fmt.Errorf("login expired"))
@@ -373,7 +367,7 @@ func (s *oidcServer) userinfo(w http.ResponseWriter, req *http.Request) {
 		return json.NewEncoder(w).Encode(cl)
 	})
 	if err != nil {
-		s.eh.Error(w, req, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
