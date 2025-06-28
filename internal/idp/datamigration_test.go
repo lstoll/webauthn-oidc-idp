@@ -1,4 +1,4 @@
-package main
+package idp
 
 import (
 	"database/sql"
@@ -24,7 +24,7 @@ func TestMigrateData(t *testing.T) {
 		t.Fatalf("failed to write destination file: %v", err)
 	}
 
-	filedb, err := openDB(filepath.Join(workdir, "db.json"))
+	filedb, err := OpenDB(filepath.Join(workdir, "db.json"))
 	if err != nil {
 		t.Fatalf("failed to open file db: %v", err)
 	}

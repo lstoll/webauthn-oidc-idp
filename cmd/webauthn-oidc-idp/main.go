@@ -5,34 +5,18 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
-	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/lstoll/cookiesession"
-	"github.com/lstoll/oidc"
-	"github.com/lstoll/oidc/core"
-	"github.com/lstoll/oidc/core/staticclients"
-	"github.com/lstoll/oidc/discovery"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
-	"github.com/lstoll/webauthn-oidc-idp/web"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/version"
-	"github.com/tink-crypto/tink-go/v2/keyset"
-	"golang.org/x/sys/unix"
 )
 
 const progname = "webauthn-oidc-idp"
@@ -48,6 +32,80 @@ func init() {
 }
 
 func main() {
+	// Root flags that apply to all commands
+	rootFlags := flag.NewFlagSet("root", flag.ExitOnError)
+	debug := rootFlags.Bool("debug", false, "Enable debug logging")
+	configFile := rootFlags.String("config", "config.json", "Path to the config file.")
+
+	// Command1 flags
+	cmd1Flags := flag.NewFlagSet("command1", flag.ExitOnError)
+	cmd1String := cmd1Flags.String("string", "default", "A string flag for command1")
+	cmd1Int := cmd1Flags.Int("int", 42, "An integer flag for command1")
+
+	// Command2 flags
+	cmd2Flags := flag.NewFlagSet("command2", flag.ExitOnError)
+	cmd2Bool := cmd2Flags.Bool("bool", false, "A boolean flag for command2")
+	cmd2Float := cmd2Flags.Float64("float", 3.14, "A float flag for command2")
+
+	// Process environment variables for all flagsets
+	setFlagsFromEnv(rootFlags)
+	setFlagsFromEnv(cmd1Flags)
+	setFlagsFromEnv(cmd2Flags)
+
+	// Parse root flags first
+	rootFlags.Parse(os.Args[1:])
+
+	// Check if we have a subcommand
+	if len(rootFlags.Args()) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <command> [flags]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Commands:\n")
+		fmt.Fprintf(os.Stderr, "  command1    First sample command\n")
+		fmt.Fprintf(os.Stderr, "  command2    Second sample command\n")
+		os.Exit(1)
+	}
+
+	// Get the subcommand
+	subcommand := rootFlags.Args()[0]
+
+	switch subcommand {
+	case "command1":
+		// Parse command1 flags with remaining args
+		cmd1Flags.Parse(rootFlags.Args()[1:])
+		fmt.Printf("Executing command1\n")
+		fmt.Printf("  Root debug flag: %v\n", *debug)
+		fmt.Printf("  Root config file: %s\n", *configFile)
+		fmt.Printf("  Command1 string flag: %s\n", *cmd1String)
+		fmt.Printf("  Command1 int flag: %d\n", *cmd1Int)
+
+	case "command2":
+		// Parse command2 flags with remaining args
+		cmd2Flags.Parse(rootFlags.Args()[1:])
+		fmt.Printf("Executing command2\n")
+		fmt.Printf("  Root debug flag: %v\n", *debug)
+		fmt.Printf("  Root config file: %s\n", *configFile)
+		fmt.Printf("  Command2 bool flag: %v\n", *cmd2Bool)
+		fmt.Printf("  Command2 float flag: %f\n", *cmd2Float)
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", subcommand)
+		fmt.Fprintf(os.Stderr, "Available commands: command1, command2\n")
+		os.Exit(1)
+	}
+}
+
+// setFlagsFromEnv sets flag values from environment variables with IDP_ prefix
+func setFlagsFromEnv(fs *flag.FlagSet) {
+	fs.VisitAll(func(f *flag.Flag) {
+		envName := "IDP_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+		if val, ok := os.LookupEnv(envName); ok {
+			if err := f.Value.Set(val); err != nil {
+				fatalf("set flag %s from env %s: %v", f.Name, envName, err)
+			}
+		}
+	})
+}
+
+func oldMain() {
 	ver := flag.Bool("version", false, "Print the version and exit.")
 	debug := flag.Bool("debug", false, "Enable debug logging")
 	addr := flag.String("http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
@@ -95,7 +153,8 @@ func main() {
 
 	ctx := context.Background()
 
-	db, err := openDB(cfg.Database)
+	// legacy database
+	db, err := idp.OpenDB(cfg.Database)
 	if err != nil {
 		fatalf("open database at %s: %v", cfg.Database, err)
 	}
@@ -122,10 +181,6 @@ func main() {
 		fatalf("run migrations: %v", err)
 	}
 
-	if err := migrateData(ctx, db, sqldb); err != nil {
-		fatalf("failed to migrate data: %v", err)
-	}
-
 	if *enroll {
 		if *email == "" {
 			fatal("required flag missing: email")
@@ -147,7 +202,7 @@ func main() {
 		}
 
 		fmt.Printf("New user created: %s\n", params.ID)
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, params.ID.String(), params.EnrollmentKey.String))
+		fmt.Printf("Enroll at: %s\n", idp.RegistrationURL(cfg.Issuer[0].URL, params.ID.String(), params.EnrollmentKey.String))
 		return
 	} else if *addCredential {
 		if *userID == "" {
@@ -172,7 +227,7 @@ func main() {
 			fatalf("set user enrollment key: %v", err)
 		}
 
-		fmt.Printf("Enroll at: %s\n", registrationURL(cfg.Issuer[0].URL, userUUID.String(), ek))
+		fmt.Printf("Enroll at: %s\n", idp.RegistrationURL(cfg.Issuer[0].URL, userUUID.String(), ek))
 		return
 	} else if *listCredential {
 		if *userID == "" {
@@ -207,209 +262,8 @@ func main() {
 
 	issuer := cfg.Issuer[0]
 
-	if err := serve(ctx, sqldb, db, issuer, *addr, *metrics); err != nil {
+	if err := idp.ServeCmd(ctx, sqldb, db, issuer.URL, issuer.Clients, *addr, *metrics); err != nil {
 		fatalf("start server: %v", err)
-	}
-}
-
-func serve(ctx context.Context, sqldb *sql.DB, db *DB, issuer issuerConfig, addr, metrics string) error {
-	var g run.Group
-
-	cookieHandles, oidcHandles, err := initKeysets(ctx, sqldb, g)
-	if err != nil {
-		return fmt.Errorf("initializing keysets: %w", err)
-	}
-
-	oidcmd := discovery.DefaultCoreMetadata(issuer.URL.String())
-	oidcmd.AuthorizationEndpoint = issuer.URL.String() + "/auth"
-	oidcmd.TokenEndpoint = issuer.URL.String() + "/token"
-	oidcmd.ScopesSupported = []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile, "offline"}
-	oidcmd.UserinfoEndpoint = issuer.URL.String() + "/userinfo"
-
-	discoh, err := discovery.NewConfigurationHandler(oidcmd, oidcHandles)
-	if err != nil {
-		return fmt.Errorf("configuring metadata handler: %w", err)
-	}
-
-	oidcsvr, err := core.New(&core.Config{
-		Issuer:           issuer.URL.String(),
-		AuthValidityTime: 5 * time.Minute,
-		CodeValidityTime: 5 * time.Minute,
-	}, db.SessionManager(), &staticclients.Clients{Clients: issuer.Clients}, oidcHandles)
-	if err != nil {
-		return fmt.Errorf("failed to create OIDC server instance: %w", err)
-	}
-
-	webSessMgr, err := cookiesession.New[webSession]("idp", func() *keyset.Handle {
-		h, err := cookieHandles.Handle(context.Background())
-		if err != nil {
-			// we should not hit this, the load comes from the DB TODO(lstoll)
-			// get a consistent way of looking up handles.
-			slog.Error("refreshing keyset", logErr(err))
-			os.Exit(1)
-		}
-		return h
-	}, cookiesession.Options{
-		MaxAge:   0, // Scopes it to browser lifecycle, which I think is good for now
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-		Insecure: issuer.URL.Hostname() == "localhost", // safari is picky about this
-	})
-	if err != nil {
-		return fmt.Errorf("creating cookie session for webauthn: %w", err)
-	}
-
-	mux := http.NewServeMux()
-
-	mux.Handle("GET /.well-known/openid-configuration", discoh)
-	mux.Handle("GET /.well-known/jwks.json", discoh)
-
-	heh := &httpErrHandler{}
-
-	wn, err := webauthn.New(&webauthn.Config{
-		RPDisplayName: issuer.URL.Hostname(), // Display Name for your site
-		RPID:          issuer.URL.Hostname(), // Generally the FQDN for your site
-		RPOrigins: []string{
-			issuer.URL.String(),
-		},
-		AuthenticatorSelection: protocol.AuthenticatorSelection{
-			UserVerification:   protocol.VerificationRequired,
-			RequireResidentKey: ptr(true),
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("configuring webauthn: %w", err)
-	}
-
-	// start configuration of webauthn manager
-	mgr := &webauthnManager{
-		db:       db,
-		webauthn: wn,
-		sessmgr:  webSessMgr,
-		queries:  queries.New(sqldb),
-	}
-
-	mgr.AddHandlers(mux)
-
-	svr := oidcServer{
-		issuer:          issuer.URL.String(),
-		oidcsvr:         oidcsvr,
-		eh:              heh,
-		tokenValidFor:   15 * time.Minute,
-		refreshValidFor: 12 * time.Hour,
-		sessmgr:         webSessMgr,
-		// upstreamPolicy:  []byte(ucp),
-		webauthn: wn,
-		db:       db,
-		queries:  queries.New(sqldb),
-	}
-
-	fs := http.FileServer(http.FS(web.PublicFiles))
-	mux.Handle("/public/", fs)
-
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("OK"))
-	})
-
-	_, loopback, err := net.ParseCIDR("127.0.0.0/8")
-	if err != nil {
-		return err
-	}
-	mux.HandleFunc("/reloaddb", func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		if !loopback.Contains(net.ParseIP(ip)) {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-
-		if err := db.Reload(); err != nil {
-			slog.ErrorContext(r.Context(), "database reload failed", slog.Any("error", err))
-			http.Error(w, fmt.Sprintf("reload failed: %v", err), http.StatusInternalServerError)
-		} else {
-			slog.InfoContext(r.Context(), "database reloaded")
-		}
-	})
-
-	svr.AddHandlers(mux)
-
-	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
-
-	// this will always try and create a session for discovery and stuff,
-	// but we shouldn't save it. but, we need it for logging and stuff. TODO
-	// at some point consider splitting the middleware, but then we might
-	// need to dup the middleware wrap or something.
-	hh := baseMiddleware(mux, webSessMgr)
-
-	hs := &http.Server{
-		Addr:    addr,
-		Handler: hh,
-	}
-
-	g.Add(func() error {
-		slog.Info("server listing", slog.String("addr", "http://"+addr))
-		if err := hs.ListenAndServe(); err != nil {
-			return fmt.Errorf("serving http: %v", err)
-		}
-		return nil
-	}, func(error) {
-		// new context for this, parent is likely already shut down
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
-		_ = hs.Shutdown(ctx)
-	})
-
-	{
-		if metrics != "" {
-			mux := http.NewServeMux()
-			mux.Handle("/metrics", promhttp.Handler())
-			promsrv := &http.Server{Addr: metrics, Handler: mux}
-
-			g.Add(func() error {
-				slog.Info("metrics server listing", slog.String("addr", "http://"+metrics))
-				if err := promsrv.ListenAndServe(); err != nil {
-					return fmt.Errorf("serving metrics: %v", err)
-				}
-				return nil
-			}, func(error) {
-				promsrv.Close()
-			})
-		}
-	}
-
-	return g.Run()
-}
-
-func registrationURL(iss *url.URL, userID string, enrollmentKey string) *url.URL {
-	u := *iss
-	if !strings.HasSuffix(u.Path, "/") {
-		u.Path += "/"
-	}
-	u2, err := u.Parse("/registration")
-	if err != nil {
-		panic(err)
-	}
-	q := u2.Query()
-	q.Add("user_id", userID)
-	q.Add("enrollment_token", enrollmentKey)
-	u2.RawQuery = q.Encode()
-	return u2
-}
-
-// reloadDB tells the server running on addr to reload its database from disk.
-func reloadDB(addr string) {
-	resp, err := http.Get("http://" + addr + "/reloaddb")
-	if err != nil {
-		fatalf("database reload failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		fatalf("database reload failed: %s", string(b))
 	}
 }
 
@@ -423,10 +277,9 @@ func fatalf(s string, args ...any) {
 	os.Exit(1)
 }
 
-func logErr(err error) slog.Attr {
-	return slog.Any("error", err)
-}
-
-func ptr[T any](v T) *T {
-	return &v
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
