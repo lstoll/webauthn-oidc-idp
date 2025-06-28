@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/lstoll/tinkrotate"
+	tinkrotatev1 "github.com/lstoll/tinkrotate/proto/tinkrotate/v1"
 	"github.com/oklog/run"
 	"github.com/tink-crypto/tink-go/v2/aead"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"github.com/tink-crypto/tink-go/v2/keyset"
 	"github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type Keyset struct {
@@ -29,81 +31,64 @@ const (
 )
 
 var (
-	cookieRotatePolicy = tinkrotate.RotationPolicy{
+	cookieRotatePolicy = &tinkrotatev1.RotationPolicy{
 		KeyTemplate:         aead.XAES256GCM192BitNonceKeyTemplate(),
-		PrimaryDuration:     30 * 24 * time.Hour,
-		PropagationTime:     24 * time.Hour,
-		PhaseOutDuration:    7 * 24 * time.Hour,
-		DeletionGracePeriod: 0,
+		PrimaryDuration:     durationpb.New(30 * 24 * time.Hour),
+		PropagationTime:     durationpb.New(24 * time.Hour),
+		PhaseOutDuration:    durationpb.New(7 * 24 * time.Hour),
+		DeletionGracePeriod: durationpb.New(0),
 	}
-	oidcRotatePolicy = tinkrotate.RotationPolicy{
+	oidcRotatePolicy = &tinkrotatev1.RotationPolicy{
 		KeyTemplate:         jwt.RS256_2048_F4_Key_Template(),
-		PrimaryDuration:     24 * time.Hour,
-		PropagationTime:     6 * time.Hour,
-		PhaseOutDuration:    24 * time.Hour,
-		DeletionGracePeriod: 0,
+		PrimaryDuration:     durationpb.New(24 * time.Hour),
+		PropagationTime:     durationpb.New(6 * time.Hour),
+		PhaseOutDuration:    durationpb.New(24 * time.Hour),
+		DeletionGracePeriod: durationpb.New(0),
 	}
 )
 
 func initKeysets(ctx context.Context, db *sql.DB, g run.Group) (cookieKeyset, oidcKeyset *KeysetHandles, _ error) {
-	cookieStore, err := tinkrotate.NewSQLStore(db, keysetIDCookie)
+	store, err := tinkrotate.NewSQLStore(db, &tinkrotate.SQLStoreOptions{
+		Dialect:   tinkrotate.SQLDialectSQLite,
+		TableName: "tink_keysets",
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating cookie keyset store: %w", err)
+		return nil, nil, fmt.Errorf("failed to create store: %w", err)
 	}
-	cookieRotator, err := tinkrotate.NewRotator(cookieRotatePolicy)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating cookie rotator: %w", err)
-	}
-	cookieAutoRotator, err := tinkrotate.NewAutoRotator(cookieStore, cookieRotator, 10*time.Minute)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating cookie rotator: %w", err)
-	}
-	if err := cookieAutoRotator.RunOnce(ctx); err != nil {
-		return nil, nil, fmt.Errorf("running cookie rotator: %w", err)
-	}
-	g.Add(func() error { cookieAutoRotator.Start(ctx); return nil }, func(_ error) { cookieAutoRotator.Stop() })
 
-	oidcStore, err := tinkrotate.NewSQLStore(db, keysetIDOIDC)
+	autoRotator, err := tinkrotate.NewAutoRotator(store, 1*time.Minute, &tinkrotate.AutoRotatorOpts{
+		ProvisionPolicies: map[string]*tinkrotatev1.RotationPolicy{
+			keysetIDCookie: cookieRotatePolicy,
+			keysetIDOIDC:   oidcRotatePolicy,
+		},
+	}) // Create the Rotator instance using the proto policy
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating oidc keyset store: %w", err)
+		return nil, nil, fmt.Errorf("failed to create autoRotator: %w", err)
 	}
-	oidcRotator, err := tinkrotate.NewRotator(oidcRotatePolicy)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating oidc rotator: %w", err)
-	}
-	oidcAutoRotator, err := tinkrotate.NewAutoRotator(oidcStore, oidcRotator, 10*time.Minute)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating oidc rotator: %w", err)
-	}
-	if err := oidcAutoRotator.RunOnce(ctx); err != nil {
-		return nil, nil, fmt.Errorf("running oidc rotator: %w", err)
-	}
-	g.Add(func() error { oidcAutoRotator.Start(ctx); return nil }, func(_ error) { oidcAutoRotator.Stop() })
 
-	return &KeysetHandles{autoRotator: cookieAutoRotator}, &KeysetHandles{autoRotator: oidcAutoRotator}, nil
+	// need an initial run to provision keysets
+	if err := autoRotator.RunOnce(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to run autoRotator: %w", err)
+	}
+
+	g.Add(func() error { autoRotator.Start(ctx); return nil }, func(_ error) { autoRotator.Stop() })
+
+	return &KeysetHandles{keysetID: keysetIDCookie, store: store}, &KeysetHandles{keysetID: keysetIDOIDC, store: store}, nil
 }
 
 // KeysetHandles can retrieve handles for the given keyset from the DB.
 type KeysetHandles struct {
-	autoRotator *tinkrotate.AutoRotator
+	keysetID string
+	store    tinkrotate.Store
 }
 
-// PublicHandle returns a handle to the current keyset, only including private
-// keys
+// Handle returns a handle to the current keyset, including private keys
 func (k *KeysetHandles) Handle(ctx context.Context) (*keyset.Handle, error) {
-	return k.autoRotator.GetCurrentHandle(ctx)
+	return k.store.GetCurrentHandle(ctx, k.keysetID)
 }
 
 // PublicHandle returns a handle to the current keyset, only including public
 // keys if they keyset supports this.
 func (k *KeysetHandles) PublicHandle(ctx context.Context) (*keyset.Handle, error) {
-	h, err := k.Handle(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ph, err := h.Public()
-	if err != nil {
-		return nil, err
-	}
-	return ph, nil
+	return k.store.GetPublicKeySetHandle(ctx, k.keysetID)
 }
