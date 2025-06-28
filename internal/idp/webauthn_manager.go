@@ -15,7 +15,6 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/justinas/nosurf"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
@@ -224,9 +223,6 @@ func (w *webauthnManager) httpUnauth(rw http.ResponseWriter, msg string) {
 
 func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
 	funcs := template.FuncMap{
-		"csrfField": func() template.HTML {
-			return template.HTML(fmt.Sprintf(`<input type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
-		},
 		"pathFor": func(_ string) string {
 			return "TODO"
 		},
