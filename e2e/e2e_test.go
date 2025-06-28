@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,6 +14,9 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"crypto/tls"
+	"crypto/x509"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
@@ -53,6 +57,13 @@ func TestE2E(t *testing.T) {
 	if goruntime.GOOS == "linux" && os.Getenv("GITHUB_ACTIONS") != "" {
 		opts = append(opts, chromedp.Flag("no-sandbox", true))
 	}
+	// Add flags to ignore certificate errors for self-signed certificates
+	opts = append(opts,
+		chromedp.Flag("ignore-certificate-errors", true),
+		chromedp.Flag("ignore-ssl-errors", true),
+		chromedp.Flag("ignore-certificate-errors-spki-list", ""),
+		chromedp.Flag("allow-insecure-localhost", true),
+	)
 	allocCtx, execCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(execCancel)
 
@@ -89,7 +100,7 @@ func TestE2E(t *testing.T) {
 
 	port := mustAllocatePort()
 
-	issU, err := url.Parse("http://localhost:" + port)
+	issU, err := url.Parse("https://localhost:" + port)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,9 +127,14 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("run migrations: %v", err)
 	}
 
+	certPath, keyPath := GenerateTestCert(t)
+
+	// Configure http.DefaultClient to trust our test certificate
+	configureDefaultClientToTrustCert(t, certPath)
+
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := idp.ServeCmd(serveCtx, sqldb, db, issU, clients, net.JoinHostPort("localhost", port), ""); err != nil {
+		if err := idp.ServeCmd(serveCtx, sqldb, db, issU, clients, net.JoinHostPort("localhost", port), "", certPath, keyPath); err != nil {
 			serveErr <- err
 		}
 	}()
@@ -366,6 +382,30 @@ func cliLoginFlow(ctx context.Context, t *testing.T, oa2Cfg oauth2.Config) (chan
 	}
 
 	return tokC, errC
+}
+
+// configureDefaultClientToTrustCert modifies http.DefaultClient to trust the certificate at certPath
+func configureDefaultClientToTrustCert(t *testing.T, certPath string) {
+	t.Helper()
+
+	// Read the certificate file
+	certData, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("reading certificate file: %v", err)
+	}
+
+	// Create a certificate pool and add our certificate
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(certData) {
+		t.Fatal("failed to append certificate to pool")
+	}
+
+	// Modify http.DefaultClient to trust our certificate
+	http.DefaultClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: certPool,
+		},
+	}
 }
 
 func mustAllocatePort() string {
