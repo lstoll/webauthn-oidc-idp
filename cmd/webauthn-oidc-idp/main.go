@@ -165,7 +165,7 @@ func main() {
 		// TODO - this should loop, and set up an IDP for each one.
 		serveTenant := cfg.Tenants[0]
 
-		if err := idp.ServeCmd(ctx, serveTenant.db, serveTenant.legacyDB, serveTenant.issuerURL, serveTenant.ImportedClients, serveArgs.Addr, serveArgs.Metrics); err != nil {
+		if err := idp.ServeCmd(ctx, serveTenant.db, serveTenant.legacyDB, serveTenant.issuerURL, serveTenant.ImportedClients, serveArgs.Addr, serveArgs.Metrics, "", ""); err != nil {
 			fatalf("start server: %v", err)
 		}
 

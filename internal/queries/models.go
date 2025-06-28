@@ -40,3 +40,9 @@ type User struct {
 	OverrideSubject sql.NullString
 	WebauthnHandle  uuid.UUID
 }
+
+type WebSession struct {
+	ID        string
+	Data      []byte
+	ExpiresAt string
+}

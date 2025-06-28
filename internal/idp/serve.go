@@ -28,14 +28,14 @@ import (
 )
 
 // ServeCmd implements the serving command for an IDP.
-func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []staticclients.Client, addr, metrics string) error {
+func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []staticclients.Client, addr, metrics, certFile, keyFile string) error {
 	var g run.Group
 
 	if err := migrateData(ctx, db, sqldb); err != nil {
 		return fmt.Errorf("failed to migrate data: %v", err)
 	}
 
-	_, oidcHandles, err := initKeysets(ctx, sqldb, g)
+	oidcHandles, err := initKeysets(ctx, sqldb, g)
 	if err != nil {
 		return fmt.Errorf("initializing keysets: %w", err)
 	}
@@ -58,8 +58,8 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		csp.BaseURI(`'self'`),
 		csp.FrameAncestors(`'none'`),
 		// end defaults
-		csp.ScriptSrc("'self' 'unsafe-inline'"), // TODO - use a nonce
-		csp.StyleSrc("'self' 'unsafe-inline'"),  // TODO - use a nonce
+		csp.ScriptSrc("'self' https://ajax.googleapis.com 'unsafe-inline'"), // TODO - use a nonce
+		csp.StyleSrc("'self' 'unsafe-inline'"),                              // TODO - use a nonce
 	}
 
 	websvr, err := web.NewServer(&web.Config{
@@ -148,9 +148,16 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 	}
 
 	g.Add(func() error {
-		slog.Info("server listing", slog.String("addr", "http://"+addr))
-		if err := hs.ListenAndServe(); err != nil {
-			return fmt.Errorf("serving http: %v", err)
+		if certFile != "" && keyFile != "" {
+			slog.Info("server listing", slog.String("addr", "https://"+addr))
+			if err := hs.ListenAndServeTLS(certFile, keyFile); err != nil {
+				return fmt.Errorf("serving https: %v", err)
+			}
+		} else {
+			slog.Info("server listing", slog.String("addr", "http://"+addr))
+			if err := hs.ListenAndServe(); err != nil {
+				return fmt.Errorf("serving http: %v", err)
+			}
 		}
 		return nil
 	}, func(error) {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"log/slog"
 	"net/http"
 	"time"
@@ -59,11 +58,6 @@ type webauthnLogin struct {
 	SessionID   string
 }
 
-type webSession struct {
-	PendingWebauthnEnrollment *pendingWebauthnEnrollment `json:"pending_webauthn_enrollment,omitempty"`
-	WebauthnLogin             *webauthnLoginData         `json:"webauthn_login,omitempty"`
-}
-
 type webauthnManager struct {
 	db       *DB
 	queries  *queries.Queries
@@ -100,7 +94,6 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 		sess.Set(pendingWebauthnEnrollmentSessionKey, &pendingWebauthnEnrollment{
 			ForUserID: uid,
 		})
-		log.Printf("set pendingWebauthnEnrollmentSessionKey: %#v", sess)
 	}
 	// list keys will send the pending enrollment ID
 
@@ -109,8 +102,6 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 
 func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
 	sess := session.MustFromContext(req.Context())
-
-	log.Printf("beginRegistration: %#v", sess)
 
 	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
 	if !ok || pwe.ForUserID == "" {

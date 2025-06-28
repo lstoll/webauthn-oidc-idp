@@ -33,3 +33,9 @@ CREATE TABLE credentials
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
+CREATE TABLE web_sessions (
+    id TEXT PRIMARY KEY,
+    data BLOB NOT NULL,
+    expires_at TEXT NOT NULL
+);
+

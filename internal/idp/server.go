@@ -132,15 +132,15 @@ func (s *oidcServer) AddHandlers(websvr *web.Server) {
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 	response, sessionData, err := s.webauthn.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
-		slog.Error("starting discoverable login", "err", err)
+		slog.Error("starting discoverable login: BeginDiscoverableLogin", "err", err)
 		s.httpErr(rw, errors.New("no active login session"))
 		return
 	}
 
 	sess := session.MustFromContext(req.Context())
 	wl, ok := sess.Get(webauthnLoginDataSessionKey).(*webauthnLoginData)
-	if !ok || wl.WebauthnSessionData == nil {
-		s.httpErr(rw, errors.New("no active login session"))
+	if !ok || wl == nil {
+		s.httpErr(rw, errors.New("no active login session: GetFromContext"))
 		return
 	}
 	wl.WebauthnSessionData = sessionData
