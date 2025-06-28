@@ -1,4 +1,4 @@
-package main
+package idp
 
 import (
 	"crypto/md5"
@@ -73,7 +73,7 @@ type oidcServer struct {
 func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 	ar, err := s.oidcsvr.StartAuthorization(w, req)
 	if err != nil {
-		slog.ErrorContext(req.Context(), "start authorization", logErr(err))
+		slog.ErrorContext(req.Context(), "start authorization", "err", err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (s *oidcServer) authorization(w http.ResponseWriter, req *http.Request) {
 	s.sessmgr.Save(req.Context(), sess)
 
 	if err := loginTemplate.Execute(w, struct{ SessionID string }{SessionID: ar.SessionID}); err != nil {
-		slog.Error("execute login.html.tmpl", logErr(err))
+		slog.Error("execute login.html.tmpl", "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 }
@@ -134,7 +134,7 @@ func (s *oidcServer) AddHandlers(mux *http.ServeMux) {
 func (s *oidcServer) startLogin(rw http.ResponseWriter, req *http.Request) {
 	response, sessionData, err := s.webauthn.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
-		slog.Error("starting discoverable login", logErr(err))
+		slog.Error("starting discoverable login", "err", err)
 		s.httpErr(rw, errors.New("no active login session"))
 		return
 	}
@@ -379,7 +379,7 @@ func (s *oidcServer) userinfo(w http.ResponseWriter, req *http.Request) {
 
 func (s *oidcServer) httpErr(rw http.ResponseWriter, err error) {
 	// TODO - replace me with the error handler
-	slog.Error("(TODO improve this handler) error in server", logErr(err))
+	slog.Error("(TODO improve this handler) error in server", "err", err)
 	http.Error(rw, "Internal Error", http.StatusInternalServerError)
 }
 

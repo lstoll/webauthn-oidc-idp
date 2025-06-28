@@ -1,4 +1,4 @@
-package main
+package idp
 
 import (
 	"os"
@@ -11,7 +11,7 @@ func TestOpenDB(t *testing.T) {
 
 	dir := t.TempDir()
 
-	_, err := openDB(filepath.Join(dir, "t1.json"))
+	_, err := OpenDB(filepath.Join(dir, "t1.json"))
 	if err != nil {
 		t.Fatalf("OpenDB: %v", err)
 	}
@@ -20,7 +20,7 @@ func TestOpenDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	_, err = openDB(filepath.Join(dir, "t2.json"))
+	_, err = OpenDB(filepath.Join(dir, "t2.json"))
 	if err == nil {
 		t.Error("OpenDB: want error due to unsupported version, got none")
 	}
@@ -161,7 +161,7 @@ func TestAuthenticatedUsers(t *testing.T) {
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
 
-	db, err := openDB(filepath.Join(t.TempDir(), "db.json"))
+	db, err := OpenDB(filepath.Join(t.TempDir(), "db.json"))
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}

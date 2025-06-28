@@ -29,4 +29,4 @@ jobs:
 
     - name: Run Browser Integration Test
       run: |
-        TEST_E2E_HEADLESS=1 go test -run=TestE2E ./...
+        TEST_E2E_HEADLESS=1 go test ./e2e

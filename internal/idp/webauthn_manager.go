@@ -1,4 +1,4 @@
-package main
+package idp
 
 import (
 	"context"
@@ -176,7 +176,7 @@ func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, e
 	if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrUserNotActivated) {
 		http.Error(rw, err.Error(), http.StatusNotFound)
 	} else {
-		slog.ErrorContext(ctx, "webauthn manager error", logErr(err), slog.String("dev-info", devinfo))
+		slog.ErrorContext(ctx, "webauthn manager error", "err", err, "dev-info", devinfo)
 		http.Error(rw, "Internal Error", http.StatusInternalServerError)
 	}
 }

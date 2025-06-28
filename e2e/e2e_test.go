@@ -1,4 +1,4 @@
-package main
+package e2e_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"testing"
@@ -17,11 +18,11 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
-	"github.com/google/uuid"
 	"github.com/lstoll/oidc"
 	"github.com/lstoll/oidc/clitoken"
 	"github.com/lstoll/oidc/core/staticclients"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/oauth2"
@@ -93,15 +94,12 @@ func TestE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	issConfig := issuerConfig{
-		URL: issU,
-		Clients: []staticclients.Client{
-			{
-				ID:                      "test-cli",
-				Secrets:                 []string{"public"},
-				Public:                  true,
-				PermitLocalhostRedirect: true,
-			},
+	clients := []staticclients.Client{
+		{
+			ID:                      "test-cli",
+			Secrets:                 []string{"public"},
+			Public:                  true,
+			PermitLocalhostRedirect: true,
 		},
 	}
 
@@ -120,7 +118,7 @@ func TestE2E(t *testing.T) {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := serve(serveCtx, sqldb, db, issConfig, net.JoinHostPort("localhost", port), ""); err != nil {
+		if err := idp.ServeCmd(serveCtx, sqldb, db, issU, clients, net.JoinHostPort("localhost", port), ""); err != nil {
 			serveErr <- err
 		}
 	}()
@@ -134,7 +132,7 @@ func TestE2E(t *testing.T) {
 		t.Fatal("server startup timed out")
 	}
 
-	provider, err := oidc.DiscoverProvider(ctx, issConfig.URL.String(), nil)
+	provider, err := oidc.DiscoverProvider(ctx, issU.String(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,9 +142,6 @@ func TestE2E(t *testing.T) {
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID},
 	}
-
-	// not strictly needed for the E2E tests.
-	reloadDB(net.JoinHostPort("localhost", port))
 
 	/* enable the virtual webauthn environment */
 	var virtAuthenticatorID cdpwebauthn.AuthenticatorID
@@ -186,23 +181,20 @@ func TestE2E(t *testing.T) {
 
 	testOk := t.Run("Registration", func(t *testing.T) {
 		// first enroll a user.
-		params := queries.CreateUserParams{
-			ID:             must(uuid.NewV7()),
-			Email:          "test.user@example.com",
-			FullName:       "Test User",
-			EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
-			WebauthnHandle: must(uuid.NewRandom()),
+		result, err := idp.EnrollCmd(ctx, sqldb, idp.EnrollArgs{
+			Email:    "test.user@example.com",
+			FullName: "Test User",
+			Issuer:   issU,
+		})
+		if err != nil {
+			t.Fatalf("enrolling user: %v", err)
 		}
-		if err := queries.New(sqldb).CreateUser(ctx, params); err != nil {
-			fatalf("create user: %v", err)
-		}
-		ep := registrationURL(issConfig.URL, params.ID.String(), params.EnrollmentKey.String)
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {
 			err := chromedp.Run(ctx,
-				chromedp.Navigate(ep.String()),
+				chromedp.Navigate(result.EnrollmentURL.String()),
 				chromedp.WaitVisible(`//button[text()='Register Key']`),
 				chromedp.SendKeys(`//input[@id='keyName']`, "Test Passkey"),
 				chromedp.Click(`//button[text()='Register Key']`),
@@ -231,11 +223,11 @@ func TestE2E(t *testing.T) {
 		case <-doneC:
 		}
 
-		_, err := queries.New(sqldb).GetUser(ctx, params.ID)
+		_, err = queries.New(sqldb).GetUser(ctx, result.UserID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		creds, err := queries.New(sqldb).GetUserCredentials(ctx, params.ID)
+		creds, err := queries.New(sqldb).GetUserCredentials(ctx, result.UserID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -452,4 +444,14 @@ func (c *chromeDPOpener) Open(ctx context.Context, url string) error {
 		c.notifyCh <- struct{}{}
 	}
 	return nil
+}
+
+func openTestDB(t *testing.T) *idp.DB {
+	t.Helper()
+
+	db, err := idp.OpenDB(filepath.Join(t.TempDir(), "db.json"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	return db
 }

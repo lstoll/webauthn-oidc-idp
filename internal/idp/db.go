@@ -1,4 +1,4 @@
-package main
+package idp
 
 import (
 	"encoding/json"
@@ -129,8 +129,8 @@ type AuthenticatedUser struct {
 	PolicyContext map[string]interface{} `json:"policyContext,omitempty"`
 }
 
-// openDB opens the database at path, creating the file if it does not exist.
-func openDB(path string) (*DB, error) {
+// OpenDB opens the database at path, creating the file if it does not exist.
+func OpenDB(path string) (*DB, error) {
 	f, err := jsonfile.Load[schema](path)
 	if errors.Is(err, fs.ErrNotExist) {
 		f, err = jsonfile.New[schema](path)

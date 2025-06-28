@@ -1,4 +1,4 @@
-package main
+package idp
 
 import (
 	"context"
@@ -61,7 +61,7 @@ func baseMiddleware(wrapped http.Handler, wnsessmgr *cookiesession.Manager[webSe
 type httpErrHandler struct{}
 
 func (h *httpErrHandler) Error(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "http error", logErr(err))
+	slog.ErrorContext(r.Context(), "http error", "err", err)
 	http.Error(w, "Internal Error", http.StatusInternalServerError)
 }
 
