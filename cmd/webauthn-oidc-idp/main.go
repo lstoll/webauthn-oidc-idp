@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
 	"strings"
 
@@ -28,11 +27,6 @@ func init() {
 		version.Branch = "unknown"
 	}
 	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(progname, "-", "_")))
-}
-
-type tenant struct {
-	DB         *sql.DB
-	IssuerHost *url.URL
 }
 
 func main() {
@@ -76,7 +70,7 @@ func main() {
 	setFlagsFromEnv(listCredentialsFlags)
 
 	// Parse root flags first
-	rootFlags.Parse(os.Args[1:])
+	_ = rootFlags.Parse(os.Args[1:])
 
 	// Check if we have a subcommand
 	if len(rootFlags.Args()) == 0 {
@@ -167,7 +161,7 @@ func main() {
 
 	switch subcommand {
 	case "serve":
-		serveFlags.Parse(rootFlags.Args()[1:])
+		_ = serveFlags.Parse(rootFlags.Args()[1:])
 		// TODO - this should loop, and set up an IDP for each one.
 		serveTenant := cfg.Tenants[0]
 
@@ -180,7 +174,7 @@ func main() {
 		os.Exit(0)
 
 	case "enroll-user":
-		enrollFlags.Parse(rootFlags.Args()[1:])
+		_ = enrollFlags.Parse(rootFlags.Args()[1:])
 		enrollArgs.Issuer = activeTenant.issuerURL
 		result, err := idp.EnrollCmd(ctx, activeTenant.db, enrollArgs)
 		if err != nil {
@@ -190,14 +184,14 @@ func main() {
 		fmt.Printf("Enrollment URL: %s\n", result.EnrollmentURL)
 
 	case "add-credential":
-		addCredentialFlags.Parse(rootFlags.Args()[1:])
+		_ = addCredentialFlags.Parse(rootFlags.Args()[1:])
 		addCredentialArgs.Issuer = activeTenant.issuerURL
 		if err := idp.AddCredentialCmd(ctx, activeTenant.db, addCredentialArgs); err != nil {
 			fatalf("add credential: %v", err)
 		}
 
 	case "list-credentials":
-		listCredentialsFlags.Parse(rootFlags.Args()[1:])
+		_ = listCredentialsFlags.Parse(rootFlags.Args()[1:])
 		if err := idp.ListCredentialsCmd(ctx, activeTenant.db, listCredentialsArgs); err != nil {
 			fatalf("list credentials: %v", err)
 		}
@@ -229,11 +223,4 @@ func fatal(s string) {
 func fatalf(s string, args ...any) {
 	fmt.Fprintf(os.Stderr, fmt.Sprintf("%s: %s\n", progname, s), args...)
 	os.Exit(1)
-}
-
-func must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
 }
