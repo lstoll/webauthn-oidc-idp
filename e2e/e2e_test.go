@@ -117,7 +117,7 @@ func TestE2E(t *testing.T) {
 	serveCtx, serveCancel := context.WithCancel(context.Background())
 	t.Cleanup(serveCancel)
 
-	sqldb, err := sql.Open("sqlite3", ":memory:")
+	sqldb, err := sql.Open("sqlite3", "file:test.db?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open in-memory database: %v", err)
 	}
