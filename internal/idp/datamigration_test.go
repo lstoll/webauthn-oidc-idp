@@ -29,7 +29,7 @@ func TestMigrateData(t *testing.T) {
 		t.Fatalf("failed to open file db: %v", err)
 	}
 
-	sqldb, err := sql.Open("sqlite3", ":memory:")
+	sqldb, err := sql.Open("sqlite3", "file:test.db?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("failed to open sqlite db: %v", err)
 	}

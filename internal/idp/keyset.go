@@ -8,7 +8,6 @@ import (
 
 	"github.com/lstoll/tinkrotate"
 	tinkrotatev1 "github.com/lstoll/tinkrotate/proto/tinkrotate/v1"
-	"github.com/oklog/run"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"github.com/tink-crypto/tink-go/v2/keyset"
 	"github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
@@ -38,7 +37,7 @@ var (
 	}
 )
 
-func initKeysets(ctx context.Context, db *sql.DB, g run.Group) (oidcKeyset *KeysetHandles, _ error) {
+func initKeysets(ctx context.Context, db *sql.DB) (oidcKeyset *KeysetHandles, _ error) {
 	store, err := tinkrotate.NewSQLStore(db, &tinkrotate.SQLStoreOptions{
 		Dialect:   tinkrotate.SQLDialectSQLite,
 		TableName: "tink_keysets",
@@ -47,7 +46,7 @@ func initKeysets(ctx context.Context, db *sql.DB, g run.Group) (oidcKeyset *Keys
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
 
-	autoRotator, err := tinkrotate.NewAutoRotator(store, 1*time.Minute, &tinkrotate.AutoRotatorOpts{
+	autoRotator, err := tinkrotate.NewAutoRotator(store, 10*time.Minute, &tinkrotate.AutoRotatorOpts{
 		ProvisionPolicies: map[string]*tinkrotatev1.RotationPolicy{
 			keysetIDOIDC: oidcRotatePolicy,
 		},
@@ -61,7 +60,7 @@ func initKeysets(ctx context.Context, db *sql.DB, g run.Group) (oidcKeyset *Keys
 		return nil, fmt.Errorf("failed to run autoRotator: %w", err)
 	}
 
-	g.Add(func() error { autoRotator.Start(ctx); return nil }, func(_ error) { autoRotator.Stop() })
+	autoRotator.Start(ctx)
 
 	return &KeysetHandles{keysetID: keysetIDOIDC, store: store}, nil
 }
