@@ -36,7 +36,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		return fmt.Errorf("failed to migrate data: %v", err)
 	}
 
-	oidcHandles, err := initKeysets(ctx, sqldb, g)
+	oidcHandles, err := initKeysets(ctx, sqldb)
 	if err != nil {
 		return fmt.Errorf("initializing keysets: %w", err)
 	}
