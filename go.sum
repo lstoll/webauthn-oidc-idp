@@ -48,6 +48,10 @@ github.com/lstoll/web v0.0.0-20250626220328-c73bfcffd053 h1:TbORmcM9cGxKvvj1sQaG
 github.com/lstoll/web v0.0.0-20250626220328-c73bfcffd053/go.mod h1:7KkvIfjA0uiTZehpOuBA4QNH0PCDwdoYLo8HpWVbG18=
 github.com/lstoll/web v0.0.0-20250628233112-c8117c2a01a1 h1:IgE06ErgpgOXKu6pD2THyGbIbwrhqaTten02QkPQL1w=
 github.com/lstoll/web v0.0.0-20250628233112-c8117c2a01a1/go.mod h1:7KkvIfjA0uiTZehpOuBA4QNH0PCDwdoYLo8HpWVbG18=
+github.com/lstoll/web v0.0.0-20250706214213-6f1a5d4c9be1 h1:T3PKsvQNIf8QRi6psQwi0gAi5KZDIZ+3QrHDJj/XqEo=
+github.com/lstoll/web v0.0.0-20250706214213-6f1a5d4c9be1/go.mod h1:7KkvIfjA0uiTZehpOuBA4QNH0PCDwdoYLo8HpWVbG18=
+github.com/lstoll/web v0.0.0-20250706222713-619669e82ecc h1:7nZFSSsQXw6y6zPYuRNfdIIuXmRN+SepkV28flUmG2Q=
+github.com/lstoll/web v0.0.0-20250706222713-619669e82ecc/go.mod h1:7KkvIfjA0uiTZehpOuBA4QNH0PCDwdoYLo8HpWVbG18=
 github.com/mattn/go-sqlite3 v1.14.28 h1:ThEiQrnbtumT+QMknw63Befp/ce/nUPgBPMlRFEum7A=
 github.com/mattn/go-sqlite3 v1.14.28/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=

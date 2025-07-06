@@ -18,6 +18,7 @@ import (
 	"github.com/lstoll/oidc/discovery"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/proxyhdrs"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
@@ -76,6 +77,18 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		TrustedHeaders: []string{"Fly-Request-ID"},
 	}).Handler); err != nil {
 		return fmt.Errorf("replacing request id middleware: %w", err)
+	}
+	remoteIPMiddleware := &proxyhdrs.RemoteIP{
+		ForwardedIPHeader: "Fly-Client-IP",
+	}
+	websvr.BaseMiddleware.Prepend(web.MiddlewareRequestLogName, remoteIPMiddleware.Handle)
+
+	forceTLSMiddleware := &proxyhdrs.ForceTLS{
+		ForwardedProtoHeader: "X-Forwarded-Proto",
+	}
+	forceTLSMiddleware.AllowBypass("GET /healthz")
+	if err := websvr.BaseMiddleware.InsertAfter(web.MiddlewareRequestLogName, forceTLSMiddleware.Handle); err != nil {
+		return fmt.Errorf("inserting force tls middleware: %w", err)
 	}
 
 	oidcmd := discovery.DefaultCoreMetadata(issuerURL.String())
@@ -139,9 +152,9 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 	fs := http.FileServer(http.FS(webcontent.PublicFiles))
 	websvr.HandleRaw("/public/", fs)
 
-	websvr.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	websvr.HandleRaw("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
-	})
+	}))
 
 	svr.AddHandlers(websvr)
 
