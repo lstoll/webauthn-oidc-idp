@@ -20,7 +20,7 @@ func main() {
 	outputFile := os.Args[1]
 
 	slog.Info("schemagen-idp running migrations")
-	dbConn, err := sql.Open("sqlite3", ":memory:")
+	dbConn, err := sql.Open("sqlite3", "file:test.db?mode=memory&cache=shared")
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
