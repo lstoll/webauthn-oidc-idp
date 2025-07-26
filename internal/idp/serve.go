@@ -4,10 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -23,23 +21,19 @@ import (
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
-	webcontent "github.com/lstoll/webauthn-oidc-idp/web"
+	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 	"github.com/oklog/run"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/sys/unix"
 )
 
-// ServeCmd implements the serving command for an IDP.
-func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []staticclients.Client, addr, metrics, certFile, keyFile string) error {
-	var g run.Group
-
+// NewIDP creates a new IDP server for the given params.
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []staticclients.Client) (http.Handler, error) {
 	if err := migrateData(ctx, db, sqldb); err != nil {
-		return fmt.Errorf("failed to migrate data: %v", err)
+		return nil, fmt.Errorf("failed to migrate data: %v", err)
 	}
 
 	oidcHandles, err := initKeysets(ctx, sqldb)
 	if err != nil {
-		return fmt.Errorf("initializing keysets: %w", err)
+		return nil, fmt.Errorf("initializing keysets: %w", err)
 	}
 
 	sesskv := sqlkv.New(sqldb, &sqlkv.Opts{
@@ -49,7 +43,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 
 	sessionManager, err := session.NewKVManager(sesskv, nil)
 	if err != nil {
-		return fmt.Errorf("creating session manager: %w", err)
+		return nil, fmt.Errorf("creating session manager: %w", err)
 	}
 
 	cspOpts := []csp.HandlerOpt{
@@ -67,16 +61,16 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 	websvr, err := web.NewServer(&web.Config{
 		BaseURL:        issuerURL,
 		SessionManager: sessionManager,
-		Static:         webcontent.PublicFiles, // TODO - lstoll/web should not panic when not set
+		Static:         webcommon.Static, // TODO - lstoll/web should not panic when not set
 		CSPOpts:        cspOpts,
 	})
 	if err != nil {
-		return fmt.Errorf("creating web server: %w", err)
+		return nil, fmt.Errorf("creating web server: %w", err)
 	}
 	if err := websvr.BaseMiddleware.Replace(web.MiddlewareRequestIDName, (&requestid.Middleware{
 		TrustedHeaders: []string{"Fly-Request-ID"},
 	}).Handler); err != nil {
-		return fmt.Errorf("replacing request id middleware: %w", err)
+		return nil, fmt.Errorf("replacing request id middleware: %w", err)
 	}
 	remoteIPMiddleware := &proxyhdrs.RemoteIP{
 		ForwardedIPHeader: "Fly-Client-IP",
@@ -88,7 +82,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 	}
 	forceTLSMiddleware.AllowBypass("GET /healthz")
 	if err := websvr.BaseMiddleware.InsertAfter(web.MiddlewareRequestLogName, forceTLSMiddleware.Handle); err != nil {
-		return fmt.Errorf("inserting force tls middleware: %w", err)
+		return nil, fmt.Errorf("inserting force tls middleware: %w", err)
 	}
 
 	oidcmd := discovery.DefaultCoreMetadata(issuerURL.String())
@@ -99,7 +93,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 
 	discoh, err := discovery.NewConfigurationHandler(oidcmd, oidcHandles)
 	if err != nil {
-		return fmt.Errorf("configuring metadata handler: %w", err)
+		return nil, fmt.Errorf("configuring metadata handler: %w", err)
 	}
 
 	oidcsvr, err := core.New(&core.Config{
@@ -108,7 +102,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		CodeValidityTime: 5 * time.Minute,
 	}, db.SessionManager(), &staticclients.Clients{Clients: clients}, oidcHandles)
 	if err != nil {
-		return fmt.Errorf("failed to create OIDC server instance: %w", err)
+		return nil, fmt.Errorf("failed to create OIDC server instance: %w", err)
 	}
 
 	websvr.HandleRaw("GET /.well-known/openid-configuration", discoh)
@@ -126,7 +120,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("configuring webauthn: %w", err)
+		return nil, fmt.Errorf("configuring webauthn: %w", err)
 	}
 
 	// start configuration of webauthn manager
@@ -149,8 +143,9 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 		queries:  queries.New(sqldb),
 	}
 
-	fs := http.FileServer(http.FS(webcontent.PublicFiles))
-	websvr.HandleRaw("/public/", fs)
+	// TODO - web should handle all this.
+	fs := http.FileServer(http.FS(webcommon.Static))
+	websvr.HandleRaw("/public/", http.StripPrefix("/public/", fs))
 
 	websvr.HandleRaw("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
@@ -158,52 +153,7 @@ func ServeCmd(ctx context.Context, sqldb *sql.DB, db *DB, issuerURL *url.URL, cl
 
 	svr.AddHandlers(websvr)
 
-	g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
-
-	hs := &http.Server{
-		Addr:    addr,
-		Handler: websvr,
-	}
-
-	g.Add(func() error {
-		if certFile != "" && keyFile != "" {
-			slog.Info("server listing", slog.String("addr", "https://"+addr))
-			if err := hs.ListenAndServeTLS(certFile, keyFile); err != nil {
-				return fmt.Errorf("serving https: %v", err)
-			}
-		} else {
-			slog.Info("server listing", slog.String("addr", "http://"+addr))
-			if err := hs.ListenAndServe(); err != nil {
-				return fmt.Errorf("serving http: %v", err)
-			}
-		}
-		return nil
-	}, func(error) {
-		// new context for this, parent is likely already shut down
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
-		_ = hs.Shutdown(ctx)
-	})
-
-	{
-		if metrics != "" {
-			mux := http.NewServeMux()
-			mux.Handle("/metrics", promhttp.Handler())
-			promsrv := &http.Server{Addr: metrics, Handler: mux}
-
-			g.Add(func() error {
-				slog.Info("metrics server listing", slog.String("addr", "http://"+metrics))
-				if err := promsrv.ListenAndServe(); err != nil {
-					return fmt.Errorf("serving metrics: %v", err)
-				}
-				return nil
-			}, func(error) {
-				promsrv.Close()
-			})
-		}
-	}
-
-	return g.Run()
+	return websvr, nil
 }
 
 func ptr[T any](v T) *T {

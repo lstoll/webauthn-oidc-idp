@@ -27,6 +27,7 @@ type legacyConfig struct {
 }
 
 type config struct {
+	// Tenants is the list of tenants to serve.
 	Tenants []*configTenant `json:"tenants"`
 }
 
@@ -47,7 +48,6 @@ type configTenant struct {
 	// ImportedClients is the clients imported from the legacy config, filled at
 	// parse time.
 	ImportedClients []staticclients.Client `json:"-"`
-
 	// db connection for the tenant.
 	db *sql.DB `json:"-"`
 	// legacyDB is the database connection for the legacy config

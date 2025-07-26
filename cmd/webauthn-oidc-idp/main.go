@@ -6,15 +6,20 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/version"
+	"golang.org/x/sys/unix"
 )
 
 const progname = "webauthn-oidc-idp"
@@ -42,12 +47,16 @@ func main() {
 	selectedHost := rootFlags.String("selected-host", "", "In multi-tenant mode, the host to select for administrative operations. Not used for serving.")
 
 	serveArgs := struct {
-		Addr    string
-		Metrics string
+		Addr     string
+		Metrics  string
+		CertFile string
+		KeyFile  string
 	}{}
 	serveFlags := flag.NewFlagSet("serve", flag.ExitOnError)
 	serveFlags.StringVar(&serveArgs.Addr, "http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
 	serveFlags.StringVar(&serveArgs.Metrics, "metrics", "", "Expose Prometheus metrics on the given host:port.")
+	serveFlags.StringVar(&serveArgs.CertFile, "cert-file", "", "Path to the TLS certificate file.")
+	serveFlags.StringVar(&serveArgs.KeyFile, "key-file", "", "Path to the TLS key file.")
 
 	enrollFlags := flag.NewFlagSet("enroll-user", flag.ExitOnError)
 	enrollArgs := idp.EnrollArgs{}
@@ -162,11 +171,66 @@ func main() {
 	switch subcommand {
 	case "serve":
 		_ = serveFlags.Parse(rootFlags.Args()[1:])
-		// TODO - this should loop, and set up an IDP for each one.
-		serveTenant := cfg.Tenants[0]
 
-		if err := idp.ServeCmd(ctx, serveTenant.db, serveTenant.legacyDB, serveTenant.issuerURL, serveTenant.ImportedClients, serveArgs.Addr, serveArgs.Metrics, "", ""); err != nil {
-			fatalf("start server: %v", err)
+		var g run.Group
+		g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
+
+		mux := http.NewServeMux()
+
+		for _, tenant := range cfg.Tenants {
+			h, err := idp.NewIDP(ctx, &g, tenant.db, tenant.legacyDB, tenant.issuerURL, tenant.ImportedClients)
+			if err != nil {
+				fatalf("start server: %v", err)
+			}
+
+			mux.Handle(tenant.Hostname+"/", h)
+		}
+
+		hs := &http.Server{
+			Addr:    serveArgs.Addr,
+			Handler: mux,
+		}
+
+		g.Add(func() error {
+			if serveArgs.CertFile != "" && serveArgs.KeyFile != "" {
+				slog.Info("server listing", slog.String("addr", "https://"+serveArgs.Addr))
+				if err := hs.ListenAndServeTLS(serveArgs.CertFile, serveArgs.KeyFile); err != nil {
+					return fmt.Errorf("serving https: %v", err)
+				}
+			} else {
+				slog.Info("server listing", slog.String("addr", "http://"+serveArgs.Addr))
+				if err := hs.ListenAndServe(); err != nil {
+					return fmt.Errorf("serving http: %v", err)
+				}
+			}
+			return nil
+		}, func(error) {
+			// new context for this, parent is likely already shut down
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			_ = hs.Shutdown(ctx)
+		})
+
+		{
+			if serveArgs.Metrics != "" {
+				mux := http.NewServeMux()
+				mux.Handle("/metrics", promhttp.Handler())
+				promsrv := &http.Server{Addr: serveArgs.Metrics, Handler: mux}
+
+				g.Add(func() error {
+					slog.Info("metrics server listing", slog.String("addr", "http://"+serveArgs.Metrics))
+					if err := promsrv.ListenAndServe(); err != nil {
+						return fmt.Errorf("serving metrics: %v", err)
+					}
+					return nil
+				}, func(error) {
+					promsrv.Close()
+				})
+			}
+		}
+
+		if err := g.Run(); err != nil {
+			fatalf("run: %v", err)
 		}
 
 	case "version":

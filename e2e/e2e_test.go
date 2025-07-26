@@ -29,6 +29,7 @@ import (
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/oklog/run"
 	"golang.org/x/oauth2"
 )
 
@@ -134,9 +135,27 @@ func TestE2E(t *testing.T) {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := idp.ServeCmd(serveCtx, sqldb, db, issU, clients, net.JoinHostPort("localhost", port), "", certPath, keyPath); err != nil {
+		var (
+			g    run.Group
+			endC = make(chan struct{}, 1)
+		)
+		g.Add(func() error {
+			<-endC
+			return nil
+		}, func(error) {
+			endC <- struct{}{}
+		})
+		t.Cleanup(func() {
+			endC <- struct{}{}
+		})
+
+		h, err := idp.NewIDP(serveCtx, &g, sqldb, db, issU, clients)
+		if err != nil {
 			serveErr <- err
+			return
 		}
+
+		serveErr <- http.ListenAndServeTLS(net.JoinHostPort("localhost", port), certPath, keyPath, h)
 	}()
 
 	select {

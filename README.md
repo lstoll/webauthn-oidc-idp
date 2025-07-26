@@ -4,6 +4,10 @@
 
 See [Issues](/../../issues) for the closest thign we have to a roadmap.
 
+## Run E2E Tests
+
+`TEST_E2E=1 go test ./e2e -count=1`
+
 ## Registering an initial user
 
 ```
@@ -14,6 +18,14 @@ go run ./ --activate --user-id=<uuid>
 ```
 
 ## Run the server
+
+One time, need to create certs:
+
+```
+brew install mkcert
+mkcert -install
+mkcert -cert-file=dev-cert.pem -key-file=dev-key.pem localhost
+```
 
 ```
 go run ./ --http 127.0.0.1:8085
