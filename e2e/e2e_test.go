@@ -12,13 +12,13 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"crypto/tls"
 	"crypto/x509"
 
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
@@ -75,9 +75,6 @@ func TestE2E(t *testing.T) {
 		// chromeErrC gets a message when an error occurs in the browser
 		// runtime, e.g js errors
 		chromeErrC = make(chan error, 10000)
-		// chromeDialogC gets a message when a dialog is opened. Can be handled
-		// with the page.HandleJavaScriptDialog(X) action.
-		chromeDialogC = make(chan struct{}, 10000)
 	)
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
@@ -90,9 +87,6 @@ func TestE2E(t *testing.T) {
 			s := ev.ExceptionDetails.Error()
 			t.Logf("*BROWSER* runtime exception: %s", s)
 			chromeErrC <- errors.New(s)
-		case *page.EventJavascriptDialogOpening:
-			t.Logf("*BROWSER* JS opened a dialog")
-			chromeDialogC <- struct{}{}
 		}
 	})
 
@@ -330,24 +324,27 @@ func TestE2E(t *testing.T) {
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {
+			var errorText string
 			err := chromedp.Run(ctx,
-				// sit back and let the auto-login fail
-				chromedp.Sleep(5*time.Second),
+				// wait for error message to appear and get its text
+				chromedp.WaitVisible(`#error-message`),
+				chromedp.Text(`#error-message`, &errorText),
 			)
 			if err != nil {
 				runErrC <- err
+				return
 			}
+
+			if !strings.Contains(strings.ToLower(errorText), "failed") {
+				runErrC <- fmt.Errorf("expected error message to contain 'failed', got: %s", errorText)
+				return
+			}
+
+			t.Logf("found expected error message: %s", errorText)
 			doneC <- struct{}{}
 		}()
 
 		select {
-		case <-chromeDialogC:
-			// this is when we get an alert. currently this is how we flag errors.
-			if err := chromedp.Run(ctx,
-				page.HandleJavaScriptDialog(true),
-			); err != nil {
-				t.Fatalf("dismissing dialog: %v", err)
-			}
 		case bErr := <-chromeErrC:
 			// this is for unhandled exceptions
 			t.Logf("expected browser error returned: %v", bErr)
@@ -359,6 +356,7 @@ func TestE2E(t *testing.T) {
 			t.Fatalf("error triggering CLI flow: %v", err)
 		case <-time.After(browserStepTimeout()):
 			t.Fatal("timed out waiting for token")
+		case <-doneC:
 		}
 	})
 	if !testOk {
