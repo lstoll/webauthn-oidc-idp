@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title | default "IDP"}}</title>
+
+    <link rel="stylesheet" href="{{ StaticPath "bulma.min.css" }}">
+    <link rel="stylesheet" href="{{ StaticPath "app.css" }}">
+    <script src="{{ StaticPath "fa-all.min.js" }}" defer></script>
+</head>
+<body>
+    <!-- Header/Navbar -->
+    <nav class="navbar is-primary" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="/">
+                <span class="icon-text">
+                    <span class="icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </span>
+                    <span class="has-text-weight-bold">IDP</span>
+                </span>
+            </a>
+        </div>
+
+        <div class="navbar-end">
+            {{if .UserLoggedIn}}
+            <div class="navbar-item">
+                <div class="buttons">
+                    <span class="button is-light is-static">
+                        <span class="icon">
+                            <i class="fas fa-user"></i>
+                        </span>
+                        <span>{{.Username}}</span>
+                    </span>
+                    <a class="button is-light" href="/logout">
+                        <span class="icon">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </span>
+                        <span>Logout</span>
+                    </a>
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <section class="section">
+        <div class="container">

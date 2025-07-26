@@ -53,7 +53,7 @@ func main() {
 		KeyFile  string
 	}{}
 	serveFlags := flag.NewFlagSet("serve", flag.ExitOnError)
-	serveFlags.StringVar(&serveArgs.Addr, "http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
+	serveFlags.StringVar(&serveArgs.Addr, "http", "localhost:8085", "Run the IDP server on the given host:port.")
 	serveFlags.StringVar(&serveArgs.Metrics, "metrics", "", "Expose Prometheus metrics on the given host:port.")
 	serveFlags.StringVar(&serveArgs.CertFile, "cert-file", "", "Path to the TLS certificate file.")
 	serveFlags.StringVar(&serveArgs.KeyFile, "key-file", "", "Path to the TLS key file.")

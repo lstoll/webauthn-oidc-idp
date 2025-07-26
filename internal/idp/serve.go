@@ -20,6 +20,7 @@ import (
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
+	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 	"github.com/oklog/run"
@@ -150,6 +151,9 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 	websvr.HandleRaw("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	}))
+
+	auth := &auth.Authenticator{}
+	websvr.Handle("/{$}", web.BrowserHandlerFunc(auth.HandleIndex))
 
 	svr.AddHandlers(websvr)
 

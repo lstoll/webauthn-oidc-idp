@@ -28,7 +28,7 @@ mkcert -cert-file=dev-cert.pem -key-file=dev-key.pem localhost
 ```
 
 ```
-go run ./ --http 127.0.0.1:8085
+go run ./cmd/webauthn-oidc-idp serve -cert-file=dev-cert.pem -key-file=dev-key.pem
 # test the auth flow:
 go run github.com/lstoll/oidc/cmd/oidc-example-rp@latest
 ```
