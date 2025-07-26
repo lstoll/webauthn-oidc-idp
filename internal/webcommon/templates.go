@@ -1,11 +1,11 @@
 package webcommon
 
 import (
+	"context"
 	"embed"
 	"html/template"
 	"io"
 	"log"
-	"maps"
 
 	"github.com/lstoll/web"
 )
@@ -36,10 +36,7 @@ var FuncMap = template.FuncMap{
 func init() {
 	var err error
 
-	// Create template with custom functions
-	f := maps.Clone(FuncMap)
-	maps.Copy(f, web.StubTemplateFuncs)
-	Templates, err = template.New("").Funcs(f).ParseFS(templates, "templates/*.html.tmpl")
+	Templates, err = template.New("").Funcs(web.TemplateFuncs(context.Background(), FuncMap)).ParseFS(templates, "templates/*.html.tmpl")
 	if err != nil {
 		log.Fatal("Failed to parse templates:", err)
 	}

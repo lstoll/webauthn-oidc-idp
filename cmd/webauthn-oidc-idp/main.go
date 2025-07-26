@@ -229,6 +229,10 @@ func main() {
 			}
 		}
 
+		mux.Handle("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("OK"))
+		}))
+
 		if err := g.Run(); err != nil {
 			fatalf("run: %v", err)
 		}

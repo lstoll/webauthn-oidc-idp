@@ -148,10 +148,6 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 	fs := http.FileServer(http.FS(webcommon.Static))
 	websvr.HandleRaw("/public/", http.StripPrefix("/public/", fs))
 
-	websvr.HandleRaw("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("OK"))
-	}))
-
 	auth := &auth.Authenticator{}
 	websvr.Handle("/{$}", web.BrowserHandlerFunc(auth.HandleIndex))
 
