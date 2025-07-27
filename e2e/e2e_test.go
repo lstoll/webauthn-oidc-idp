@@ -319,6 +319,13 @@ func TestE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		// and log out, so there's no session cache
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(issU.String()+"/logout"),
+		); err != nil {
+			t.Fatal(err)
+		}
+
 		tokC, errC := cliLoginFlow(ctx, t, oa2Cfg)
 
 		runErrC := make(chan error, 1)
