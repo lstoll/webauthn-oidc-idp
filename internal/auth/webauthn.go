@@ -88,6 +88,7 @@ func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
 func (a *Authenticator) AddHandlers(r *web.Server) {
 	r.Handle("GET /{$}", a.Middleware(web.BrowserHandlerFunc(a.HandleIndex)))
 	r.Handle("GET /login", web.BrowserHandlerFunc(a.HandleLoginPage), SkipAuthn)
+	r.Handle("GET /logout", web.BrowserHandlerFunc(a.Logout), SkipAuthn)
 	r.Handle("POST /finishWebauthnLogin", web.BrowserHandlerFunc(a.DoLogin), SkipAuthn)
 }
 
@@ -278,6 +279,7 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	}
 
 	// Set user ID in session
+	delete(as.Flows, req.FlowID)
 	userID := user.ID.String()
 	as.LoggedinUserID = &userID
 	r.Session().Set(authSessSessionKey, as)
@@ -287,6 +289,17 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 		Data: loginResponse{
 			ReturnTo: flow.ReturnTo,
 		},
+	})
+}
+
+func (a *Authenticator) Logout(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
+	as, ok := r.Session().Get(authSessSessionKey).(*authSess)
+	if ok {
+		as.LoggedinUserID = nil
+		r.Session().Set(authSessSessionKey, as)
+	}
+	return w.WriteResponse(r, &web.RedirectResponse{
+		URL: "/",
 	})
 }
 
