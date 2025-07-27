@@ -13,13 +13,13 @@ require (
 	github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
 	github.com/lstoll/web v0.0.0-20250727132609-68a8d2f7e1ae
-	github.com/mattn/go-sqlite3 v1.14.28
-	github.com/oklog/run v1.1.0
+	github.com/mattn/go-sqlite3 v1.14.29
+	github.com/oklog/run v1.2.0
 	github.com/prometheus/client_golang v1.22.0
-	github.com/prometheus/common v0.62.0
+	github.com/prometheus/common v0.65.0
 	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
 	github.com/tink-crypto/tink-go/v2 v2.4.0
-	golang.org/x/oauth2 v0.24.0
+	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sys v0.34.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -39,8 +39,8 @@ require (
 	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 )
