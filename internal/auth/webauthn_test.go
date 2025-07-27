@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
+	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/webtest"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
@@ -57,17 +59,27 @@ func TestWebauthnAuth(t *testing.T) {
 		// Create a user with a registered credential
 		authenticator, credential, _ := createUserWithCredential(t, auth)
 
-		// Test login
-		flowID := uuid.New().String()
-		flow := authSessFlow{
-			ID:       flowID,
-			ReturnTo: "/dashboard",
+		// We keep this as a pointer, so we can mutate and track it over time.
+		// This feels bad though, we should update the lstoll/web test stuff to
+		// handle this all better.
+		as := &authSess{}
+
+		lrw := httptest.NewRecorder()
+		lrr := httptest.NewRequest("GET", "/needredir", nil)
+		lrctx, _ := session.TestContext(lrr.Context(), nil)
+		session.MustFromContext(lrctx).Set(authSessSessionKey, as)
+		lrr = lrr.WithContext(lrctx)
+
+		auth.TriggerLogin(lrw, lrr, "/dashboard")
+
+		if lrw.Result().StatusCode != http.StatusSeeOther {
+			t.Fatalf("expected redirect, got %d", lrw.Result().StatusCode)
 		}
-		as := &authSess{
-			Flows: map[string]authSessFlow{flowID: flow},
+		if lrw.Result().Header.Get("Location") == "" {
+			t.Fatalf("expected redirect, got no location")
 		}
 
-		req := webtest.NewRequest("GET", "/login?flow="+flowID,
+		req := webtest.NewRequest("GET", lrw.Result().Header.Get("Location"),
 			webtest.RequestWithSessionValues(map[string]any{authSessSessionKey: as}),
 			webtest.RequestWithStaticContent(webcommon.Static, "/static"),
 		)

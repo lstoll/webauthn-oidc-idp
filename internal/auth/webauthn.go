@@ -112,7 +112,7 @@ func (a *Authenticator) TriggerLogin(w http.ResponseWriter, r *http.Request, ret
 
 	sess.Set(authSessSessionKey, as)
 
-	http.Redirect(w, r, fmt.Sprintf("/login?flow=%s", id.String()), http.StatusFound)
+	http.Redirect(w, r, fmt.Sprintf("/login?flow=%s", id.String()), http.StatusSeeOther)
 }
 
 func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
