@@ -11,7 +11,6 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/oauth2as"
 	o2staticclients "github.com/lstoll/oauth2as/staticclients"
-	"github.com/lstoll/oidc/core/staticclients"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/proxyhdrs"
@@ -26,7 +25,7 @@ import (
 )
 
 // NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []staticclients.Client) (http.Handler, error) {
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []o2staticclients.Client) (http.Handler, error) {
 	if err := migrateData(ctx, db, sqldb); err != nil {
 		return nil, fmt.Errorf("failed to migrate data: %v", err)
 	}
@@ -144,6 +143,7 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 			Public:       c.Public,
 			RequiresPKCE: c.RequiresPKCE,
 		}
+		// TODO - this is a temp hack, we should update clients to be explicit.
 		if c.Public {
 			o2c.RedirectURLs = append(o2c.RedirectURLs, "http://127.0.0.1/callback")
 		}
