@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"database/sql"
-
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
@@ -26,11 +24,6 @@ func init() {
 	gob.Register(&authSess{})
 }
 
-const (
-	authSessSessionKey = "auth-sess"
-	authFlowValidFor   = 10 * time.Minute
-)
-
 type ctxKeySkipAuthn struct{}
 
 var _ web.HandlerOpt = SkipAuthn
@@ -40,48 +33,9 @@ func SkipAuthn(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxKeySkipAuthn{}, true))
 }
 
-type authSess struct {
-	LoggedinUserID uuid.NullUUID
-	Flows          map[string]authSessFlow
-}
-
-type authSessFlow struct {
-	ID       string
-	ReturnTo string
-	// WebauthnData is the data for the webauthn login, for this flow.
-	WebauthnData *webauthn.SessionData
-	StartedAt    time.Time
-}
-
 type Authenticator struct {
 	Webauthn *webauthn.WebAuthn
 	Queries  *queries.Queries
-}
-
-type webauthnUser struct {
-	user        queries.User
-	overrideID  []byte
-	credentials []webauthn.Credential
-}
-
-func (u *webauthnUser) WebAuthnID() []byte {
-	return u.overrideID
-}
-
-func (u *webauthnUser) WebAuthnName() string {
-	return u.user.Email
-}
-
-func (u *webauthnUser) WebAuthnDisplayName() string {
-	return u.user.FullName
-}
-
-func (u *webauthnUser) WebAuthnIcon() string {
-	return ""
-}
-
-func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
-	return u.credentials
 }
 
 func (a *Authenticator) AddHandlers(r *web.Server) {
@@ -112,9 +66,9 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 // HandleIndex is a temporary handler, just to get a webauthn UI up and running.
 func (a *Authenticator) HandleIndex(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
-	as, ok := r.Session().Get(authSessSessionKey).(*authSess)
-	if !ok || !as.LoggedinUserID.Valid {
-		return httperror.ForbiddenErrf("session missing user info")
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return httperror.BadRequestErrf("user not logged in")
 	}
 
 	// Example: User not logged in
@@ -122,8 +76,8 @@ func (a *Authenticator) HandleIndex(ctx context.Context, w web.ResponseWriter, r
 		Name: "index.tmpl.html",
 		Data: webcommon.LayoutData{
 			Title:        "Login - IDP",
-			UserLoggedIn: true,
-			Username:     as.LoggedinUserID.UUID.String(),
+			UserLoggedIn: ok,
+			Username:     userID.String(),
 		},
 		Templates: templates,
 	})
@@ -225,6 +179,10 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 		return httperror.BadRequestErrf("flow not found in session")
 	}
 
+	if time.Since(flow.StartedAt) > authFlowValidFor {
+		return httperror.BadRequestErrf("flow expired")
+	}
+
 	parsedResponse, err := protocol.ParseCredentialRequestResponseBody(bytes.NewReader(req.CredentialAssertionResponse))
 	if err != nil {
 		return fmt.Errorf("parsing credential assertion response: %w", err)
@@ -266,63 +224,4 @@ func (a *Authenticator) Logout(ctx context.Context, w web.ResponseWriter, r *web
 	return w.WriteResponse(r, &web.RedirectResponse{
 		URL: "/",
 	})
-}
-
-func (a *Authenticator) NewDiscoverableUserHandler(ctx context.Context) webauthn.DiscoverableUserHandler {
-	return func(rawID, userHandle []byte) (user webauthn.User, err error) {
-		var qu queries.User
-		var validateID []byte
-
-		// this handles a variety of userHandle formats, that we've used over
-		// time. if we ever clean things up it would be nice to remove some of
-		// the fallbacks.
-
-		// If the userHandle is a valid UUID4 in bytes, use it directly
-		if len(userHandle) == 16 && ((userHandle[6]&0xf0)>>4) == 4 {
-			// it's a UUID4, likely the distinct webauthn handle
-			handle, err := uuid.FromBytes(userHandle)
-			if err != nil {
-				return nil, fmt.Errorf("invalid UUIDv4: %w", err)
-			}
-			qu, err = a.Queries.GetUserByWebauthnHandle(ctx, handle)
-			if err != nil {
-				return nil, fmt.Errorf("getting user by webauthn handle: %w", err)
-			}
-			validateID = qu.WebauthnHandle[:]
-		} else if err := uuid.Validate(string(userHandle)); err == nil {
-			// string UUID, likely the user ID
-			qu, err = a.Queries.GetUser(ctx, uuid.MustParse(string(userHandle)))
-			if err != nil {
-				return nil, fmt.Errorf("getting user by ID: %w", err)
-			}
-			validateID = []byte(qu.ID.String())
-		} else {
-			// process it as a fallback subject.
-			qu, err = a.Queries.GetUserByOverrideSubject(ctx, sql.NullString{String: string(userHandle), Valid: true})
-			if err != nil {
-				return nil, fmt.Errorf("getting user by override subject: %w", err)
-			}
-			validateID = []byte(qu.OverrideSubject.String)
-		}
-
-		// Get user credentials
-		creds, err := a.Queries.GetUserCredentials(ctx, qu.ID)
-		if err != nil {
-			return nil, fmt.Errorf("getting user credentials: %w", err)
-		}
-
-		wu := &webauthnUser{
-			user:       qu,
-			overrideID: validateID,
-		}
-		for _, c := range creds {
-			var cred webauthn.Credential
-			if err := json.Unmarshal(c.CredentialData, &cred); err != nil {
-				return nil, fmt.Errorf("unmarshalling credential: %w", err)
-			}
-			wu.credentials = append(wu.credentials, cred)
-		}
-
-		return wu, nil
-	}
 }
