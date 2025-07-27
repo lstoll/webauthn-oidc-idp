@@ -11,8 +11,7 @@
 				},
 				{
 					"id": "cli",
-					"public": true,
-					"permitLocalhostRedirect": true
+					"public": true
 				}
 			]
 		}

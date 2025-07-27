@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lstoll/oidc/core/staticclients"
+	o2staticclients "github.com/lstoll/oauth2as/staticclients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/tailscale/hujson"
 )
@@ -22,8 +22,8 @@ type legacyConfig struct {
 	// Database is unused.
 	Database string `json:"database"`
 	Issuers  []struct {
-		URL     string                 `json:"url"`
-		Clients []staticclients.Client `json:"clients"`
+		URL     string                   `json:"url"`
+		Clients []o2staticclients.Client `json:"clients"`
 	} `json:"issuers"`
 }
 
@@ -47,7 +47,7 @@ type configTenant struct {
 
 	// ImportedClients is the clients imported from the legacy config, filled at
 	// parse time.
-	ImportedClients []staticclients.Client `json:"-"`
+	ImportedClients []o2staticclients.Client `json:"-"`
 	// db connection for the tenant.
 	db *sql.DB `json:"-"`
 	// legacyDB is the database connection for the legacy config
@@ -117,7 +117,7 @@ func loadConfig(file []byte) (*config, error) {
 			if c.ID == "" {
 				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d must set clientID", tenant.Issuer, ii))
 			}
-			if len(c.RedirectURLs) == 0 && !c.Public && !c.PermitLocalhostRedirect {
+			if len(c.RedirectURLs) == 0 && !c.Public {
 				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d requires a redirect URL when not public with localhost permitted", tenant.Issuer, ii))
 			}
 			if len(c.Secrets) == 0 && !c.Public && c.RequiresPKCE != nil && !*c.RequiresPKCE {

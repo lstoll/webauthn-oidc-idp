@@ -9,7 +9,6 @@ import (
 
 	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/lstoll/oidc/core"
 )
 
 // schemaVersion is the current version of the database schema. It may be used
@@ -314,10 +313,6 @@ func (db *DB) GetAuthenticatedUser(sessionID string) (AuthenticatedUser, error) 
 		return AuthenticatedUser{}, ErrUnauthenticatedUser
 	}
 	return v, nil
-}
-
-func (db *DB) SessionManager() core.SessionManager {
-	return &sessionManager{f: db.f}
 }
 
 func (db *DB) GetKeyset(ks Keyset) DBKeyset {

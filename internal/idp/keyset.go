@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lstoll/oauth2as"
 	"github.com/lstoll/tinkrotate"
 	tinkrotatev1 "github.com/lstoll/tinkrotate/proto/tinkrotate/v1"
 	"github.com/tink-crypto/tink-go/v2/jwt"
@@ -65,6 +66,8 @@ func initKeysets(ctx context.Context, db *sql.DB) (oidcKeyset *KeysetHandles, _ 
 	return &KeysetHandles{keysetID: keysetIDOIDC, store: store}, nil
 }
 
+var _ oauth2as.AlgKeysets = (*KeysetHandles)(nil)
+
 // KeysetHandles can retrieve handles for the given keyset from the DB.
 type KeysetHandles struct {
 	keysetID string
@@ -80,4 +83,12 @@ func (k *KeysetHandles) Handle(ctx context.Context) (*keyset.Handle, error) {
 // keys if they keyset supports this.
 func (k *KeysetHandles) PublicHandle(ctx context.Context) (*keyset.Handle, error) {
 	return k.store.GetPublicKeySetHandle(ctx, k.keysetID)
+}
+
+func (k *KeysetHandles) HandleFor(alg oauth2as.SigningAlg) (*keyset.Handle, error) {
+	return k.store.GetCurrentHandle(context.TODO(), k.keysetID)
+}
+
+func (k *KeysetHandles) SupportedAlgorithms() []oauth2as.SigningAlg {
+	return []oauth2as.SigningAlg{oauth2as.SigningAlgRS256}
 }

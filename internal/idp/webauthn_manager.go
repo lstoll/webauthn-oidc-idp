@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -23,7 +22,6 @@ import (
 
 func init() {
 	gob.Register(&pendingWebauthnEnrollment{})
-	gob.Register(&webauthnLoginData{})
 }
 
 const pendingWebauthnEnrollmentSessionKey = "pending_webauthn_enrollment"
@@ -36,25 +34,6 @@ type pendingWebauthnEnrollment struct {
 	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
 	// ReturnTo redirects the user here after the key is registered.
 	ReturnTo string `json:"return_to,omitempty"`
-}
-
-const webauthnLoginDataSessionKey = "webauthn_login"
-
-// webauthnLogin tracks data for a login session
-type webauthnLoginData struct {
-	// LoginSessionID is the current OIDC session ID for the flow
-	LoginSessionID string `json:"login_session_id"`
-	// WebauthnSessionData is the data for the in-process login
-	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
-	// AuthdUser tracks information about the user we just authenticated, for
-	// when we send the user to the login finished page.
-	AuthdUser *webauthnLogin `json:"authd_user,omitempty"`
-}
-
-type webauthnLogin struct {
-	UserID      string
-	ValidBefore time.Time
-	SessionID   string
 }
 
 type webauthnManager struct {
@@ -241,4 +220,36 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		w.httpErr(r.Context(), rw, err)
 		return
 	}
+}
+
+// webauthnUser is a wrapper around the queries.User type that implements the
+// webauthn.User interface for that library to consume
+type webauthnUser struct {
+	qu         queries.User
+	overrideID []byte
+	wc         []webauthn.Credential
+}
+
+// WebAuthnID returns the webauthn user handle for the user
+func (u *webauthnUser) WebAuthnID() []byte {
+	if len(u.overrideID) > 0 {
+		return u.overrideID
+	}
+	return u.qu.WebauthnHandle[:]
+}
+
+func (u *webauthnUser) WebAuthnName() string {
+	return u.qu.Email
+}
+
+func (u *webauthnUser) WebAuthnDisplayName() string {
+	return u.qu.FullName
+}
+
+func (u *webauthnUser) WebAuthnIcon() string {
+	return ""
+}
+
+func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
+	return u.wc
 }

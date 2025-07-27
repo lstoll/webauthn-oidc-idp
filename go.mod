@@ -10,7 +10,8 @@ require (
 	github.com/go-webauthn/webauthn v0.13.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1
+	github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250727220936-ff51b3fdec03
+	github.com/lstoll/oauth2ext v1.0.0-beta.6
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
 	github.com/lstoll/web v0.0.0-20250727132609-68a8d2f7e1ae
 	github.com/mattn/go-sqlite3 v1.14.29
@@ -43,6 +44,7 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/term v0.33.0 // indirect
 )
 
 replace crawshaw.dev/jsonfile => github.com/sr/jsonfile v0.0.0-20240301210704-69e8a5b5b148

@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/lstoll/oidc"
-	"github.com/lstoll/oidc/core"
-	"github.com/lstoll/oidc/core/staticclients"
-	"github.com/lstoll/oidc/discovery"
+	"github.com/lstoll/oauth2as"
+	o2staticclients "github.com/lstoll/oauth2as/staticclients"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/proxyhdrs"
@@ -21,13 +18,14 @@ import (
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
+	"github.com/lstoll/webauthn-oidc-idp/internal/oidcsvr"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 	"github.com/oklog/run"
 )
 
 // NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []staticclients.Client) (http.Handler, error) {
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []o2staticclients.Client) (http.Handler, error) {
 	if err := migrateData(ctx, db, sqldb); err != nil {
 		return nil, fmt.Errorf("failed to migrate data: %v", err)
 	}
@@ -86,29 +84,6 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 		return nil, fmt.Errorf("inserting force tls middleware: %w", err)
 	}
 
-	oidcmd := discovery.DefaultCoreMetadata(issuerURL.String())
-	oidcmd.AuthorizationEndpoint = issuerURL.String() + "/auth"
-	oidcmd.TokenEndpoint = issuerURL.String() + "/token"
-	oidcmd.ScopesSupported = []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile, "offline"}
-	oidcmd.UserinfoEndpoint = issuerURL.String() + "/userinfo"
-
-	discoh, err := discovery.NewConfigurationHandler(oidcmd, oidcHandles)
-	if err != nil {
-		return nil, fmt.Errorf("configuring metadata handler: %w", err)
-	}
-
-	oidcsvr, err := core.New(&core.Config{
-		Issuer:           issuerURL.String(),
-		AuthValidityTime: 5 * time.Minute,
-		CodeValidityTime: 5 * time.Minute,
-	}, db.SessionManager(), &staticclients.Clients{Clients: clients}, oidcHandles)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OIDC server instance: %w", err)
-	}
-
-	websvr.HandleRaw("GET /.well-known/openid-configuration", discoh)
-	websvr.HandleRaw("GET /.well-known/jwks.json", discoh)
-
 	wn, err := webauthn.New(&webauthn.Config{
 		RPDisplayName: issuerURL.Hostname(), // Display Name for your site
 		RPID:          issuerURL.Hostname(), // Generally the FQDN for your site
@@ -133,16 +108,16 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 
 	mgr.AddHandlers(websvr)
 
-	svr := oidcServer{
-		issuer:          issuerURL.String(),
-		oidcsvr:         oidcsvr,
-		tokenValidFor:   15 * time.Minute,
-		refreshValidFor: 12 * time.Hour,
-		// upstreamPolicy:  []byte(ucp),
-		webauthn: wn,
-		db:       db,
-		queries:  queries.New(sqldb),
-	}
+	// svr := oidcServer{
+	// 	issuer:          issuerURL.String(),
+	// 	oidcsvr:         legacyoidcsvr,
+	// 	tokenValidFor:   15 * time.Minute,
+	// 	refreshValidFor: 12 * time.Hour,
+	// 	// upstreamPolicy:  []byte(ucp),
+	// 	webauthn: wn,
+	// 	db:       db,
+	// 	queries:  queries.New(sqldb),
+	// }
 
 	// TODO - web should handle all this.
 	fs := http.FileServer(http.FS(webcommon.Static))
@@ -154,7 +129,54 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 	}
 	auth.AddHandlers(websvr)
 
-	svr.AddHandlers(websvr)
+	oidchHandlers := &oidcsvr.Handlers{
+		Issuer:  issuerURL.String(),
+		Queries: queries.New(sqldb),
+	}
+
+	var o2clients []o2staticclients.Client
+	for _, c := range clients {
+		o2c := o2staticclients.Client{
+			ID:           c.ID,
+			Secrets:      c.Secrets,
+			RedirectURLs: c.RedirectURLs,
+			Public:       c.Public,
+			RequiresPKCE: c.RequiresPKCE,
+		}
+		// TODO - this is a temp hack, we should update clients to be explicit.
+		if c.Public {
+			o2c.RedirectURLs = append(o2c.RedirectURLs, "http://127.0.0.1/callback")
+		}
+		o2clients = append(o2clients, o2c)
+	}
+
+	oauth2asConfig := oauth2as.Config{
+		Issuer:  issuerURL.String(),
+		Storage: oidcsvr.NewSQLiteStorage(sqldb),
+		Clients: &o2staticclients.Clients{
+			Clients: o2clients,
+		},
+		Keyset: oidcHandles,
+
+		TokenHandler:    oidchHandlers.TokenHandler,
+		UserinfoHandler: oidchHandlers.UserinfoHandler,
+
+		AuthorizationPath: "/authorization",
+		TokenPath:         "/token",
+		UserinfoPath:      "/userinfo",
+	}
+
+	oauth2asServer, err := oauth2as.NewServer(oauth2asConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create oauth2as server: %w", err)
+	}
+
+	oidcs := oidcsvr.Server{
+		Auth:     auth,
+		OAuth2AS: oauth2asServer,
+	}
+
+	oidcs.AddHandlers(websvr)
 
 	return websvr, nil
 }

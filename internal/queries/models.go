@@ -20,6 +20,18 @@ type Credential struct {
 	CreatedAt      time.Time
 }
 
+type Grant struct {
+	ID            uuid.UUID
+	AuthCode      sql.NullString
+	RefreshToken  sql.NullString
+	UserID        string
+	ClientID      string
+	GrantedScopes string
+	RequestData   []byte
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+}
+
 type Migration struct {
 	Idx int64
 	At  time.Time

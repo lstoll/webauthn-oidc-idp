@@ -22,9 +22,9 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
-	"github.com/lstoll/oidc"
-	"github.com/lstoll/oidc/clitoken"
-	"github.com/lstoll/oidc/core/staticclients"
+	o2staticclients "github.com/lstoll/oauth2as/staticclients"
+	clitoken "github.com/lstoll/oauth2ext/clitoken"
+	"github.com/lstoll/oauth2ext/oidc"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
@@ -100,12 +100,12 @@ func TestE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clients := []staticclients.Client{
+	clients := []o2staticclients.Client{
 		{
-			ID:                      "test-cli",
-			Secrets:                 []string{"public"},
-			Public:                  true,
-			PermitLocalhostRedirect: true,
+			ID:           "test-cli",
+			Secrets:      []string{"public"},
+			Public:       true,
+			RedirectURLs: []string{"http://127.0.0.1/callback"},
 		},
 	}
 
@@ -286,11 +286,11 @@ func TestE2E(t *testing.T) {
 
 		select {
 		case tok := <-tokC:
-			ui, err := provider.Userinfo(ctx, oa2Cfg.TokenSource(ctx, tok))
+			raw, _, err := provider.Userinfo(ctx, oa2Cfg.TokenSource(ctx, tok))
 			if err != nil {
 				t.Fatalf("getting userinfo: %v", err)
 			}
-			t.Logf("userinfo: %v", ui)
+			t.Logf("userinfo: %v", string(raw))
 			// positive case
 			//
 			// TODO(lstoll) get userinfo
@@ -315,6 +315,13 @@ func TestE2E(t *testing.T) {
 		// remove all credentials, test the case where it fails.
 		if err := chromedp.Run(ctx,
 			cdpwebauthn.ClearCredentials(virtAuthenticatorID),
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		// and log out, so there's no session cache
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(issU.String()+"/logout"),
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -374,7 +381,12 @@ func TestE2E(t *testing.T) {
 func cliLoginFlow(ctx context.Context, t *testing.T, oa2Cfg oauth2.Config) (chan *oauth2.Token, chan error) { //nolint:thelper // it's not that kind of helper
 	openCh := make(chan struct{}, 1)
 
-	cli, err := clitoken.NewSource(ctx, oa2Cfg, clitoken.WithOpener(&chromeDPOpener{notifyCh: openCh}))
+	clicfg := clitoken.Config{
+		OAuth2Config: oa2Cfg,
+		Opener:       &chromeDPOpener{notifyCh: openCh},
+	}
+
+	cli, err := clicfg.TokenSource(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

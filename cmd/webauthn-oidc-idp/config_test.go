@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/lstoll/oidc/core/staticclients"
+	o2staticclients "github.com/lstoll/oauth2as/staticclients"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -16,16 +16,15 @@ func TestLoadConfig(t *testing.T) {
 				Issuer:           "https://localhost",
 				DBPath:           "db/test.db",
 				ImportConfigPath: "testdata/legacyConfig.json",
-				ImportedClients: []staticclients.Client{
+				ImportedClients: []o2staticclients.Client{
 					{
 						ID:           "client-id",
 						Secrets:      []string{"client-secret"},
 						RedirectURLs: []string{"http://localhost:8084/callback"},
 					},
 					{
-						ID:                      "cli",
-						Public:                  true,
-						PermitLocalhostRedirect: true,
+						ID:     "cli",
+						Public: true,
 					},
 				},
 				issuerURL: &url.URL{
