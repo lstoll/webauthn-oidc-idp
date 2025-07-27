@@ -25,3 +25,7 @@ sql:
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
+          - column: "grants.id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"

@@ -42,6 +42,10 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80 h1:6Yzfa6GP0rIo/kULo2bwGEkFvCePZ3qHDDTC3/J9Swo=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
+github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250727201605-05c8d179bb9a h1:od6kOPMhKOdkwp5rOG58128idpLW7/dWS+b9HHCUXRU=
+github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250727201605-05c8d179bb9a/go.mod h1:nPM5U0xZd4IdP23RT8UWQjx0seT0tnNxhxz+FaT+448=
+github.com/lstoll/oauth2ext v1.0.0-beta.6 h1:X5/qH7mjGnFSOff0QWEahnQKcTjuf4eo+c87cGIQJxU=
+github.com/lstoll/oauth2ext v1.0.0-beta.6/go.mod h1:zjIrnJNnDU2cQoGTN3mWc+GgRFxMXA9LphIJ64tqApA=
 github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1 h1:tg2qDMn3CDt7QOHb+UKoCvKaf1Qgq71SsmEHPXMLfbI=
 github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1/go.mod h1:ZQ/Awk92pRKZizlR6HD/TZpSLqvrMa/tlXDJod6mk0Q=
 github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215 h1:fj/z3BLXwgBJ9oWsrZNbHN98ffwajmKP2JNg+OQjsC8=

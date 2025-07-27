@@ -37,6 +37,8 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
+	github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250727201605-05c8d179bb9a // indirect
+	github.com/lstoll/oauth2ext v1.0.0-beta.6 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
