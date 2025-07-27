@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title | default "IDP"}}</title>
 
-    <link rel="stylesheet" href="{{ StaticPath "bulma.min.css" }}">
-    <link rel="stylesheet" href="{{ StaticPath "app.css" }}">
-    <script src="{{ StaticPath "fa-all.min.js" }}" defer></script>
-    <script src="{{ StaticPath "app.js" }}" defer></script>
+    <link rel="stylesheet" href="{{ StaticPath "bulma.min.css" }}" {{ StyleNonceAttr }}>
+    <link rel="stylesheet" href="{{ StaticPath "app.css" }}" {{ StyleNonceAttr }}>
+    <script src="{{ StaticPath "fa-all.min.js" }}" defer {{ ScriptNonceAttr }}></script>
+    <script src="{{ StaticPath "app.js" }}" defer {{ ScriptNonceAttr }}></script>
 </head>
 <body>
     <!-- Header/Navbar -->

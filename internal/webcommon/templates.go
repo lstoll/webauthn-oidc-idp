@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"html/template"
-	"io"
 	"log"
 
 	"github.com/lstoll/web"
@@ -13,8 +12,8 @@ import (
 //go:embed templates/*
 var templates embed.FS
 
-// TemplateData holds the data passed to templates
-type TemplateData struct {
+// LayoutData holds the data passed to templates
+type LayoutData struct {
 	Title        string
 	UserLoggedIn bool
 	Username     string
@@ -36,32 +35,8 @@ var FuncMap = template.FuncMap{
 func init() {
 	var err error
 
-	Templates, err = template.New("").Funcs(web.TemplateFuncs(context.Background(), FuncMap)).ParseFS(templates, "templates/*.html.tmpl")
+	Templates, err = template.New("").Funcs(web.TemplateFuncs(context.Background(), FuncMap)).ParseFS(templates, "templates/*.tmpl.html")
 	if err != nil {
 		log.Fatal("Failed to parse templates:", err)
 	}
 }
-
-// RenderLogin renders the login page
-func RenderLogin(w io.Writer, data TemplateData) error {
-	return Templates.ExecuteTemplate(w, "login.html.tmpl", data)
-}
-
-// Example usage:
-// func main() {
-//     data := TemplateData{
-//         Title:        "Login - IDP",
-//         UserLoggedIn: false,
-//         Username:     "",
-//     }
-//
-//     // Render to HTTP response
-//     http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-//         w.Header().Set("Content-Type", "text/html; charset=utf-8")
-//         if err := RenderLogin(w, data); err != nil {
-//             http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-//         }
-//     })
-//
-//     log.Fatal(http.ListenAndServe(":8080", nil))
-// }
