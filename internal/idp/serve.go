@@ -150,6 +150,7 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 
 	auth := &auth.Authenticator{
 		Webauthn: wn,
+		Queries:  queries.New(sqldb),
 	}
 	auth.AddHandlers(websvr)
 

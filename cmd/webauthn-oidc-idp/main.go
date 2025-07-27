@@ -104,20 +104,10 @@ func main() {
 
 	var cfg *config
 
-	if *configFile == "" {
-		if *dbPath == "" || *issuerHost == "" {
-			fatal("required flag missing: db-path or issuer-host")
-		}
-		// set up directly.
+	if *dbPath != "" && *issuerHost != "" {
 		*selectedHost = *issuerHost
-		// TODO - if we're in this case, the active tenant would be this one.
-		// Need a way to signal to the later code to not check the flag.
-		fatal("TODO: enable simple single tenant mode when we no longer depend on legacy config clients")
 	}
 	if *configFile != "" {
-		if *dbPath != "" || *issuerHost != "" {
-			fatal("db-path and issuer-host cannot be used with config file")
-		}
 		b, err := os.ReadFile(*configFile)
 		if err != nil {
 			fatalf("read config file %s: %v", *configFile, err)

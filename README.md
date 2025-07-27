@@ -11,10 +11,7 @@ See [Issues](/../../issues) for the closest thign we have to a roadmap.
 ## Registering an initial user
 
 ```
-export ENCRYPTION_KEY="$(openssl rand -hex 32)"
-go run ./ --enroll --email=user@domain --fullname="Users Name"
-# go to the url output
-go run ./ --activate --user-id=<uuid>
+go run ./cmd/webauthn-oidc-idp -db-path=data/idp.db -issuer-host=localhost enroll-user -email=<email> -fullname="<name>"
 ```
 
 ## Run the server

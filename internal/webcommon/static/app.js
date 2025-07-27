@@ -149,6 +149,54 @@ class WebAuthn {
 
         return WebAuthn._checkStatus(200)(finishResponse);
     }
+
+    /**
+     * Authenticate with WebAuthn using embedded challenge and flow ID
+     * @param {string} challenge - Base64 encoded challenge from the page
+     * @param {string} flowID - Flow identifier
+     * @returns {Promise<Object>} Authentication response with returnTo or error
+     */
+    async loginWithEmbeddedChallenge(challenge, flowID) {
+        // Decode the challenge
+        const decodedChallenge = WebAuthn._decodeBuffer(challenge);
+
+        // Create the authentication options
+        const authOptions = {
+            publicKey: {
+                challenge: decodedChallenge,
+                rpId: window.location.hostname,
+                allowCredentials: [], // Empty array for discoverable credentials
+                userVerification: 'preferred'
+            }
+        };
+
+        const credential = await navigator.credentials.get(authOptions);
+
+        const finishResponse = await fetch('/finishWebauthnLogin', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                flowID: flowID,
+                credentialAssertionResponse: {
+                    id: credential.id,
+                    rawId: WebAuthn._encodeBuffer(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        clientDataJSON: WebAuthn._encodeBuffer(credential.response.clientDataJSON),
+                        authenticatorData: WebAuthn._encodeBuffer(credential.response.authenticatorData),
+                        signature: WebAuthn._encodeBuffer(credential.response.signature),
+                        userHandle: WebAuthn._encodeBuffer(credential.response.userHandle)
+                    }
+                }
+            }),
+        });
+
+        const res = await WebAuthn._checkStatus(200)(finishResponse);
+        return await res.json();
+    }
 }
 
 /**
@@ -159,7 +207,6 @@ class WebAuthnUI {
         this.webauthn = new WebAuthn();
         this.registrationPending = false;
         this.loginPending = false;
-        this.sessionID = this.getSessionID();
         this.bindEvents();
 
         // Auto-login on page load (like the original onload="doLogin()")
@@ -167,19 +214,21 @@ class WebAuthnUI {
     }
 
     /**
-     * Extract session ID from template variables or data attributes
-     * @returns {string} Session ID
+     * Get embedded challenge and flow ID from the page
+     * @returns {Object} Object containing challenge and flowID
      */
-    getSessionID() {
-        // Try to get from data attribute first
-        const sessionElement = document.querySelector('[data-session-id]');
-        if (sessionElement) {
-            return sessionElement.dataset.sessionId;
+    getEmbeddedData() {
+        const flowElement = document.querySelector('[data-flow-id]');
+        const challengeElement = document.querySelector('[data-webauthn-challenge]');
+
+        if (!flowElement || !challengeElement) {
+            throw new Error('Required embedded data not found on page');
         }
 
-        // Fallback to template variable (if available)
-        // This would be replaced by the server-side template engine
-        return '{{ .SessionID }}';
+        return {
+            flowID: flowElement.dataset.flowId,
+            challenge: challengeElement.dataset.webauthnChallenge
+        };
     }
 
     /**
@@ -230,6 +279,14 @@ class WebAuthnUI {
                 this.handleLogin();
             });
         }
+
+        // Error message close button
+        const errorDeleteButton = document.querySelector('#error-message .delete');
+        if (errorDeleteButton) {
+            errorDeleteButton.addEventListener('click', () => {
+                this.hideError();
+            });
+        }
     }
 
     /**
@@ -271,12 +328,26 @@ class WebAuthnUI {
 
         this.loginPending = true;
         this.setLoadingState('login', true);
+        this.hideError();
 
         try {
-            await this.webauthn.login(this.sessionID);
+            // Get embedded challenge data
+            const embeddedData = this.getEmbeddedData();
 
-            // Success - redirect to logged in page
-            window.location.href = '/loggedin';
+            // Use embedded challenge flow
+            const result = await this.webauthn.loginWithEmbeddedChallenge(
+                embeddedData.challenge,
+                embeddedData.flowID
+            );
+
+            if (result.error) {
+                this.showError(result.error);
+            } else if (result.returnTo) {
+                // Redirect to the return URL
+                window.location.href = result.returnTo;
+            } else {
+                this.showError('Invalid response from server');
+            }
         } catch (error) {
             console.error('Login failed:', error);
             this.showError(`Failed to login: ${error.message}`);
@@ -293,20 +364,30 @@ class WebAuthnUI {
     showError(message) {
         console.error("WebAuthnUI.showError", message);
         // Try to find an error display element
-        const errorElement = document.getElementById('error-message') ||
-                           document.querySelector('.error-message');
+        const errorElement = document.getElementById('error-message');
+        const errorTextElement = document.querySelector('#error-message .error-text');
 
-        if (errorElement) {
-            errorElement.textContent = message;
+        if (errorElement && errorTextElement) {
+            errorTextElement.textContent = message;
             errorElement.style.display = 'block';
 
-            // Auto-hide after 5 seconds
+            // Auto-hide after 10 seconds
             setTimeout(() => {
-                errorElement.style.display = 'none';
-            }, 5000);
+                this.hideError();
+            }, 10000);
         } else {
             // Fallback to alert
             alert(message);
+        }
+    }
+
+    /**
+     * Hide error message
+     */
+    hideError() {
+        const errorElement = document.getElementById('error-message');
+        if (errorElement) {
+            errorElement.style.display = 'none';
         }
     }
 

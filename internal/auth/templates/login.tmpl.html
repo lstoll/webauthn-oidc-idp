@@ -1,4 +1,6 @@
 {{template "header.tmpl.html" .}}
+<div data-flow-id="{{ .FlowID }}"></div>
+<div data-webauthn-challenge="{{ .WebauthnChallenge }}"></div>
 
             <div class="columns is-centered">
                 <div class="column is-half">
@@ -13,8 +15,13 @@
                                 <h1 class="title is-3">Welcome</h1>
                                 <p class="subtitle is-6 has-text-grey">Sign in securely with your passkey</p>
 
+                                <div id="error-message" class="notification is-danger" style="display: none;">
+                                    <button class="delete"></button>
+                                    <span class="error-text"></span>
+                                </div>
+
                                 <div class="mt-5">
-                                    <button class="button is-primary is-medium is-fullwidth">
+                                    <button id="login-button" class="button is-primary is-medium is-fullwidth">
                                         <span class="icon">
                                             <i class="fas fa-key"></i>
                                         </span>

@@ -1,11 +1,16 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	"database/sql"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -13,6 +18,7 @@ import (
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/session"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 )
 
@@ -49,11 +55,39 @@ type authSessFlow struct {
 
 type Authenticator struct {
 	Webauthn *webauthn.WebAuthn
+	Queries  *queries.Queries
+}
+
+type webauthnUser struct {
+	user        queries.User
+	overrideID  []byte
+	credentials []webauthn.Credential
+}
+
+func (u *webauthnUser) WebAuthnID() []byte {
+	return u.overrideID
+}
+
+func (u *webauthnUser) WebAuthnName() string {
+	return u.user.Email
+}
+
+func (u *webauthnUser) WebAuthnDisplayName() string {
+	return u.user.FullName
+}
+
+func (u *webauthnUser) WebAuthnIcon() string {
+	return ""
+}
+
+func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
+	return u.credentials
 }
 
 func (a *Authenticator) AddHandlers(r *web.Server) {
 	r.Handle("GET /{$}", a.Middleware(web.BrowserHandlerFunc(a.HandleIndex)))
 	r.Handle("GET /login", web.BrowserHandlerFunc(a.HandleLoginPage), SkipAuthn)
+	r.Handle("POST /finishWebauthnLogin", web.BrowserHandlerFunc(a.DoLogin), SkipAuthn)
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
@@ -149,10 +183,6 @@ func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWrite
 	as.Flows[flowID] = flow
 	r.Session().Set(authSessSessionKey, as)
 
-	_ = response
-
-	// here we'll render the login page, just show a hello world for now. we
-	// should track the login info / return to in the session.
 	return w.WriteResponse(r, &web.TemplateResponse{
 		Templates: templates,
 		Name:      "login.tmpl.html",
@@ -161,13 +191,129 @@ func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWrite
 				Title: "Login - IDP",
 			},
 			FlowID:            flowID,
-			WebauthnChallenge: string(response.Response.Challenge),
+			WebauthnChallenge: base64.RawURLEncoding.EncodeToString(response.Response.Challenge),
 		},
 	})
 }
 
+type loginRequest struct {
+	FlowID                      string          `json:"flowID"`
+	CredentialAssertionResponse json.RawMessage `json:"credentialAssertionResponse"`
+}
+
+type loginResponse struct {
+	ReturnTo string `json:"returnTo"`
+	Error    string `json:"error"`
+}
+
 func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
-	// this will handle the login request, and return the user to the
-	// appropriate page.
-	return nil
+	var req loginRequest
+	if err := r.UnmarshalJSONBody(&req); err != nil {
+		return fmt.Errorf("unmarshalling login request: %w", err)
+	}
+
+	as, ok := r.Session().Get(authSessSessionKey).(*authSess)
+	if !ok {
+		return httperror.BadRequestErrf("auth missing from session")
+	}
+
+	flow, ok := as.Flows[req.FlowID]
+	if !ok {
+		return httperror.BadRequestErrf("flow not found in session")
+	}
+
+	parsedResponse, err := protocol.ParseCredentialRequestResponseBody(bytes.NewReader(req.CredentialAssertionResponse))
+	if err != nil {
+		return fmt.Errorf("parsing credential assertion response: %w", err)
+	}
+
+	// Process the user handle to get the user and validateID
+	user, validateID, err := a.processUserHandle(ctx, parsedResponse.Response.UserHandle)
+	if err != nil {
+		return fmt.Errorf("processing user handle: %w", err)
+	}
+
+	// Get user credentials
+	creds, err := a.Queries.GetUserCredentials(ctx, user.ID)
+	if err != nil {
+		return fmt.Errorf("getting user credentials: %w", err)
+	}
+
+	wu := &webauthnUser{
+		user:       user,
+		overrideID: validateID,
+	}
+	for _, c := range creds {
+		var cred webauthn.Credential
+		if err := json.Unmarshal(c.CredentialData, &cred); err != nil {
+			return fmt.Errorf("unmarshalling credential: %w", err)
+		}
+		wu.credentials = append(wu.credentials, cred)
+	}
+
+	// Validate the login
+	credential, err := a.Webauthn.ValidateLogin(wu, *flow.WebauthnData, parsedResponse)
+	if err != nil {
+		return fmt.Errorf("validating login: %w", err)
+	}
+
+	// Update credential data
+	cb, err := json.Marshal(credential)
+	if err != nil {
+		return fmt.Errorf("marshalling credential: %w", err)
+	}
+
+	if err := a.Queries.UpdateCredentialDataByCredentialID(ctx, cb, credential.ID); err != nil {
+		return fmt.Errorf("updating credential: %w", err)
+	}
+
+	// Set user ID in session
+	userID := user.ID.String()
+	as.LoggedinUserID = &userID
+	r.Session().Set(authSessSessionKey, as)
+
+	// Return the flow's returnTo URL
+	return w.WriteResponse(r, &web.JSONResponse{
+		Data: loginResponse{
+			ReturnTo: flow.ReturnTo,
+		},
+	})
+}
+
+// processUserHandle extracts and processes the user handle from a WebAuthn response.
+// It handles different formats: UUID4 bytes, string UUID, and override subject.
+// Returns the user and the validateID to use for WebAuthn validation.
+func (a *Authenticator) processUserHandle(ctx context.Context, userHandle []byte) (queries.User, []byte, error) {
+	var user queries.User
+	var validateID []byte
+
+	// If the userHandle is a valid UUID4 in bytes, use it directly
+	if len(userHandle) == 16 && ((userHandle[6]&0xf0)>>4) == 4 {
+		// it's a UUID4, likely the distinct webauthn handle
+		handle, err := uuid.FromBytes(userHandle)
+		if err != nil {
+			return queries.User{}, nil, fmt.Errorf("invalid UUIDv4: %w", err)
+		}
+		user, err = a.Queries.GetUserByWebauthnHandle(ctx, handle)
+		if err != nil {
+			return queries.User{}, nil, fmt.Errorf("getting user by webauthn handle: %w", err)
+		}
+		validateID = user.WebauthnHandle[:]
+	} else if err := uuid.Validate(string(userHandle)); err == nil {
+		// string UUID, likely the user ID
+		user, err = a.Queries.GetUser(ctx, uuid.MustParse(string(userHandle)))
+		if err != nil {
+			return queries.User{}, nil, fmt.Errorf("getting user by ID: %w", err)
+		}
+		validateID = []byte(user.ID.String())
+	} else {
+		// process it as a fallback subject.
+		user, err = a.Queries.GetUserByOverrideSubject(ctx, sql.NullString{String: string(userHandle), Valid: true})
+		if err != nil {
+			return queries.User{}, nil, fmt.Errorf("getting user by override subject: %w", err)
+		}
+		validateID = []byte(user.OverrideSubject.String)
+	}
+
+	return user, validateID, nil
 }
