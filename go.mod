@@ -6,12 +6,13 @@ require (
 	crawshaw.dev/jsonfile v0.0.0-20240206193014-699d1dad804e
 	github.com/chromedp/cdproto v0.0.0-20250403032234-65de8f5d025b
 	github.com/chromedp/chromedp v0.13.7
+	github.com/descope/virtualwebauthn v1.0.3
 	github.com/go-webauthn/webauthn v0.13.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
-	github.com/lstoll/web v0.0.0-20250727024020-4d18afd45484
+	github.com/lstoll/web v0.0.0-20250727132609-68a8d2f7e1ae
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/client_golang v1.22.0
