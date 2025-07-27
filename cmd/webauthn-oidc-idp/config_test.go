@@ -13,7 +13,7 @@ func TestLoadConfig(t *testing.T) {
 	wantCfg := &config{
 		Tenants: []*configTenant{
 			{
-				Hostname:         "localhost",
+				Issuer:           "https://localhost",
 				DBPath:           "db/test.db",
 				ImportConfigPath: "testdata/legacyConfig.json",
 				ImportedClients: []staticclients.Client{

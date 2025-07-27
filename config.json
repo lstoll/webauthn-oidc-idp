@@ -1,7 +1,7 @@
 {
   "tenants": [
     {
-      "hostname": "localhost",
+      "issuer": "https://localhost:8085",
       "dbPath": "data/idp.db",
       "importDBPath": "data/idp-legacy.json",
       "importConfigPath": "config-legacy.json"

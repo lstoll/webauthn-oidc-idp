@@ -11,7 +11,7 @@ See [Issues](/../../issues) for the closest thign we have to a roadmap.
 ## Registering an initial user
 
 ```
-go run ./cmd/webauthn-oidc-idp -db-path=data/idp.db -issuer-host=localhost enroll-user -email=<email> -fullname="<name>"
+go run ./cmd/webauthn-oidc-idp -selected-issuer=https://localhost:8085 enroll-user -email=<email> -fullname="<name>"
 ```
 
 ## Run the server

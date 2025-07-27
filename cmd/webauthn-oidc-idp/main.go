@@ -42,9 +42,7 @@ func main() {
 	rootFlags := flag.NewFlagSet("root", flag.ExitOnError)
 	debug := rootFlags.Bool("debug", false, "Enable debug logging")
 	configFile := rootFlags.String("config", "config.json", "Path to the config file. If not specified, db-path and issuer-host must be specified.")
-	dbPath := rootFlags.String("db-path", "", "Path to database file, for single tenant mode. Not needed if config set")
-	issuerHost := rootFlags.String("issuer-host", "", "Host name of the issuer, for single tenant mode. Not needed if config set")
-	selectedHost := rootFlags.String("selected-host", "", "In multi-tenant mode, the host to select for administrative operations. Not used for serving.")
+	selectedIssuer := rootFlags.String("selected-issuer", "", "In multi-tenant mode, the issuer to select for administrative operations. Not used for serving.")
 
 	serveArgs := struct {
 		Addr     string
@@ -104,10 +102,11 @@ func main() {
 
 	var cfg *config
 
-	if *dbPath != "" && *issuerHost != "" {
-		*selectedHost = *issuerHost
+	if *configFile == "" {
+		fatal("config file is required")
 	}
-	if *configFile != "" {
+
+	{
 		b, err := os.ReadFile(*configFile)
 		if err != nil {
 			fatalf("read config file %s: %v", *configFile, err)
@@ -120,7 +119,7 @@ func main() {
 	}
 
 	if len(cfg.Tenants) != 1 {
-		fatal("TODO: enable multi-tenant mode")
+		fatal("TODO: test multi-tenant mode")
 	}
 
 	// load all the database for the tenants
@@ -129,7 +128,7 @@ func main() {
 		var err error
 		tenant.db, err = sql.Open("sqlite3", tenant.DBPath+"?_journal=WAL")
 		if err != nil {
-			fatalf("open database %s for tenant %s: %v", tenant.DBPath, tenant.Hostname, err)
+			fatalf("open database %s for tenant %s: %v", tenant.DBPath, tenant.Issuer, err)
 		}
 
 		if _, err := tenant.db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
@@ -146,16 +145,16 @@ func main() {
 
 		tenant.legacyDB, err = idp.OpenDB(tenant.ImportDBPath)
 		if err != nil {
-			fatalf("open legacy database for tenant %s at %s: %v", tenant.Hostname, tenant.ImportDBPath, err)
+			fatalf("open legacy database for tenant %s at %s: %v", tenant.Issuer, tenant.ImportDBPath, err)
 		}
 
-		if tenant.Hostname == *selectedHost {
+		if tenant.Issuer == *selectedIssuer {
 			activeTenant = tenant
 		}
 	}
 
 	if activeTenant == nil && subcommand != "serve" {
-		fatalf("no active tenant found for host %s", *selectedHost)
+		fatalf("no active tenant found for issuer %s", *selectedIssuer)
 	}
 
 	switch subcommand {
@@ -173,7 +172,7 @@ func main() {
 				fatalf("start server: %v", err)
 			}
 
-			mux.Handle(tenant.Hostname+"/", h)
+			mux.Handle(tenant.issuerURL.Hostname()+"/", h)
 		}
 
 		hs := &http.Server{
