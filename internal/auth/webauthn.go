@@ -248,6 +248,8 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 
 	// Set user ID in session
 	delete(as.Flows, req.FlowID)
+	// we cast it back to our type to make sure we get the real ID, not the
+	// potentially legacy mapped ID.
 	as.LoggedinUserID = uuid.NullUUID{UUID: user.(*webauthnUser).user.ID, Valid: true}
 	r.Session().Set(authSessSessionKey, as)
 

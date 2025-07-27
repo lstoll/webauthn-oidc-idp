@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/lstoll/oidc v1.0.0-alpha.1.0.20240324163255-989e22bde1f1
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
-	github.com/lstoll/web v0.0.0-20250726230450-8c3005e2583e
+	github.com/lstoll/web v0.0.0-20250727024020-4d18afd45484
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/client_golang v1.22.0
