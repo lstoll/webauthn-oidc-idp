@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -113,16 +114,20 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 // HandleIndex is a temporary handler, just to get a webauthn UI up and running.
 func (a *Authenticator) HandleIndex(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
+	as, ok := r.Session().Get(authSessSessionKey).(*authSess)
+	if !ok || as.LoggedinUserID == nil {
+		return httperror.ForbiddenErrf("session missing user info")
+	}
 
 	// Example: User not logged in
 	return w.WriteResponse(r, &web.TemplateResponse{
-		Name: "login.html.tmpl",
+		Name: "index.tmpl.html",
 		Data: webcommon.LayoutData{
 			Title:        "Login - IDP",
-			UserLoggedIn: false,
-			Username:     "",
+			UserLoggedIn: true,
+			Username:     *as.LoggedinUserID,
 		},
-		Templates: webcommon.Templates,
+		Templates: templates,
 	})
 }
 
@@ -252,8 +257,13 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	}
 
 	// Validate the login
+
+	// TODO - we used to do this, but we should not! figure out the right verification method for the modern times.
+	flow.WebauthnData.UserID = parsedResponse.Response.UserHandle
+
 	credential, err := a.Webauthn.ValidateLogin(wu, *flow.WebauthnData, parsedResponse)
 	if err != nil {
+		log.Printf("user webauthn id: %v sess userID %s", user.WebauthnHandle, flow.WebauthnData.UserID)
 		return fmt.Errorf("validating login: %w", err)
 	}
 
