@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lstoll/oauth2as/staticclients"
 	o2staticclients "github.com/lstoll/oauth2as/staticclients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/tailscale/hujson"
@@ -48,7 +47,7 @@ type configTenant struct {
 
 	// ImportedClients is the clients imported from the legacy config, filled at
 	// parse time.
-	ImportedClients []staticclients.Client `json:"-"`
+	ImportedClients []o2staticclients.Client `json:"-"`
 	// db connection for the tenant.
 	db *sql.DB `json:"-"`
 	// legacyDB is the database connection for the legacy config
