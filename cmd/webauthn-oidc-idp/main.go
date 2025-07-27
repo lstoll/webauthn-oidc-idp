@@ -6,15 +6,20 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/version"
+	"golang.org/x/sys/unix"
 )
 
 const progname = "webauthn-oidc-idp"
@@ -37,17 +42,19 @@ func main() {
 	rootFlags := flag.NewFlagSet("root", flag.ExitOnError)
 	debug := rootFlags.Bool("debug", false, "Enable debug logging")
 	configFile := rootFlags.String("config", "config.json", "Path to the config file. If not specified, db-path and issuer-host must be specified.")
-	dbPath := rootFlags.String("db-path", "", "Path to database file, for single tenant mode. Not needed if config set")
-	issuerHost := rootFlags.String("issuer-host", "", "Host name of the issuer, for single tenant mode. Not needed if config set")
-	selectedHost := rootFlags.String("selected-host", "", "In multi-tenant mode, the host to select for administrative operations. Not used for serving.")
+	selectedIssuer := rootFlags.String("selected-issuer", "", "In multi-tenant mode, the issuer to select for administrative operations. Not used for serving.")
 
 	serveArgs := struct {
-		Addr    string
-		Metrics string
+		Addr     string
+		Metrics  string
+		CertFile string
+		KeyFile  string
 	}{}
 	serveFlags := flag.NewFlagSet("serve", flag.ExitOnError)
-	serveFlags.StringVar(&serveArgs.Addr, "http", "127.0.0.1:8085", "Run the IDP server on the given host:port.")
+	serveFlags.StringVar(&serveArgs.Addr, "http", "localhost:8085", "Run the IDP server on the given host:port.")
 	serveFlags.StringVar(&serveArgs.Metrics, "metrics", "", "Expose Prometheus metrics on the given host:port.")
+	serveFlags.StringVar(&serveArgs.CertFile, "cert-file", "", "Path to the TLS certificate file.")
+	serveFlags.StringVar(&serveArgs.KeyFile, "key-file", "", "Path to the TLS key file.")
 
 	enrollFlags := flag.NewFlagSet("enroll-user", flag.ExitOnError)
 	enrollArgs := idp.EnrollArgs{}
@@ -96,19 +103,10 @@ func main() {
 	var cfg *config
 
 	if *configFile == "" {
-		if *dbPath == "" || *issuerHost == "" {
-			fatal("required flag missing: db-path or issuer-host")
-		}
-		// set up directly.
-		*selectedHost = *issuerHost
-		// TODO - if we're in this case, the active tenant would be this one.
-		// Need a way to signal to the later code to not check the flag.
-		fatal("TODO: enable simple single tenant mode when we no longer depend on legacy config clients")
+		fatal("config file is required")
 	}
-	if *configFile != "" {
-		if *dbPath != "" || *issuerHost != "" {
-			fatal("db-path and issuer-host cannot be used with config file")
-		}
+
+	{
 		b, err := os.ReadFile(*configFile)
 		if err != nil {
 			fatalf("read config file %s: %v", *configFile, err)
@@ -121,7 +119,7 @@ func main() {
 	}
 
 	if len(cfg.Tenants) != 1 {
-		fatal("TODO: enable multi-tenant mode")
+		fatal("TODO: test multi-tenant mode")
 	}
 
 	// load all the database for the tenants
@@ -130,7 +128,7 @@ func main() {
 		var err error
 		tenant.db, err = sql.Open("sqlite3", tenant.DBPath+"?_journal=WAL")
 		if err != nil {
-			fatalf("open database %s for tenant %s: %v", tenant.DBPath, tenant.Hostname, err)
+			fatalf("open database %s for tenant %s: %v", tenant.DBPath, tenant.Issuer, err)
 		}
 
 		if _, err := tenant.db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
@@ -147,26 +145,85 @@ func main() {
 
 		tenant.legacyDB, err = idp.OpenDB(tenant.ImportDBPath)
 		if err != nil {
-			fatalf("open legacy database for tenant %s at %s: %v", tenant.Hostname, tenant.ImportDBPath, err)
+			fatalf("open legacy database for tenant %s at %s: %v", tenant.Issuer, tenant.ImportDBPath, err)
 		}
 
-		if tenant.Hostname == *selectedHost {
+		if tenant.Issuer == *selectedIssuer {
 			activeTenant = tenant
 		}
 	}
 
 	if activeTenant == nil && subcommand != "serve" {
-		fatalf("no active tenant found for host %s", *selectedHost)
+		fatalf("no active tenant found for issuer %s", *selectedIssuer)
 	}
 
 	switch subcommand {
 	case "serve":
 		_ = serveFlags.Parse(rootFlags.Args()[1:])
-		// TODO - this should loop, and set up an IDP for each one.
-		serveTenant := cfg.Tenants[0]
 
-		if err := idp.ServeCmd(ctx, serveTenant.db, serveTenant.legacyDB, serveTenant.issuerURL, serveTenant.ImportedClients, serveArgs.Addr, serveArgs.Metrics, "", ""); err != nil {
-			fatalf("start server: %v", err)
+		var g run.Group
+		g.Add(run.SignalHandler(ctx, os.Interrupt, unix.SIGTERM))
+
+		mux := http.NewServeMux()
+
+		for _, tenant := range cfg.Tenants {
+			h, err := idp.NewIDP(ctx, &g, tenant.db, tenant.legacyDB, tenant.issuerURL, tenant.ImportedClients)
+			if err != nil {
+				fatalf("start server: %v", err)
+			}
+
+			mux.Handle(tenant.issuerURL.Hostname()+"/", h)
+		}
+
+		hs := &http.Server{
+			Addr:    serveArgs.Addr,
+			Handler: mux,
+		}
+
+		g.Add(func() error {
+			if serveArgs.CertFile != "" && serveArgs.KeyFile != "" {
+				slog.Info("server listing", slog.String("addr", "https://"+serveArgs.Addr))
+				if err := hs.ListenAndServeTLS(serveArgs.CertFile, serveArgs.KeyFile); err != nil {
+					return fmt.Errorf("serving https: %v", err)
+				}
+			} else {
+				slog.Info("server listing", slog.String("addr", "http://"+serveArgs.Addr))
+				if err := hs.ListenAndServe(); err != nil {
+					return fmt.Errorf("serving http: %v", err)
+				}
+			}
+			return nil
+		}, func(error) {
+			// new context for this, parent is likely already shut down
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			_ = hs.Shutdown(ctx)
+		})
+
+		{
+			if serveArgs.Metrics != "" {
+				mux := http.NewServeMux()
+				mux.Handle("/metrics", promhttp.Handler())
+				promsrv := &http.Server{Addr: serveArgs.Metrics, Handler: mux}
+
+				g.Add(func() error {
+					slog.Info("metrics server listing", slog.String("addr", "http://"+serveArgs.Metrics))
+					if err := promsrv.ListenAndServe(); err != nil {
+						return fmt.Errorf("serving metrics: %v", err)
+					}
+					return nil
+				}, func(error) {
+					promsrv.Close()
+				})
+			}
+		}
+
+		mux.Handle("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("OK"))
+		}))
+
+		if err := g.Run(); err != nil {
+			fatalf("run: %v", err)
 		}
 
 	case "version":

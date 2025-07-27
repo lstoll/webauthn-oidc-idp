@@ -1,0 +1,37 @@
+{{template "header.tmpl.html" .}}
+<div data-flow-id="{{ .FlowID }}"></div>
+<div data-webauthn-challenge="{{ .WebauthnChallenge }}"></div>
+
+            <div class="columns is-centered">
+                <div class="column is-half">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="content has-text-centered">
+                                <div class="mb-5">
+                                    <span class="icon is-large has-text-primary">
+                                        <i class="fas fa-key fa-3x"></i>
+                                    </span>
+                                </div>
+                                <h1 class="title is-3">Welcome</h1>
+                                <p class="subtitle is-6 has-text-grey">Sign in securely with your passkey</p>
+
+                                <div id="error-message" class="notification is-danger" style="display: none;">
+                                    <button class="delete"></button>
+                                    <span class="error-text"></span>
+                                </div>
+
+                                <div class="mt-5">
+                                    <button id="login-button" class="button is-primary is-medium is-fullwidth">
+                                        <span class="icon">
+                                            <i class="fas fa-key"></i>
+                                        </span>
+                                        <span>Login with Passkey</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+{{template "footer.tmpl.html" .}}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/lstoll/oidc/core/staticclients"
@@ -27,13 +28,13 @@ type legacyConfig struct {
 }
 
 type config struct {
+	// Tenants is the list of tenants to serve.
 	Tenants []*configTenant `json:"tenants"`
 }
 
 type configTenant struct {
-	// Hostname for the tenant. Issuer will be constructed from this, under
-	// HTTPS.
-	Hostname string `json:"hostname"`
+	// Issuer URL for the tenant.
+	Issuer string `json:"issuer"`
 	// DBPath is the path to the SQLite database file for the tenant.
 	DBPath string `json:"dbPath"`
 	// ImportDBPath is a path to a database file for the previous era of IDP,
@@ -47,13 +48,11 @@ type configTenant struct {
 	// ImportedClients is the clients imported from the legacy config, filled at
 	// parse time.
 	ImportedClients []staticclients.Client `json:"-"`
-
 	// db connection for the tenant.
 	db *sql.DB `json:"-"`
 	// legacyDB is the database connection for the legacy config
 	legacyDB *idp.DB `json:"-"`
-	// issuerURL is the URL of the issuer for the tenant, constructed from the
-	// hostname.
+	// issuerURL is the parsed URL of the issuer.
 	issuerURL *url.URL `json:"-"`
 }
 
@@ -74,30 +73,41 @@ func loadConfig(file []byte) (*config, error) {
 	if len(cfg.Tenants) != 1 {
 		return nil, errors.New("must configure exactly 1 tenant")
 	}
+	var seenHostnames []string
 	for i, tenant := range cfg.Tenants {
-		if tenant.Hostname == "" {
-			return nil, fmt.Errorf("tenant %d missing hostname", i)
+		if tenant.Issuer == "" {
+			return nil, fmt.Errorf("tenant %d missing issuer", i)
 		}
+		issuerURL, err := url.Parse(tenant.Issuer)
+		if err != nil {
+			return nil, fmt.Errorf("parse issuer host %s: %w", tenant.Issuer, err)
+		}
+		cfg.Tenants[i].issuerURL = issuerURL
+
+		if slices.Contains(seenHostnames, issuerURL.Hostname()) {
+			return nil, fmt.Errorf("tenant %s duplicate issuer hostname %s", tenant.Issuer, issuerURL.Hostname())
+		}
+		seenHostnames = append(seenHostnames, issuerURL.Hostname())
 		if tenant.DBPath == "" {
-			return nil, fmt.Errorf("tenant %s missing dbPath", tenant.Hostname)
+			return nil, fmt.Errorf("tenant %s missing dbPath", tenant.Issuer)
 		}
 
 		if tenant.ImportConfigPath == "" {
-			return nil, fmt.Errorf("tenant %s missing importConfigPath", tenant.Hostname)
+			return nil, fmt.Errorf("tenant %s missing importConfigPath", tenant.Issuer)
 		}
 
 		legacyCfgB, err := os.ReadFile(tenant.ImportConfigPath)
 		if err != nil {
-			return nil, fmt.Errorf("tenant %s read importConfigPath: %w", tenant.Hostname, err)
+			return nil, fmt.Errorf("tenant %s read importConfigPath: %w", tenant.Issuer, err)
 		}
 		var legacyCfg legacyConfig
 		dec := json.NewDecoder(strings.NewReader(os.Expand(string(legacyCfgB), getenvWithDefault)))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&legacyCfg); err != nil {
-			return nil, fmt.Errorf("tenant %s unmarshal importConfigPath: %w", tenant.Hostname, err)
+			return nil, fmt.Errorf("tenant %s unmarshal importConfigPath: %w", tenant.Issuer, err)
 		}
 		if len(legacyCfg.Issuers) != 1 {
-			return nil, fmt.Errorf("tenant %s must configure exactly 1 issuer", tenant.Hostname)
+			return nil, fmt.Errorf("tenant %s must configure exactly 1 issuer", tenant.Issuer)
 		}
 
 		cfg.Tenants[i].ImportedClients = legacyCfg.Issuers[0].Clients
@@ -105,24 +115,19 @@ func loadConfig(file []byte) (*config, error) {
 		var validErr error
 		for ii, c := range tenant.ImportedClients {
 			if c.ID == "" {
-				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d must set clientID", tenant.Hostname, ii))
+				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d must set clientID", tenant.Issuer, ii))
 			}
 			if len(c.RedirectURLs) == 0 && !c.Public && !c.PermitLocalhostRedirect {
-				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d requires a redirect URL when not public with localhost permitted", tenant.Hostname, ii))
+				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d requires a redirect URL when not public with localhost permitted", tenant.Issuer, ii))
 			}
 			if len(c.Secrets) == 0 && !c.Public && c.RequiresPKCE != nil && !*c.RequiresPKCE {
-				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d requires a client secret when PKCE not required", tenant.Hostname, ii))
+				validErr = errors.Join(validErr, fmt.Errorf("tenant %s client %d requires a client secret when PKCE not required", tenant.Issuer, ii))
 			}
 		}
 		if validErr != nil {
 			return nil, validErr
 		}
 
-		issuerURL, err := url.Parse(fmt.Sprintf("https://%s", tenant.Hostname))
-		if err != nil {
-			return nil, fmt.Errorf("parse issuer host %s: %w", tenant.Hostname, err)
-		}
-		cfg.Tenants[i].issuerURL = issuerURL
 	}
 	return cfg, nil
 }

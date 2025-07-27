@@ -6,6 +6,11 @@
 /dynamodata
 /.env
 go.work*
+.DS_Store
+
+/data
+/dev-cert.pem
+/dev-key.pem
 
 # for local/direct deploys
 fly.toml

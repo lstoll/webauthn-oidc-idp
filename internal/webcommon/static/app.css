@@ -1,0 +1,34 @@
+/* Custom CSS to override Bulma's primary color with a nice blue */
+
+:root {
+  /* Override Bulma's primary color variables with a nice blue */
+  --bulma-primary-h: 217;  /* Blue hue */
+  --bulma-primary-s: 91%;  /* Saturation */
+  --bulma-primary-l: 50%;  /* Lightness */
+
+  /* Primary color variants */
+  --bulma-primary-light-l: 90%;
+  --bulma-primary-dark-l: 20%;
+
+  /* Primary color for text on primary background */
+  --bulma-primary-invert-l: 100%;
+  --bulma-primary-light-invert-l: 30%;
+  --bulma-primary-dark-invert-l: 100%;
+
+  /* Primary color for text on scheme background */
+  --bulma-primary-on-scheme-l: 50%;
+}
+
+/* Ensure the primary color is applied consistently */
+.navbar.is-primary {
+  background-color: hsl(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l)) !important;
+}
+
+.button.is-primary {
+  background-color: hsl(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l)) !important;
+  border-color: hsl(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l)) !important;
+}
+
+.has-text-primary {
+  color: hsl(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l)) !important;
+}
