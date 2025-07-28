@@ -162,6 +162,13 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, legacyDB *DB, issu
 
 	oidcs.AddHandlers(websvr)
 
+	// This handles the case where existing running software has discovered
+	// /auth as the endpoint, but we renamed it. Just redirect to the new
+	// endpoint.
+	websvr.HandleFunc("GET /auth", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/authorization?"+r.URL.RawQuery, http.StatusSeeOther)
+	})
+
 	return websvr, nil
 }
 
