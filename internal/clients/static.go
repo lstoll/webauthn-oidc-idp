@@ -1,0 +1,123 @@
+package clients
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+
+	"github.com/lstoll/oauth2as"
+)
+
+// StaticClients implements the oauth2as.ClientSource against a static list of clients.
+// The type is tagged, to enable loading from JSON/YAML.
+type StaticClients struct {
+	// Clients is the list of clients
+	Clients []Client `json:"clients"`
+}
+
+func (c *StaticClients) Validate() error {
+	var validErr error
+	for _, cl := range c.Clients {
+		if cl.ID == "" {
+			validErr = errors.Join(validErr, fmt.Errorf("client %s missing ID", cl.ID))
+		}
+		if len(cl.Secrets) == 0 && !cl.Public {
+			validErr = errors.Join(validErr, fmt.Errorf("non-public client %s missing client secrets", cl.ID))
+		}
+		if len(cl.RedirectURLs) == 0 {
+			validErr = errors.Join(validErr, fmt.Errorf("client %s missing redirect URLs", cl.ID))
+		}
+	}
+	return validErr
+}
+
+// Client represents an individual oauth2/oidc client.
+type Client struct {
+	// ID is the identifier for this client, corresponds to the client ID.
+	ID string `json:"id"`
+	// Secrets is a list of valid client secrets for this client. At least
+	// one secret is required, unless the client is Public and uses PKCE.
+	Secrets []string `json:"clientSecrets"`
+	// RedirectURLS is a list of valid redirect URLs for this client. At least
+	// one is required These are an exact match, with the exception of localhost
+	// being able to use any port. The loopback address must be used, the
+	// hostname is disallowed.
+	RedirectURLs []string `json:"redirectURLs"`
+	// Public indicates that this client is public. A "public" client is one who
+	// can't keep their credentials confidential. These will not be required to use
+	// a client secret.
+	// https://datatracker.ietf.org/doc/html/rfc6749#section-2.1
+	Public bool `json:"public"`
+	// SkipPKCE indicates that this client should not be required to use PKCE.
+	SkipPKCE bool `json:"skipPKCE"`
+	// UseOverrideSubject indicates that this client should use the override
+	// subject for tokens/userinfo, rather than the user's ID
+	UseOverrideSubject bool `json:"useOverrideSubject"`
+}
+
+// GetClient returns the client with the given ID, or nil if it doesn't exist.
+func (c *StaticClients) GetClient(clientID string) (*Client, bool) {
+	for _, cl := range c.Clients {
+		if cl.ID == clientID {
+			return &cl, true
+		}
+	}
+	return nil, false
+}
+
+func (c *StaticClients) IsValidClientID(_ context.Context, clientID string) (ok bool, err error) {
+	return slices.ContainsFunc(c.Clients, func(c Client) bool {
+		return c.ID == clientID
+	}), nil
+}
+
+func (c *StaticClients) ClientOpts(_ context.Context, clientID string) ([]oauth2as.ClientOpt, error) {
+	for _, cl := range c.Clients {
+		if cl.ID == clientID {
+			opts := []oauth2as.ClientOpt{}
+			if cl.SkipPKCE {
+				opts = append(opts, oauth2as.ClientOptSkipPKCE)
+			}
+			return opts, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *StaticClients) ValidateClientSecret(_ context.Context, clientID, clientSecret string) (ok bool, err error) {
+	for _, cl := range c.Clients {
+		if cl.ID == clientID {
+			if len(cl.Secrets) == 0 && cl.Public {
+				return true, nil
+			}
+			return slices.Contains(cl.Secrets, clientSecret), nil
+		}
+	}
+	return false, fmt.Errorf("client %s not found", clientID)
+}
+
+func (c *StaticClients) RedirectURIs(_ context.Context, clientID string) ([]string, error) {
+	for _, cl := range c.Clients {
+		if cl.ID == clientID {
+			return cl.RedirectURLs, nil
+		}
+	}
+	return nil, fmt.Errorf("client %s not found", clientID)
+}
+
+func MergeStaticClients(clients ...*StaticClients) (*StaticClients, error) {
+	all := []Client{}
+	for _, c := range clients {
+		for _, cl := range c.Clients {
+			if slices.ContainsFunc(all, func(c Client) bool {
+				return c.ID == cl.ID
+			}) {
+				return nil, fmt.Errorf("client %s already exists", cl.ID)
+			}
+			all = append(all, cl)
+		}
+		all = append(all, c.Clients...)
+	}
+	return &StaticClients{Clients: all}, nil
+}

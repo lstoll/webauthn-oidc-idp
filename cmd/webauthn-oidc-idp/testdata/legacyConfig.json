@@ -12,6 +12,28 @@
 				{
 					"id": "cli",
 					"public": true
+				},
+				{
+					"id": "public-localhost",
+					"public": true,
+					"permitLocalhostRedirect": true
+				},
+				{
+					"id": "public-localhost-existing",
+					"public": true,
+					"permitLocalhostRedirect": true,
+					"redirectURLs": ["http://127.0.0.1/callback", "https://example.com/callback"]
+				},
+				{
+					"id": "explicit-pkce",
+					"public": true,
+					"requiresPKCE": false
+				},
+				{
+					"id": "explicit-pkce-true",
+					"public": false,
+					"requiresPKCE": true,
+					"redirectURLs": ["https://example.com/callback"]
 				}
 			]
 		}

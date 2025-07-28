@@ -143,9 +143,11 @@ func main() {
 			fatalf("run migrations: %v", err)
 		}
 
-		tenant.legacyDB, err = idp.OpenDB(tenant.ImportDBPath)
-		if err != nil {
-			fatalf("open legacy database for tenant %s at %s: %v", tenant.Issuer, tenant.ImportDBPath, err)
+		if tenant.ImportDBPath != "" {
+			tenant.legacyDB, err = idp.OpenDB(tenant.ImportDBPath)
+			if err != nil {
+				fatalf("open legacy database for tenant %s at %s: %v", tenant.Issuer, tenant.ImportDBPath, err)
+			}
 		}
 
 		if tenant.Issuer == *selectedIssuer {
@@ -167,7 +169,7 @@ func main() {
 		mux := http.NewServeMux()
 
 		for _, tenant := range cfg.Tenants {
-			h, err := idp.NewIDP(ctx, &g, tenant.db, tenant.legacyDB, tenant.issuerURL, tenant.ImportedClients)
+			h, err := idp.NewIDP(ctx, &g, tenant.db, tenant.legacyDB, tenant.issuerURL, tenant.Clients)
 			if err != nil {
 				fatalf("start server: %v", err)
 			}

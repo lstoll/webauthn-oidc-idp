@@ -10,7 +10,6 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/oauth2as"
-	o2staticclients "github.com/lstoll/oauth2as/staticclients"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/proxyhdrs"
@@ -18,6 +17,7 @@ import (
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
+	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/oidcsvr"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
@@ -25,9 +25,11 @@ import (
 )
 
 // NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients []o2staticclients.Client) (http.Handler, error) {
-	if err := migrateData(ctx, db, sqldb); err != nil {
-		return nil, fmt.Errorf("failed to migrate data: %v", err)
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, legacyDB *DB, issuerURL *url.URL, clients *clients.StaticClients) (http.Handler, error) {
+	if legacyDB != nil {
+		if err := migrateData(ctx, legacyDB, sqldb); err != nil {
+			return nil, fmt.Errorf("failed to migrate data: %v", err)
+		}
 	}
 
 	oidcHandles, err := initKeysets(ctx, sqldb)
@@ -101,7 +103,6 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 
 	// start configuration of webauthn manager
 	mgr := &webauthnManager{
-		db:       db,
 		webauthn: wn,
 		queries:  queries.New(sqldb),
 	}
@@ -132,31 +133,14 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 	oidchHandlers := &oidcsvr.Handlers{
 		Issuer:  issuerURL.String(),
 		Queries: queries.New(sqldb),
-	}
-
-	var o2clients []o2staticclients.Client
-	for _, c := range clients {
-		o2c := o2staticclients.Client{
-			ID:           c.ID,
-			Secrets:      c.Secrets,
-			RedirectURLs: c.RedirectURLs,
-			Public:       c.Public,
-			RequiresPKCE: c.RequiresPKCE,
-		}
-		// TODO - this is a temp hack, we should update clients to be explicit.
-		if c.Public {
-			o2c.RedirectURLs = append(o2c.RedirectURLs, "http://127.0.0.1/callback")
-		}
-		o2clients = append(o2clients, o2c)
+		Clients: clients,
 	}
 
 	oauth2asConfig := oauth2as.Config{
 		Issuer:  issuerURL.String(),
 		Storage: oidcsvr.NewSQLiteStorage(sqldb),
-		Clients: &o2staticclients.Clients{
-			Clients: o2clients,
-		},
-		Keyset: oidcHandles,
+		Clients: clients,
+		Keyset:  oidcHandles,
 
 		TokenHandler:    oidchHandlers.TokenHandler,
 		UserinfoHandler: oidchHandlers.UserinfoHandler,
