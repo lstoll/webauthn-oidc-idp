@@ -44,6 +44,8 @@ github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80 h1:6Yzfa6GP0rIo/kUL
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
 github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250727220936-ff51b3fdec03 h1:2qBPCXqv/uRtgQXAJXnEm95wa9wtsYVt14AWwwx29K0=
 github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250727220936-ff51b3fdec03/go.mod h1:nPM5U0xZd4IdP23RT8UWQjx0seT0tnNxhxz+FaT+448=
+github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250728003529-2ee9f0d9e692 h1:rlbtO0RxutGNBsIXJEKjnf4mVyc0jF14l6KHIiFDm8k=
+github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250728003529-2ee9f0d9e692/go.mod h1:nPM5U0xZd4IdP23RT8UWQjx0seT0tnNxhxz+FaT+448=
 github.com/lstoll/oauth2ext v1.0.0-beta.6 h1:X5/qH7mjGnFSOff0QWEahnQKcTjuf4eo+c87cGIQJxU=
 github.com/lstoll/oauth2ext v1.0.0-beta.6/go.mod h1:zjIrnJNnDU2cQoGTN3mWc+GgRFxMXA9LphIJ64tqApA=
 github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215 h1:fj/z3BLXwgBJ9oWsrZNbHN98ffwajmKP2JNg+OQjsC8=

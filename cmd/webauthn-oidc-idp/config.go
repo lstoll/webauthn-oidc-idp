@@ -100,9 +100,6 @@ func loadConfig(file []byte) (*config, error) {
 	if err := dec.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
-	if len(cfg.Tenants) != 1 {
-		return nil, errors.New("must configure exactly 1 tenant")
-	}
 	var seenHostnames []string
 	for i, tenant := range cfg.Tenants {
 		if tenant.Issuer == "" {

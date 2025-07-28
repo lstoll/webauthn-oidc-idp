@@ -37,7 +37,6 @@ type pendingWebauthnEnrollment struct {
 }
 
 type webauthnManager struct {
-	db       *DB
 	queries  *queries.Queries
 	webauthn *webauthn.WebAuthn
 }

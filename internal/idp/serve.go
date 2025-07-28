@@ -25,9 +25,11 @@ import (
 )
 
 // NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL *url.URL, clients *clients.StaticClients) (http.Handler, error) {
-	if err := migrateData(ctx, db, sqldb); err != nil {
-		return nil, fmt.Errorf("failed to migrate data: %v", err)
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, legacyDB *DB, issuerURL *url.URL, clients *clients.StaticClients) (http.Handler, error) {
+	if legacyDB != nil {
+		if err := migrateData(ctx, legacyDB, sqldb); err != nil {
+			return nil, fmt.Errorf("failed to migrate data: %v", err)
+		}
 	}
 
 	oidcHandles, err := initKeysets(ctx, sqldb)
@@ -101,7 +103,6 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, db *DB, issuerURL 
 
 	// start configuration of webauthn manager
 	mgr := &webauthnManager{
-		db:       db,
 		webauthn: wn,
 		queries:  queries.New(sqldb),
 	}
