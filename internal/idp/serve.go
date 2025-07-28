@@ -133,6 +133,7 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, legacyDB *DB, issu
 	oidchHandlers := &oidcsvr.Handlers{
 		Issuer:  issuerURL.String(),
 		Queries: queries.New(sqldb),
+		Clients: clients,
 	}
 
 	oauth2asConfig := oauth2as.Config{
