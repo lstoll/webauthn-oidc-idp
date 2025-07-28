@@ -22,10 +22,10 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
-	o2staticclients "github.com/lstoll/oauth2as/staticclients"
 	clitoken "github.com/lstoll/oauth2ext/clitoken"
 	"github.com/lstoll/oauth2ext/oidc"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	_ "github.com/mattn/go-sqlite3"
@@ -100,12 +100,14 @@ func TestE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clients := []o2staticclients.Client{
-		{
-			ID:           "test-cli",
-			Secrets:      []string{"public"},
-			Public:       true,
-			RedirectURLs: []string{"http://127.0.0.1/callback"},
+	clients := &clients.StaticClients{
+		Clients: []clients.Client{
+			{
+				ID:           "test-cli",
+				Secrets:      []string{"public"},
+				Public:       true,
+				RedirectURLs: []string{"http://127.0.0.1/callback"},
+			},
 		},
 	}
 

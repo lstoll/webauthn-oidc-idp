@@ -4,22 +4,23 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/lstoll/oauth2as"
 	"github.com/lstoll/oauth2ext/claims"
+	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
 type Handlers struct {
 	Issuer  string
 	Queries *queries.Queries
+	Clients *clients.StaticClients
 }
 
-func (h *Handlers) TokenHandler(req *oauth2as.TokenRequest) (*oauth2as.TokenResponse, error) {
+func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest) (*oauth2as.TokenResponse, error) {
 	slog.Info("token handler", "clientID", req.Grant.ClientID, "scopes", req.Grant.GrantedScopes)
 
 	userUUID, err := uuid.Parse(req.Grant.UserID)
@@ -27,12 +28,17 @@ func (h *Handlers) TokenHandler(req *oauth2as.TokenRequest) (*oauth2as.TokenResp
 		return nil, fmt.Errorf("parse user ID: %w", err)
 	}
 
-	user, err := h.Queries.GetUser(context.TODO(), userUUID)
+	user, err := h.Queries.GetUser(ctx, userUUID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
-	return &oauth2as.TokenResponse{
+	cl, ok := h.Clients.GetClient(req.Grant.ClientID)
+	if !ok {
+		return nil, fmt.Errorf("client %s not found", req.Grant.ClientID)
+	}
+
+	resp := &oauth2as.TokenResponse{
 		IDClaims: &claims.RawIDClaims{
 			Extra: map[string]any{
 				"email":          user.Email,
@@ -41,10 +47,16 @@ func (h *Handlers) TokenHandler(req *oauth2as.TokenRequest) (*oauth2as.TokenResp
 				"name":           user.FullName,
 			},
 		},
-	}, nil
+	}
+
+	if cl.UseOverrideSubject && user.OverrideSubject.Valid {
+		resp.OverrideIDSubject = user.OverrideSubject.String
+	}
+
+	return resp, nil
 }
 
-func (h *Handlers) UserinfoHandler(w io.Writer, uireq *oauth2as.UserinfoRequest) (*oauth2as.UserinfoResponse, error) {
+func (h *Handlers) UserinfoHandler(ctx context.Context, uireq *oauth2as.UserinfoRequest) (*oauth2as.UserinfoResponse, error) {
 	// TODO - the req should have the grant/scopes, so we can determine what to
 	// give access to.
 
@@ -53,7 +65,7 @@ func (h *Handlers) UserinfoHandler(w io.Writer, uireq *oauth2as.UserinfoRequest)
 		return nil, fmt.Errorf("parse user ID: %w", err)
 	}
 
-	user, err := h.Queries.GetUser(context.TODO(), userUUID)
+	user, err := h.Queries.GetUser(ctx, userUUID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}

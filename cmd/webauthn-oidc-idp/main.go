@@ -167,7 +167,7 @@ func main() {
 		mux := http.NewServeMux()
 
 		for _, tenant := range cfg.Tenants {
-			h, err := idp.NewIDP(ctx, &g, tenant.db, tenant.legacyDB, tenant.issuerURL, tenant.ImportedClients)
+			h, err := idp.NewIDP(ctx, &g, tenant.db, tenant.legacyDB, tenant.issuerURL, tenant.Clients)
 			if err != nil {
 				fatalf("start server: %v", err)
 			}
