@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/lstoll/oauth2as"
 )
@@ -18,7 +19,7 @@ type StaticClients struct {
 
 func (c *StaticClients) Validate() error {
 	var validErr error
-	for _, cl := range c.Clients {
+	for ci, cl := range c.Clients {
 		if cl.ID == "" {
 			validErr = errors.Join(validErr, fmt.Errorf("client %s missing ID", cl.ID))
 		}
@@ -27,6 +28,13 @@ func (c *StaticClients) Validate() error {
 		}
 		if len(cl.RedirectURLs) == 0 {
 			validErr = errors.Join(validErr, fmt.Errorf("client %s missing redirect URLs", cl.ID))
+		}
+		if cl.TokenValidity != "" {
+			tokenValidity, err := time.ParseDuration(cl.TokenValidity)
+			if err != nil {
+				validErr = errors.Join(validErr, fmt.Errorf("client %s invalid token validity: %w", cl.ID, err))
+			}
+			c.Clients[ci].ParsedTokenValidity = tokenValidity
 		}
 	}
 	return validErr
@@ -54,6 +62,16 @@ type Client struct {
 	// UseOverrideSubject indicates that this client should use the override
 	// subject for tokens/userinfo, rather than the user's ID
 	UseOverrideSubject bool `json:"useOverrideSubject"`
+	// UseRS256 indicates that this client should use RS256 for tokens/userinfo,
+	// rather than defaulting to ES256
+	UseRS256 bool `json:"useRS256"`
+	// TokenValidity overrides the default valitity time for ID/access tokens.
+	// Go duration format.
+	TokenValidity string `json:"tokenValidity"`
+
+	// ParsedTokenValidity is the parsed token validity time, this happens at
+	// validation time.
+	ParsedTokenValidity time.Duration `json:"-"`
 }
 
 // GetClient returns the client with the given ID, or nil if it doesn't exist.
@@ -77,7 +95,13 @@ func (c *StaticClients) ClientOpts(_ context.Context, clientID string) ([]oauth2
 		if cl.ID == clientID {
 			opts := []oauth2as.ClientOpt{}
 			if cl.SkipPKCE {
-				opts = append(opts, oauth2as.ClientOptSkipPKCE)
+				opts = append(opts, oauth2as.ClientOptSkipPKCE())
+			}
+			if cl.UseRS256 {
+				opts = append(opts, oauth2as.ClientOptSigningAlg(oauth2as.SigningAlgRS256))
+			} else {
+				// TODO - we should make the default configurable on oauth2as.Server
+				opts = append(opts, oauth2as.ClientOptSigningAlg(oauth2as.SigningAlgES256))
 			}
 			return opts, nil
 		}

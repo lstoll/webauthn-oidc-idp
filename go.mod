@@ -10,8 +10,8 @@ require (
 	github.com/go-webauthn/webauthn v0.13.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250728010430-eb7fb8935666
-	github.com/lstoll/oauth2ext v1.0.0-beta.6
+	github.com/lstoll/oauth2as v1.0.0-alpha.1.0.20250803195333-01fe433b6f85
+	github.com/lstoll/oauth2ext v1.0.0-beta.6.0.20250803185422-232422a2b402
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
 	github.com/lstoll/web v0.0.0-20250727132609-68a8d2f7e1ae
 	github.com/mattn/go-sqlite3 v1.14.29

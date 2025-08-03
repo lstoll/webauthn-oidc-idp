@@ -24,12 +24,14 @@ func TestLoadConfig(t *testing.T) {
 							RedirectURLs:       []string{"http://localhost:8084/callback"},
 							SkipPKCE:           true, // Private client: PKCE not required
 							UseOverrideSubject: true,
+							UseRS256:           true,
 						},
 						{
 							ID:                 "cli",
 							Public:             true,
 							SkipPKCE:           false, // Public client: PKCE required
 							UseOverrideSubject: true,
+							UseRS256:           true,
 						},
 						{
 							ID:                 "public-localhost",
@@ -37,6 +39,7 @@ func TestLoadConfig(t *testing.T) {
 							SkipPKCE:           false,                                 // Public client: PKCE required
 							RedirectURLs:       []string{"http://127.0.0.1/callback"}, // Added due to PermitLocalhostRedirect
 							UseOverrideSubject: true,
+							UseRS256:           true,
 						},
 						{
 							ID:                 "public-localhost-existing",
@@ -44,12 +47,14 @@ func TestLoadConfig(t *testing.T) {
 							SkipPKCE:           false,                                                                 // Public client: PKCE required
 							RedirectURLs:       []string{"http://127.0.0.1/callback", "https://example.com/callback"}, // Existing localhost not duplicated
 							UseOverrideSubject: true,
+							UseRS256:           true,
 						},
 						{
 							ID:                 "explicit-pkce",
 							Public:             true,
 							SkipPKCE:           true, // Explicitly set to false, so SkipPKCE = !false = true
 							UseOverrideSubject: true,
+							UseRS256:           true,
 						},
 						{
 							ID:                 "explicit-pkce-true",
@@ -57,6 +62,7 @@ func TestLoadConfig(t *testing.T) {
 							SkipPKCE:           false, // Explicitly set to true, so SkipPKCE = !true = false
 							RedirectURLs:       []string{"https://example.com/callback"},
 							UseOverrideSubject: true,
+							UseRS256:           true,
 						},
 					},
 				},

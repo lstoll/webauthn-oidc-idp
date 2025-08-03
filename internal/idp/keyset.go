@@ -25,12 +25,20 @@ type Keyset struct {
 }
 
 const (
-	keysetIDOIDC = "oidc"
+	keysetIDOIDC      = "oidc"
+	keysetIDOIDCES256 = "oidc-es256"
 )
 
 var (
 	oidcRotatePolicy = &tinkrotatev1.RotationPolicy{
 		KeyTemplate:         jwt.RS256_2048_F4_Key_Template(),
+		PrimaryDuration:     durationpb.New(24 * time.Hour),
+		PropagationTime:     durationpb.New(6 * time.Hour),
+		PhaseOutDuration:    durationpb.New(24 * time.Hour),
+		DeletionGracePeriod: durationpb.New(0),
+	}
+	oidcES256RotatePolicy = &tinkrotatev1.RotationPolicy{
+		KeyTemplate:         jwt.ES256Template(),
 		PrimaryDuration:     durationpb.New(24 * time.Hour),
 		PropagationTime:     durationpb.New(6 * time.Hour),
 		PhaseOutDuration:    durationpb.New(24 * time.Hour),
@@ -49,7 +57,8 @@ func initKeysets(ctx context.Context, db *sql.DB) (oidcKeyset *KeysetHandles, _ 
 
 	autoRotator, err := tinkrotate.NewAutoRotator(store, 10*time.Minute, &tinkrotate.AutoRotatorOpts{
 		ProvisionPolicies: map[string]*tinkrotatev1.RotationPolicy{
-			keysetIDOIDC: oidcRotatePolicy,
+			keysetIDOIDC:      oidcRotatePolicy,
+			keysetIDOIDCES256: oidcES256RotatePolicy,
 		},
 	}) // Create the Rotator instance using the proto policy
 	if err != nil {
@@ -63,32 +72,34 @@ func initKeysets(ctx context.Context, db *sql.DB) (oidcKeyset *KeysetHandles, _ 
 
 	autoRotator.Start(ctx)
 
-	return &KeysetHandles{keysetID: keysetIDOIDC, store: store}, nil
+	return &KeysetHandles{algKeysets: map[oauth2as.SigningAlg]string{
+		oauth2as.SigningAlgRS256: keysetIDOIDC,
+		oauth2as.SigningAlgES256: keysetIDOIDCES256,
+	}, store: store}, nil
 }
 
 var _ oauth2as.AlgKeysets = (*KeysetHandles)(nil)
 
 // KeysetHandles can retrieve handles for the given keyset from the DB.
 type KeysetHandles struct {
-	keysetID string
-	store    tinkrotate.Store
-}
-
-// Handle returns a handle to the current keyset, including private keys
-func (k *KeysetHandles) Handle(ctx context.Context) (*keyset.Handle, error) {
-	return k.store.GetCurrentHandle(ctx, k.keysetID)
-}
-
-// PublicHandle returns a handle to the current keyset, only including public
-// keys if they keyset supports this.
-func (k *KeysetHandles) PublicHandle(ctx context.Context) (*keyset.Handle, error) {
-	return k.store.GetPublicKeySetHandle(ctx, k.keysetID)
+	// algKeysets maps an algorithm to the keyset ID for that algorithm.
+	algKeysets map[oauth2as.SigningAlg]string
+	// store is the store for the keysets.
+	store tinkrotate.Store
 }
 
 func (k *KeysetHandles) HandleFor(alg oauth2as.SigningAlg) (*keyset.Handle, error) {
-	return k.store.GetCurrentHandle(context.TODO(), k.keysetID)
+	id, ok := k.algKeysets[alg]
+	if !ok {
+		return nil, fmt.Errorf("no keyset for algorithm %s", alg)
+	}
+	return k.store.GetCurrentHandle(context.TODO(), id)
 }
 
 func (k *KeysetHandles) SupportedAlgorithms() []oauth2as.SigningAlg {
-	return []oauth2as.SigningAlg{oauth2as.SigningAlgRS256}
+	var algs []oauth2as.SigningAlg
+	for alg := range k.algKeysets {
+		algs = append(algs, alg)
+	}
+	return algs
 }

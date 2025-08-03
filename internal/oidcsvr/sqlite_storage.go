@@ -37,14 +37,12 @@ func (s *SQLiteStorage) CreateGrant(ctx context.Context, grant *oauth2as.StoredG
 		return fmt.Errorf("marshal granted scopes: %w", err)
 	}
 
-	var authCode, refreshToken sql.NullString
-	if grant.AuthCode != nil && *grant.AuthCode != "" {
-		authCode.String = *grant.AuthCode
-		authCode.Valid = true
+	var authCode, refreshToken []byte
+	if len(grant.AuthCode) > 0 {
+		authCode = grant.AuthCode
 	}
-	if grant.RefreshToken != nil && *grant.RefreshToken != "" {
-		refreshToken.String = *grant.RefreshToken
-		refreshToken.Valid = true
+	if len(grant.RefreshToken) > 0 {
+		refreshToken = grant.RefreshToken
 	}
 
 	params := queries.CreateGrantParams{
@@ -73,14 +71,12 @@ func (s *SQLiteStorage) UpdateGrant(ctx context.Context, grant *oauth2as.StoredG
 		return fmt.Errorf("marshal granted scopes: %w", err)
 	}
 
-	var authCode, refreshToken sql.NullString
-	if grant.AuthCode != nil && *grant.AuthCode != "" {
-		authCode.String = *grant.AuthCode
-		authCode.Valid = true
+	var authCode, refreshToken []byte
+	if len(grant.AuthCode) > 0 {
+		authCode = grant.AuthCode
 	}
-	if grant.RefreshToken != nil && *grant.RefreshToken != "" {
-		refreshToken.String = *grant.RefreshToken
-		refreshToken.Valid = true
+	if len(grant.RefreshToken) > 0 {
+		refreshToken = grant.RefreshToken
 	}
 
 	params := queries.UpdateGrantParams{
@@ -116,9 +112,8 @@ func (s *SQLiteStorage) GetGrant(ctx context.Context, id uuid.UUID) (*oauth2as.S
 }
 
 // GetGrantByAuthCode retrieves a grant by authorization code
-func (s *SQLiteStorage) GetGrantByAuthCode(ctx context.Context, authCode string) (*oauth2as.StoredGrant, error) {
-	nullAuthCode := sql.NullString{String: authCode, Valid: true}
-	grant, err := s.queries.GetGrantByAuthCode(ctx, nullAuthCode)
+func (s *SQLiteStorage) GetGrantByAuthCode(ctx context.Context, authCode []byte) (*oauth2as.StoredGrant, error) {
+	grant, err := s.queries.GetGrantByAuthCode(ctx, authCode)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -130,9 +125,8 @@ func (s *SQLiteStorage) GetGrantByAuthCode(ctx context.Context, authCode string)
 }
 
 // GetGrantByRefreshToken retrieves a grant by refresh token
-func (s *SQLiteStorage) GetGrantByRefreshToken(ctx context.Context, refreshToken string) (*oauth2as.StoredGrant, error) {
-	nullRefreshToken := sql.NullString{String: refreshToken, Valid: true}
-	grant, err := s.queries.GetGrantByRefreshToken(ctx, nullRefreshToken)
+func (s *SQLiteStorage) GetGrantByRefreshToken(ctx context.Context, refreshToken []byte) (*oauth2as.StoredGrant, error) {
+	grant, err := s.queries.GetGrantByRefreshToken(ctx, refreshToken)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -165,11 +159,11 @@ func (s *SQLiteStorage) convertGrant(grant queries.Grant) (*oauth2as.StoredGrant
 		ExpiresAt:     grant.ExpiresAt,
 	}
 
-	if grant.AuthCode.Valid {
-		storedGrant.AuthCode = &grant.AuthCode.String
+	if len(grant.AuthCode) > 0 {
+		storedGrant.AuthCode = grant.AuthCode
 	}
-	if grant.RefreshToken.Valid {
-		storedGrant.RefreshToken = &grant.RefreshToken.String
+	if len(grant.RefreshToken) > 0 {
+		storedGrant.RefreshToken = grant.RefreshToken
 	}
 
 	return storedGrant, nil
