@@ -54,6 +54,9 @@ type Client struct {
 	// UseOverrideSubject indicates that this client should use the override
 	// subject for tokens/userinfo, rather than the user's ID
 	UseOverrideSubject bool `json:"useOverrideSubject"`
+	// UseRS256 indicates that this client should use RS256 for tokens/userinfo,
+	// rather than defaulting to ES256
+	UseRS256 bool `json:"useRS256"`
 }
 
 // GetClient returns the client with the given ID, or nil if it doesn't exist.
@@ -78,6 +81,12 @@ func (c *StaticClients) ClientOpts(_ context.Context, clientID string) ([]oauth2
 			opts := []oauth2as.ClientOpt{}
 			if cl.SkipPKCE {
 				opts = append(opts, oauth2as.ClientOptSkipPKCE())
+			}
+			if cl.UseRS256 {
+				opts = append(opts, oauth2as.ClientOptSigningAlg(oauth2as.SigningAlgRS256))
+			} else {
+				// TODO - we should make the default configurable on oauth2as.Server
+				opts = append(opts, oauth2as.ClientOptSigningAlg(oauth2as.SigningAlgES256))
 			}
 			return opts, nil
 		}

@@ -17,3 +17,4 @@ fly.toml
 config.fly.json
 legacy-config.fly.json
 Dockerfile.fly
+/clients.fly.hujson

@@ -157,6 +157,8 @@ func loadConfig(file []byte) (*config, error) {
 				// We always expected these to use the override subject, opt-in
 				// by default here, the new config can change that behaviour.
 				UseOverrideSubject: true,
+				// we historically used RS256 for tokens, so default to that.
+				UseRS256: true,
 			}
 
 			// Handle PKCE logic: SkipPKCE is inverted from RequiresPKCE

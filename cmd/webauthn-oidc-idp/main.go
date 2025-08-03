@@ -88,6 +88,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  enroll-user  Enroll a user into the system\n")
 		fmt.Fprintf(os.Stderr, "  add-credential  Add a credential to a user\n")
 		fmt.Fprintf(os.Stderr, "  list-credentials  List credentials for a user\n")
+		fmt.Fprintf(os.Stderr, "  validate-config  Load and validate the config\n")
 		os.Exit(1)
 	}
 
@@ -116,6 +117,12 @@ func main() {
 			fatalf("load config file %s: %v", *configFile, err)
 		}
 		cfg = c
+	}
+
+	if subcommand == "validate-config" {
+		// we can stop here.
+		fmt.Fprintln(os.Stdout, "config is valid")
+		os.Exit(0)
 	}
 
 	if len(cfg.Tenants) != 1 {
