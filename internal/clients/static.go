@@ -77,7 +77,7 @@ func (c *StaticClients) ClientOpts(_ context.Context, clientID string) ([]oauth2
 		if cl.ID == clientID {
 			opts := []oauth2as.ClientOpt{}
 			if cl.SkipPKCE {
-				opts = append(opts, oauth2as.ClientOptSkipPKCE)
+				opts = append(opts, oauth2as.ClientOptSkipPKCE())
 			}
 			return opts, nil
 		}

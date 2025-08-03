@@ -39,10 +39,10 @@ CREATE TABLE web_sessions (
     expires_at TEXT NOT NULL
 );
 
-CREATE TABLE grants (
+CREATE TABLE "grants" (
     id TEXT PRIMARY KEY, -- UUID for the grant
-    auth_code TEXT UNIQUE, -- Authorization code, if present
-    refresh_token TEXT UNIQUE, -- Refresh token, if present
+    auth_code BLOB, -- Authorization code, if present
+    refresh_token BLOB, -- Refresh token, if present
     user_id TEXT NOT NULL, -- User ID that was granted access
     client_id TEXT NOT NULL, -- Client ID that was granted access
     granted_scopes TEXT NOT NULL, -- JSON array of granted scopes

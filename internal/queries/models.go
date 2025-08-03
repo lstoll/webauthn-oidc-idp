@@ -22,8 +22,8 @@ type Credential struct {
 
 type Grant struct {
 	ID            uuid.UUID
-	AuthCode      sql.NullString
-	RefreshToken  sql.NullString
+	AuthCode      []byte
+	RefreshToken  []byte
 	UserID        string
 	ClientID      string
 	GrantedScopes string

@@ -21,9 +21,9 @@ type Handlers struct {
 }
 
 func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest) (*oauth2as.TokenResponse, error) {
-	slog.Info("token handler", "clientID", req.Grant.ClientID, "scopes", req.Grant.GrantedScopes)
+	slog.Info("token handler", "clientID", req.ClientID, "scopes", req.GrantedScopes)
 
-	userUUID, err := uuid.Parse(req.Grant.UserID)
+	userUUID, err := uuid.Parse(req.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("parse user ID: %w", err)
 	}
@@ -33,9 +33,9 @@ func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest)
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
-	cl, ok := h.Clients.GetClient(req.Grant.ClientID)
+	cl, ok := h.Clients.GetClient(req.ClientID)
 	if !ok {
-		return nil, fmt.Errorf("client %s not found", req.Grant.ClientID)
+		return nil, fmt.Errorf("client %s not found", req.ClientID)
 	}
 
 	resp := &oauth2as.TokenResponse{

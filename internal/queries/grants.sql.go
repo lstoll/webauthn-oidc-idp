@@ -7,7 +7,6 @@ package queries
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,8 +28,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 
 type CreateGrantParams struct {
 	ID            uuid.UUID
-	AuthCode      sql.NullString
-	RefreshToken  sql.NullString
+	AuthCode      []byte
+	RefreshToken  []byte
 	UserID        string
 	ClientID      string
 	GrantedScopes string
@@ -90,7 +89,7 @@ FROM grants
 WHERE auth_code = ? AND expires_at > datetime('now')
 `
 
-func (q *Queries) GetGrantByAuthCode(ctx context.Context, authCode sql.NullString) (Grant, error) {
+func (q *Queries) GetGrantByAuthCode(ctx context.Context, authCode []byte) (Grant, error) {
 	row := q.db.QueryRowContext(ctx, getGrantByAuthCode, authCode)
 	var i Grant
 	err := row.Scan(
@@ -113,7 +112,7 @@ FROM grants
 WHERE refresh_token = ? AND expires_at > datetime('now')
 `
 
-func (q *Queries) GetGrantByRefreshToken(ctx context.Context, refreshToken sql.NullString) (Grant, error) {
+func (q *Queries) GetGrantByRefreshToken(ctx context.Context, refreshToken []byte) (Grant, error) {
 	row := q.db.QueryRowContext(ctx, getGrantByRefreshToken, refreshToken)
 	var i Grant
 	err := row.Scan(
@@ -137,8 +136,8 @@ WHERE id = ?
 `
 
 type UpdateGrantParams struct {
-	AuthCode      sql.NullString
-	RefreshToken  sql.NullString
+	AuthCode      []byte
+	RefreshToken  []byte
 	UserID        string
 	ClientID      string
 	GrantedScopes string

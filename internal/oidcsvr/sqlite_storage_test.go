@@ -1,8 +1,11 @@
 package oidcsvr
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"io"
 	"testing"
 	"time"
 
@@ -29,8 +32,14 @@ func TestSQLiteStorage(t *testing.T) {
 
 	// Test creating a grant
 	grantID := uuid.New()
-	authCode := "test_auth_code"
-	refreshToken := "test_refresh_token"
+	authCode := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, authCode); err != nil {
+		t.Fatalf("failed to generate auth code: %v", err)
+	}
+	refreshToken := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, refreshToken); err != nil {
+		t.Fatalf("failed to generate refresh token: %v", err)
+	}
 	expiresAt := time.Now().Add(time.Hour)
 
 	grant := &oauth2as.StoredGrant{
@@ -38,8 +47,8 @@ func TestSQLiteStorage(t *testing.T) {
 		UserID:        "test_user",
 		ClientID:      "test_client",
 		GrantedScopes: []string{"openid", "profile"},
-		AuthCode:      &authCode,
-		RefreshToken:  &refreshToken,
+		AuthCode:      authCode,
+		RefreshToken:  refreshToken,
 		Request: &oauth2as.AuthRequest{
 			ClientID: "test_client",
 			Scopes:   []string{"openid", "profile"},
@@ -62,11 +71,11 @@ func TestSQLiteStorage(t *testing.T) {
 	if retrieved.ID != grantID {
 		t.Errorf("expected ID %s, got %s", grantID, retrieved.ID)
 	}
-	if *retrieved.AuthCode != authCode {
-		t.Errorf("expected auth code %s, got %s", authCode, *retrieved.AuthCode)
+	if !bytes.Equal(retrieved.AuthCode, authCode) {
+		t.Errorf("expected auth code %s, got %s", authCode, retrieved.AuthCode)
 	}
-	if *retrieved.RefreshToken != refreshToken {
-		t.Errorf("expected refresh token %s, got %s", refreshToken, *retrieved.RefreshToken)
+	if !bytes.Equal(retrieved.RefreshToken, refreshToken) {
+		t.Errorf("expected refresh token %s, got %s", refreshToken, retrieved.RefreshToken)
 	}
 
 	// Test retrieving by auth code
