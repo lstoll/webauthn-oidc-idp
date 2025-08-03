@@ -4,9 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"time"
 
+	"github.com/alecthomas/kong"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/oauth2as"
@@ -22,16 +26,96 @@ import (
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 	"github.com/oklog/run"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, legacyDB *DB, issuerURL *url.URL, clients *clients.StaticClients) (http.Handler, error) {
-	if legacyDB != nil {
-		if err := migrateData(ctx, legacyDB, sqldb); err != nil {
-			return nil, fmt.Errorf("failed to migrate data: %v", err)
+type ServeCmd struct {
+	ListenAddr        string                    `default:"localhost:8085" env:"IDP_LISTEN_ADDR" help:"Listen address for the server."`
+	MetricsAddr       string                    `env:"IDP_METRICS_ADDR" help:"Expose Prometheus metrics on the given host:port."`
+	CertFile          string                    `env:"IDP_CERT_FILE" help:"Path to the TLS certificate file."`
+	KeyFile           string                    `env:"IDP_KEY_FILE" help:"Path to the TLS key file."`
+	StaticClientsFile kong.NamedFileContentFlag `required:"" env:"IDP_STATIC_CLIENTS_FILE" help:"Path to the static clients file."`
+}
+
+func (c *ServeCmd) Run(ctx context.Context, db *sql.DB, issuerURL *url.URL) error {
+	var g run.Group
+	g.Add(run.ContextHandler(ctx))
+
+	clients, err := clients.ParseStaticClients(c.StaticClientsFile.Contents)
+	if err != nil {
+		return fmt.Errorf("loading clients: %v", err)
+	}
+
+	idph, err := NewIDP(ctx, &g, db, issuerURL, clients)
+	if err != nil {
+		return fmt.Errorf("start server: %v", err)
+	}
+
+	mux := http.NewServeMux()
+
+	log.Printf("mountng at hostname %s", issuerURL.Hostname())
+
+	mux.Handle(issuerURL.Hostname()+"/", idph)
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Hello, World! %s, host: %s", r.URL.Path, r.URL.Hostname())
+	}))
+
+	hs := &http.Server{
+		Addr:    c.ListenAddr,
+		Handler: mux,
+	}
+
+	g.Add(func() error {
+		if c.CertFile != "" && c.KeyFile != "" {
+			slog.Info("server listing", slog.String("addr", "https://"+c.ListenAddr))
+			if err := hs.ListenAndServeTLS(c.CertFile, c.KeyFile); err != nil {
+				return fmt.Errorf("serving https: %v", err)
+			}
+		} else {
+			slog.Info("server listing", slog.String("addr", "http://"+c.ListenAddr))
+			if err := hs.ListenAndServe(); err != nil {
+				return fmt.Errorf("serving http: %v", err)
+			}
+		}
+		return nil
+	}, func(error) {
+		// new context for this, parent is likely already shut down
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		_ = hs.Shutdown(ctx)
+	})
+
+	{
+		if c.MetricsAddr != "" {
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", promhttp.Handler())
+			promsrv := &http.Server{Addr: c.MetricsAddr, Handler: mux}
+
+			g.Add(func() error {
+				slog.Info("metrics server listing", slog.String("addr", "http://"+c.MetricsAddr))
+				if err := promsrv.ListenAndServe(); err != nil {
+					return fmt.Errorf("serving metrics: %v", err)
+				}
+				return nil
+			}, func(error) {
+				promsrv.Close()
+			})
 		}
 	}
 
+	mux.Handle("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("OK"))
+	}))
+
+	if err := g.Run(); err != nil {
+		return fmt.Errorf("run: %v", err)
+	}
+
+	return nil
+}
+
+// NewIDP creates a new IDP server for the given params.
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL, clients *clients.StaticClients) (http.Handler, error) {
 	oidcHandles, err := initKeysets(ctx, sqldb)
 	if err != nil {
 		return nil, fmt.Errorf("initializing keysets: %w", err)

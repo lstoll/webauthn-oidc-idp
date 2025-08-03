@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	crawshaw.dev/jsonfile v0.0.0-20240206193014-699d1dad804e
+	github.com/alecthomas/kong v1.12.1
 	github.com/chromedp/cdproto v0.0.0-20250403032234-65de8f5d025b
 	github.com/chromedp/chromedp v0.13.7
 	github.com/descope/virtualwebauthn v1.0.3
@@ -22,6 +23,7 @@ require (
 	github.com/tink-crypto/tink-go/v2 v2.4.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sys v0.34.0
+	golang.org/x/term v0.33.0
 	google.golang.org/protobuf v1.36.6
 )
 
@@ -44,7 +46,6 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/term v0.33.0 // indirect
 )
 
 replace crawshaw.dev/jsonfile => github.com/sr/jsonfile v0.0.0-20240301210704-69e8a5b5b148

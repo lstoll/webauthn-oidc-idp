@@ -1,13 +1,18 @@
 package clients
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/lstoll/oauth2as"
+	"github.com/tailscale/hujson"
 )
 
 // StaticClients implements the oauth2as.ClientSource against a static list of clients.
@@ -15,6 +20,24 @@ import (
 type StaticClients struct {
 	// Clients is the list of clients
 	Clients []Client `json:"clients"`
+}
+
+func ParseStaticClients(file []byte) (*StaticClients, error) {
+	scb := []byte(os.Expand(string(file), getenvWithDefault))
+	scb, err := hujson.Standardize(scb)
+	if err != nil {
+		return nil, fmt.Errorf("standardize config: %w", err)
+	}
+	var sc StaticClients
+	dec := json.NewDecoder(bytes.NewReader(scb))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&sc); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+	if err := sc.Validate(); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+	return &sc, nil
 }
 
 func (c *StaticClients) Validate() error {
@@ -130,18 +153,13 @@ func (c *StaticClients) RedirectURIs(_ context.Context, clientID string) ([]stri
 	return nil, fmt.Errorf("client %s not found", clientID)
 }
 
-func MergeStaticClients(clients ...*StaticClients) (*StaticClients, error) {
-	all := []Client{}
-	for _, c := range clients {
-		for _, cl := range c.Clients {
-			if slices.ContainsFunc(all, func(c Client) bool {
-				return c.ID == cl.ID
-			}) {
-				return nil, fmt.Errorf("client %s already exists", cl.ID)
-			}
-			all = append(all, cl)
-		}
-		all = append(all, c.Clients...)
+// getenvWithDefault maps FOO:-default to $FOO or default if $FOO is unset or
+// null.
+func getenvWithDefault(key string) string {
+	parts := strings.SplitN(key, ":-", 2)
+	val := os.Getenv(parts[0])
+	if val == "" && len(parts) == 2 {
+		val = parts[1]
 	}
-	return &StaticClients{Clients: all}, nil
+	return val
 }

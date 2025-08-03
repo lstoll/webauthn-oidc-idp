@@ -1,9 +1,0 @@
-{
-  "tenants": [
-    {
-      "issuer": "https://localhost",
-      "dbPath": "db/test.db",
-      "importConfigPath": "testdata/legacyConfig.json"
-    }
-  ]
-}
