@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lstoll/oauth2as"
@@ -51,6 +52,11 @@ func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest)
 
 	if cl.UseOverrideSubject && user.OverrideSubject.Valid {
 		resp.OverrideIDSubject = user.OverrideSubject.String
+	}
+
+	if cl.ParsedTokenValidity > 0 {
+		resp.AccessTokenExpiry = time.Now().Add(cl.ParsedTokenValidity)
+		resp.IDTokenExpiry = time.Now().Add(cl.ParsedTokenValidity)
 	}
 
 	return resp, nil
