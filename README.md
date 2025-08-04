@@ -25,7 +25,8 @@ mkcert -cert-file=dev-cert.pem -key-file=dev-key.pem localhost
 ```
 
 ```
-go run ./cmd/webauthn-oidc-idp serve -cert-file=dev-cert.pem -key-file=dev-key.pem
+go run ./cmd/webauthn-oidc-idp --db-path=data/idp.db --issuer=https://locahost:8085 serve --static-clients-file=etc/dev-clients.hujson --cert-file=dev-cert.pem --key-file=dev-key.pem --listen-addr=localhost:8085
 # test the auth flow:
 go run github.com/lstoll/oauth2ext/cmd/oidc-example-rp@latest
+go run github.com/lstoll/oauth2ext/cmd/oidccli@latest -issuer=https://localhost:8085 -client-id=cli info
 ```

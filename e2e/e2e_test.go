@@ -1,15 +1,16 @@
 package e2e_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -19,9 +20,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 
+	"github.com/alecthomas/kong"
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
+	"github.com/google/uuid"
 	clitoken "github.com/lstoll/oauth2ext/clitoken"
 	"github.com/lstoll/oauth2ext/oidc"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
@@ -91,8 +94,6 @@ func TestE2E(t *testing.T) {
 	})
 
 	/* start an instance of the server */
-	db := openTestDB(t)
-
 	port := mustAllocatePort()
 
 	issU, err := url.Parse("https://localhost:" + port)
@@ -109,6 +110,10 @@ func TestE2E(t *testing.T) {
 				RedirectURLs: []string{"http://127.0.0.1/callback"},
 			},
 		},
+	}
+	clientsb, err := json.Marshal(clients)
+	if err != nil {
+		t.Fatalf("marshaling clients: %v", err)
 	}
 
 	serveCtx, serveCancel := context.WithCancel(context.Background())
@@ -145,13 +150,16 @@ func TestE2E(t *testing.T) {
 			endC <- struct{}{}
 		})
 
-		h, err := idp.NewIDP(serveCtx, &g, sqldb, db, issU, clients)
-		if err != nil {
-			serveErr <- err
-			return
+		idpCmd := &idp.ServeCmd{
+			ListenAddr: net.JoinHostPort("localhost", port),
+			CertFile:   certPath,
+			KeyFile:    keyPath,
+			StaticClientsFile: kong.NamedFileContentFlag{
+				Filename: "/a/b/c/clients.json",
+				Contents: clientsb,
+			},
 		}
-
-		serveErr <- http.ListenAndServeTLS(net.JoinHostPort("localhost", port), certPath, keyPath, h)
+		serveErr <- idpCmd.Run(serveCtx, sqldb, issU)
 	}()
 
 	select {
@@ -211,21 +219,45 @@ func TestE2E(t *testing.T) {
 	/* start testing */
 
 	testOk := t.Run("Registration", func(t *testing.T) {
-		// first enroll a user.
-		result, err := idp.EnrollCmd(ctx, sqldb, idp.EnrollArgs{
+		var enrollBuf bytes.Buffer
+		enrollCmd := &idp.EnrollUserCmd{
 			Email:    "test.user@example.com",
 			FullName: "Test User",
-			Issuer:   issU,
-		})
-		if err != nil {
+			Output:   &enrollBuf,
+		}
+		if err := enrollCmd.Run(ctx, sqldb, issU); err != nil {
 			t.Fatalf("enrolling user: %v", err)
+		}
+
+		// Parse the enrollment URL from enrollBuf
+		var enrollmentURL string
+		var enrolledUserID string
+		for _, line := range strings.Split(enrollBuf.String(), "\n") {
+			if strings.HasPrefix(line, "New user created: ") {
+				enrolledUserID = strings.TrimPrefix(line, "New user created: ")
+				enrolledUserID = strings.TrimSpace(enrolledUserID)
+			}
+			if strings.HasPrefix(line, "Enrollment URL: ") {
+				enrollmentURL = strings.TrimPrefix(line, "Enrollment URL: ")
+				enrollmentURL = strings.TrimSpace(enrollmentURL)
+			}
+		}
+		if enrollmentURL == "" {
+			t.Fatalf("failed to parse enrollment URL from output: %q", enrollBuf.String())
+		}
+		if enrolledUserID == "" {
+			t.Fatalf("failed to parse enrolled user ID from output: %q", enrollBuf.String())
+		}
+		enrolledUserUUID, err := uuid.Parse(enrolledUserID)
+		if err != nil {
+			t.Fatalf("parsing enrolled user ID: %v", err)
 		}
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {
 			err := chromedp.Run(ctx,
-				chromedp.Navigate(result.EnrollmentURL.String()),
+				chromedp.Navigate(enrollmentURL),
 				chromedp.WaitVisible(`//button[text()='Register Key']`),
 				chromedp.SendKeys(`//input[@id='keyName']`, "Test Passkey"),
 				chromedp.Click(`//button[text()='Register Key']`),
@@ -254,11 +286,11 @@ func TestE2E(t *testing.T) {
 		case <-doneC:
 		}
 
-		_, err = queries.New(sqldb).GetUser(ctx, result.UserID)
+		_, err = queries.New(sqldb).GetUser(ctx, enrolledUserUUID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		creds, err := queries.New(sqldb).GetUserCredentials(ctx, result.UserID)
+		creds, err := queries.New(sqldb).GetUserCredentials(ctx, enrolledUserUUID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -515,14 +547,4 @@ func (c *chromeDPOpener) Open(ctx context.Context, url string) error {
 		c.notifyCh <- struct{}{}
 	}
 	return nil
-}
-
-func openTestDB(t *testing.T) *idp.DB {
-	t.Helper()
-
-	db, err := idp.OpenDB(filepath.Join(t.TempDir(), "db.json"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	return db
 }

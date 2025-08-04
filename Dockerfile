@@ -8,11 +8,7 @@ RUN go mod download && \
 
 COPY . .
 
-RUN go install -ldflags "\
-    -X 'github.com/prometheus/common/version.Branch=$(git describe --contains --all HEAD)' \
-    -X 'github.com/prometheus/common/version.BuildUser=$(whoami)' \
-    -X 'github.com/prometheus/common/version.BuildDate=$(date --utc --iso-8601=seconds)'" \
-    ./...
+RUN go install ./cmd/webauthn-oidc-idp
 
 FROM debian:bookworm
 

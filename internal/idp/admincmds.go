@@ -4,60 +4,55 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
-type EnrollArgs struct {
-	Email    string
-	FullName string
-	Issuer   *url.URL
+type EnrollUserCmd struct {
+	Email    string `required:"" help:"Email address for the user."`
+	FullName string `required:"" help:"Full name of the user."`
+
+	Output io.Writer `kong:"-"`
 }
 
-type EnrollResult struct {
-	UserID        uuid.UUID
-	EnrollmentURL *url.URL
-}
-
-func EnrollCmd(ctx context.Context, db *sql.DB, args EnrollArgs) (*EnrollResult, error) {
-	if args.Email == "" {
-		return nil, fmt.Errorf("required flag missing: email")
-	}
-	if args.FullName == "" {
-		return nil, fmt.Errorf("required flag missing: fullname")
+func (c *EnrollUserCmd) Run(ctx context.Context, db *sql.DB, issuerURL *url.URL) error {
+	if c.Output == nil {
+		c.Output = os.Stdout
 	}
 
 	params := queries.CreateUserParams{
-		ID:             must(uuid.NewV7()),
-		Email:          args.Email,
-		FullName:       args.FullName,
+		ID:             uuid.Must(uuid.NewV7()), //nolint:gosec // we're not using this for anything
+		Email:          c.Email,
+		FullName:       c.FullName,
 		EnrollmentKey:  sql.NullString{String: uuid.NewString(), Valid: true},
-		WebauthnHandle: must(uuid.NewRandom()),
+		WebauthnHandle: uuid.Must(uuid.NewRandom()),
 	}
 
 	if err := queries.New(db).CreateUser(ctx, params); err != nil {
-		return nil, fmt.Errorf("create user: %w", err)
+		return fmt.Errorf("create user: %w", err)
 	}
 
-	return &EnrollResult{
-		UserID:        params.ID,
-		EnrollmentURL: RegistrationURL(args.Issuer, params.ID.String(), params.EnrollmentKey.String),
-	}, nil
+	fmt.Fprintf(c.Output, "New user created: %s\n", params.ID)
+	fmt.Fprintf(c.Output, "Enrollment URL: %s\n", RegistrationURL(issuerURL, params.ID.String(), params.EnrollmentKey.String))
+	return nil
 }
 
-type AddCredentialArgs struct {
-	UserID string
-	Issuer *url.URL
+type AddCredentialCmd struct {
+	UserID string `required:"" help:"ID of user to add credential to."`
+
+	Output io.Writer `kong:"-"`
 }
 
-func AddCredentialCmd(ctx context.Context, db *sql.DB, args AddCredentialArgs) error {
-	if args.UserID == "" {
-		return fmt.Errorf("required flag missing: user-id")
+func (c *AddCredentialCmd) Run(ctx context.Context, db *sql.DB, issuerURL *url.URL) error {
+	if c.Output == nil {
+		c.Output = os.Stdout
 	}
 
-	userUUID, err := uuid.Parse(args.UserID)
+	userUUID, err := uuid.Parse(c.UserID)
 	if err != nil {
 		return fmt.Errorf("parse user-id: %w", err)
 	}
@@ -66,7 +61,7 @@ func AddCredentialCmd(ctx context.Context, db *sql.DB, args AddCredentialArgs) e
 
 	_, err = q.GetUser(ctx, userUUID)
 	if err != nil {
-		return fmt.Errorf("get user %s: %w", args.UserID, err)
+		return fmt.Errorf("get user %s: %w", c.UserID, err)
 	}
 
 	ek := uuid.NewString()
@@ -75,19 +70,22 @@ func AddCredentialCmd(ctx context.Context, db *sql.DB, args AddCredentialArgs) e
 		return fmt.Errorf("set user enrollment key: %w", err)
 	}
 
-	fmt.Printf("Enroll at: %s\n", RegistrationURL(args.Issuer, userUUID.String(), ek))
+	fmt.Fprintf(c.Output, "Enroll at: %s\n", RegistrationURL(issuerURL, userUUID.String(), ek))
 	return nil
 }
 
-type ListCredentialsArgs struct {
-	UserID string
+type ListCredentialsCmd struct {
+	UserID string `required:"" help:"ID of user to list credentials for."`
+
+	Output io.Writer `kong:"-"`
 }
 
-func ListCredentialsCmd(ctx context.Context, db *sql.DB, args ListCredentialsArgs) error {
-	if args.UserID == "" {
-		return fmt.Errorf("required flag missing: user-id")
+func (c *ListCredentialsCmd) Run(ctx context.Context, db *sql.DB) error {
+	if c.Output == nil {
+		c.Output = os.Stdout
 	}
-	userUUID, err := uuid.Parse(args.UserID)
+
+	userUUID, err := uuid.Parse(c.UserID)
 	if err != nil {
 		return fmt.Errorf("parse user-id: %w", err)
 	}
@@ -96,7 +94,7 @@ func ListCredentialsCmd(ctx context.Context, db *sql.DB, args ListCredentialsArg
 
 	_, err = q.GetUser(ctx, userUUID)
 	if err != nil {
-		return fmt.Errorf("get user %s: %w", args.UserID, err)
+		return fmt.Errorf("get user %s: %w", c.UserID, err)
 	}
 
 	creds, err := q.GetUserCredentials(ctx, userUUID)

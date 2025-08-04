@@ -1,0 +1,11 @@
+{
+	"clients": [
+		{
+			"id": "cli",
+			"public": true,
+			"redirectURLs": [
+				"http://127.0.0.1/callback",
+			],
+		}
+	]
+}

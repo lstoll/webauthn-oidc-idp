@@ -187,12 +187,15 @@ func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, e
 	if errors.As(err, &pErr) {
 		devinfo = pErr.DevInfo
 	}
-	if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrUserNotActivated) {
-		http.Error(rw, err.Error(), http.StatusNotFound)
-	} else {
-		slog.ErrorContext(ctx, "webauthn manager error", "err", err, "dev-info", devinfo)
-		http.Error(rw, "Internal Error", http.StatusInternalServerError)
-	}
+	// TODO - error handling for new storage. Will want to re-do this with the
+	// web stuff anyway, so leaving for now.
+
+	// if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrUserNotActivated) {
+	// 	http.Error(rw, err.Error(), http.StatusNotFound)
+	// } else {
+	slog.ErrorContext(ctx, "webauthn manager error", "err", err, "dev-info", devinfo)
+	http.Error(rw, "Internal Error", http.StatusInternalServerError)
+	// }
 }
 
 func (w *webauthnManager) httpUnauth(rw http.ResponseWriter, msg string) {
