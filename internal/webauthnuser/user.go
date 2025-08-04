@@ -1,4 +1,4 @@
-package auth
+package webauthnuser
 
 import (
 	"context"
@@ -11,35 +11,38 @@ import (
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
-type webauthnUser struct {
-	user queries.User
-	// overrideID is the ID used for the webauthn user, if it differs from the
-	// user ID.
-	overrideID  []byte
-	credentials []webauthn.Credential
+type User struct {
+	User queries.User
+	// OverrideID is the ID used for the webauthn user, if it differs from the
+	// user's webauthn handle.
+	OverrideID  []byte
+	Credentials []webauthn.Credential
 }
 
-func (u *webauthnUser) WebAuthnID() []byte {
-	return u.overrideID
+func (u *User) WebAuthnID() []byte {
+	if len(u.OverrideID) > 0 {
+		return u.OverrideID
+	}
+	return u.User.WebauthnHandle[:]
 }
 
-func (u *webauthnUser) WebAuthnName() string {
-	return u.user.Email
+func (u *User) WebAuthnName() string {
+	return u.User.Email
 }
 
-func (u *webauthnUser) WebAuthnDisplayName() string {
-	return u.user.FullName
+func (u *User) WebAuthnDisplayName() string {
+	return u.User.FullName
 }
 
-func (u *webauthnUser) WebAuthnIcon() string {
+func (u *User) WebAuthnIcon() string {
 	return ""
 }
 
-func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
-	return u.credentials
+func (u *User) WebAuthnCredentials() []webauthn.Credential {
+	return u.Credentials
 }
 
-func (a *Authenticator) NewDiscoverableUserHandler(ctx context.Context) webauthn.DiscoverableUserHandler {
+func NewDiscoverableUserHandler(ctx context.Context, q *queries.Queries) webauthn.DiscoverableUserHandler {
 	return func(rawID, userHandle []byte) (user webauthn.User, err error) {
 		var qu queries.User
 		var validateID []byte
@@ -55,21 +58,21 @@ func (a *Authenticator) NewDiscoverableUserHandler(ctx context.Context) webauthn
 			if err != nil {
 				return nil, fmt.Errorf("invalid UUIDv4: %w", err)
 			}
-			qu, err = a.Queries.GetUserByWebauthnHandle(ctx, handle)
+			qu, err = q.GetUserByWebauthnHandle(ctx, handle)
 			if err != nil {
 				return nil, fmt.Errorf("getting user by webauthn handle: %w", err)
 			}
 			validateID = qu.WebauthnHandle[:]
 		} else if err := uuid.Validate(string(userHandle)); err == nil {
 			// string UUID, likely the user ID
-			qu, err = a.Queries.GetUser(ctx, uuid.MustParse(string(userHandle)))
+			qu, err = q.GetUser(ctx, uuid.MustParse(string(userHandle)))
 			if err != nil {
 				return nil, fmt.Errorf("getting user by ID: %w", err)
 			}
 			validateID = []byte(qu.ID.String())
 		} else {
 			// process it as a fallback subject.
-			qu, err = a.Queries.GetUserByOverrideSubject(ctx, sql.NullString{String: string(userHandle), Valid: true})
+			qu, err = q.GetUserByOverrideSubject(ctx, sql.NullString{String: string(userHandle), Valid: true})
 			if err != nil {
 				return nil, fmt.Errorf("getting user by override subject: %w", err)
 			}
@@ -77,21 +80,21 @@ func (a *Authenticator) NewDiscoverableUserHandler(ctx context.Context) webauthn
 		}
 
 		// Get user credentials
-		creds, err := a.Queries.GetUserCredentials(ctx, qu.ID)
+		creds, err := q.GetUserCredentials(ctx, qu.ID)
 		if err != nil {
 			return nil, fmt.Errorf("getting user credentials: %w", err)
 		}
 
-		wu := &webauthnUser{
-			user:       qu,
-			overrideID: validateID,
+		wu := &User{
+			User:       qu,
+			OverrideID: validateID,
 		}
 		for _, c := range creds {
 			var cred webauthn.Credential
 			if err := json.Unmarshal(c.CredentialData, &cred); err != nil {
 				return nil, fmt.Errorf("unmarshalling credential: %w", err)
 			}
-			wu.credentials = append(wu.credentials, cred)
+			wu.Credentials = append(wu.Credentials, cred)
 		}
 
 		return wu, nil

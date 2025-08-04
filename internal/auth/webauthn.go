@@ -17,6 +17,7 @@ import (
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"github.com/lstoll/webauthn-oidc-idp/internal/webauthnuser"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 )
 
@@ -189,7 +190,7 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	}
 
 	// Validate the login
-	user, credential, err := a.Webauthn.ValidatePasskeyLogin(a.NewDiscoverableUserHandler(ctx), *flow.WebauthnData, parsedResponse)
+	user, credential, err := a.Webauthn.ValidatePasskeyLogin(webauthnuser.NewDiscoverableUserHandler(ctx, a.Queries), *flow.WebauthnData, parsedResponse)
 	if err != nil {
 		return fmt.Errorf("validating login: %w", err)
 	}
@@ -208,7 +209,7 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	delete(as.Flows, req.FlowID)
 	// we cast it back to our type to make sure we get the real ID, not the
 	// potentially legacy mapped ID.
-	as.LoggedinUserID = uuid.NullUUID{UUID: user.(*webauthnUser).user.ID, Valid: true}
+	as.LoggedinUserID = uuid.NullUUID{UUID: user.(*webauthnuser.User).User.ID, Valid: true}
 	r.Session().Set(authSessSessionKey, as)
 
 	// Return the flow's returnTo URL

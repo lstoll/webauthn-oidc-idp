@@ -1,4 +1,4 @@
-package idp
+package userprofile
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"github.com/lstoll/webauthn-oidc-idp/internal/webauthnuser"
 	webcontent "github.com/lstoll/webauthn-oidc-idp/web"
 )
 
@@ -36,12 +37,12 @@ type pendingWebauthnEnrollment struct {
 	ReturnTo string `json:"return_to,omitempty"`
 }
 
-type webauthnManager struct {
-	queries  *queries.Queries
-	webauthn *webauthn.WebAuthn
+type WebauthnManager struct {
+	Queries  *queries.Queries
+	Webauthn *webauthn.WebAuthn
 }
 
-func (w *webauthnManager) AddHandlers(websvr *web.Server) {
+func (w *WebauthnManager) AddHandlers(websvr *web.Server) {
 	websvr.HandleFunc("/registration/begin", w.beginRegistration)
 	websvr.HandleFunc("/registration/finish", w.finishRegistration)
 	websvr.HandleFunc("GET /registration", w.registration)
@@ -50,7 +51,7 @@ func (w *webauthnManager) AddHandlers(websvr *web.Server) {
 // registration is a page used to add a new key. It should handle either a user
 // in the session (from the logged in keys page), or a boostrap token and user
 // id as query params for an inactive user.
-func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request) {
+func (w *WebauthnManager) registration(rw http.ResponseWriter, req *http.Request) {
 	// first, check the URL for a registration token and user id. If it exists,
 	// check if we have the user and if they are active/with a matching token,
 	// embed it in the page.
@@ -58,7 +59,7 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 	et := req.URL.Query().Get("enrollment_token")
 	if uid != "" && et != "" {
 		// we want to enroll a user. Find them, and match the token
-		user, err := w.queries.GetUser(req.Context(), uuid.MustParse(uid))
+		user, err := w.Queries.GetUser(req.Context(), uuid.MustParse(uid))
 		if err != nil {
 			w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", uid, err))
 			return
@@ -77,7 +78,7 @@ func (w *webauthnManager) registration(rw http.ResponseWriter, req *http.Request
 	w.execTemplate(rw, req, "register_key.tmpl.html", map[string]interface{}{})
 }
 
-func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
+func (w *WebauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Request) {
 	sess := session.MustFromContext(req.Context())
 
 	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
@@ -86,7 +87,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(pwe.ForUserID))
+	user, err := w.Queries.GetUser(req.Context(), uuid.MustParse(pwe.ForUserID))
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("get user %s: %w", pwe.ForUserID, err))
 		return
@@ -105,7 +106,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 	}
 	conveyancePref := protocol.ConveyancePreference(protocol.PreferDirectAttestation)
 
-	options, sessionData, err := w.webauthn.BeginRegistration(&webauthnUser{qu: user}, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
+	options, sessionData, err := w.Webauthn.BeginRegistration(&webauthnuser.User{User: user}, webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
 	if err != nil {
 		w.httpErr(req.Context(), rw, err)
 		return
@@ -121,7 +122,7 @@ func (w *webauthnManager) beginRegistration(rw http.ResponseWriter, req *http.Re
 	}
 }
 
-func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
+func (w *WebauthnManager) finishRegistration(rw http.ResponseWriter, req *http.Request) {
 	sess := session.MustFromContext(req.Context())
 
 	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
@@ -130,7 +131,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	user, err := w.queries.GetUser(req.Context(), uuid.MustParse(pwe.ForUserID)) // TODO - guard the allow unactive for enrol only!
+	user, err := w.Queries.GetUser(req.Context(), uuid.MustParse(pwe.ForUserID)) // TODO - guard the allow unactive for enrol only!
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("getting user %s: %w", pwe.ForUserID, err))
 		return
@@ -152,7 +153,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		w.httpErr(req.Context(), rw, fmt.Errorf("parsing credential creation response: %w", err))
 		return
 	}
-	credential, err := w.webauthn.CreateCredential(&webauthnUser{qu: user}, sessionData, parsedResponse)
+	credential, err := w.Webauthn.CreateCredential(&webauthnuser.User{User: user}, sessionData, parsedResponse)
 	if err != nil {
 		w.httpErr(req.Context(), rw, fmt.Errorf("creating credential: %w", err))
 		return
@@ -164,7 +165,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 		return
 	}
 
-	if err := w.queries.CreateUserCredential(req.Context(), queries.CreateUserCredentialParams{
+	if err := w.Queries.CreateUserCredential(req.Context(), queries.CreateUserCredentialParams{
 		UserID:         user.ID,
 		CredentialID:   credential.ID,
 		CredentialData: cb,
@@ -179,7 +180,7 @@ func (w *webauthnManager) finishRegistration(rw http.ResponseWriter, req *http.R
 	// TODO - return the next URL in the response, make the JS follow it.
 }
 
-func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
+func (w *WebauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, err error) {
 	var (
 		pErr    *protocol.Error
 		devinfo string
@@ -198,11 +199,11 @@ func (w *webauthnManager) httpErr(ctx context.Context, rw http.ResponseWriter, e
 	// }
 }
 
-func (w *webauthnManager) httpUnauth(rw http.ResponseWriter, msg string) {
+func (w *WebauthnManager) httpUnauth(rw http.ResponseWriter, msg string) {
 	http.Error(rw, fmt.Sprintf("Access denied: %s", msg), http.StatusForbidden)
 }
 
-func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
+func (w *WebauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, templateName string, data interface{}) {
 	funcs := template.FuncMap{
 		"pathFor": func(_ string) string {
 			return "TODO"
@@ -222,36 +223,4 @@ func (w *webauthnManager) execTemplate(rw http.ResponseWriter, r *http.Request, 
 		w.httpErr(r.Context(), rw, err)
 		return
 	}
-}
-
-// webauthnUser is a wrapper around the queries.User type that implements the
-// webauthn.User interface for that library to consume
-type webauthnUser struct {
-	qu         queries.User
-	overrideID []byte
-	wc         []webauthn.Credential
-}
-
-// WebAuthnID returns the webauthn user handle for the user
-func (u *webauthnUser) WebAuthnID() []byte {
-	if len(u.overrideID) > 0 {
-		return u.overrideID
-	}
-	return u.qu.WebauthnHandle[:]
-}
-
-func (u *webauthnUser) WebAuthnName() string {
-	return u.qu.Email
-}
-
-func (u *webauthnUser) WebAuthnDisplayName() string {
-	return u.qu.FullName
-}
-
-func (u *webauthnUser) WebAuthnIcon() string {
-	return ""
-}
-
-func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
-	return u.wc
 }

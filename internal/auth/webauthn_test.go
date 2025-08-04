@@ -25,6 +25,7 @@ import (
 	"github.com/lstoll/web/webtest"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"github.com/lstoll/webauthn-oidc-idp/internal/webauthnuser"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 )
 
@@ -204,14 +205,14 @@ func createUserWithCredential(t *testing.T, auth *Authenticator) (virtualwebauth
 	}
 
 	// Create a webauthn user for registration
-	wu := &webauthnUser{
-		user: queries.User{
+	wu := &webauthnuser.User{
+		User: queries.User{
 			ID:             userID,
 			Email:          "test@example.com",
 			FullName:       "Test User",
 			WebauthnHandle: webauthnHandle,
 		},
-		overrideID: webauthnHandle[:],
+		OverrideID: webauthnHandle[:],
 	}
 
 	// Begin registration

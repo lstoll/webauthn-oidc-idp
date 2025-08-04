@@ -24,6 +24,7 @@ import (
 	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/oidcsvr"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"github.com/lstoll/webauthn-oidc-idp/internal/userprofile"
 	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -186,23 +187,12 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 	}
 
 	// start configuration of webauthn manager
-	mgr := &webauthnManager{
-		webauthn: wn,
-		queries:  queries.New(sqldb),
+	mgr := &userprofile.WebauthnManager{
+		Webauthn: wn,
+		Queries:  queries.New(sqldb),
 	}
 
 	mgr.AddHandlers(websvr)
-
-	// svr := oidcServer{
-	// 	issuer:          issuerURL.String(),
-	// 	oidcsvr:         legacyoidcsvr,
-	// 	tokenValidFor:   15 * time.Minute,
-	// 	refreshValidFor: 12 * time.Hour,
-	// 	// upstreamPolicy:  []byte(ucp),
-	// 	webauthn: wn,
-	// 	db:       db,
-	// 	queries:  queries.New(sqldb),
-	// }
 
 	// TODO - web should handle all this.
 	fs := http.FileServer(http.FS(webcommon.Static))
