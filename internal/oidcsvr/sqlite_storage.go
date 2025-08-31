@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
