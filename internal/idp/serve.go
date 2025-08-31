@@ -20,6 +20,7 @@ import (
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/session/sqlkv"
+	"github.com/lstoll/webauthn-oidc-idp/internal/adminui"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
 	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/oidcsvr"
@@ -186,10 +187,7 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 	}
 
 	// start configuration of webauthn manager
-	mgr := &webauthnManager{
-		webauthn: wn,
-		queries:  queries.New(sqldb),
-	}
+	mgr := adminui.NewWebAuthnManager(queries.New(sqldb), wn)
 
 	mgr.AddHandlers(websvr)
 

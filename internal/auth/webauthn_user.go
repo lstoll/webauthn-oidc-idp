@@ -11,7 +11,7 @@ import (
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
-type webauthnUser struct {
+type WebAuthnUser struct {
 	user queries.User
 	// overrideID is the ID used for the webauthn user, if it differs from the
 	// user ID.
@@ -19,23 +19,32 @@ type webauthnUser struct {
 	credentials []webauthn.Credential
 }
 
-func (u *webauthnUser) WebAuthnID() []byte {
+// NewWebAuthnUser creates a new WebAuthnUser for registration (without credentials)
+func NewWebAuthnUser(user queries.User) *WebAuthnUser {
+	return &WebAuthnUser{
+		user:        user,
+		overrideID:  user.ID[:],
+		credentials: []webauthn.Credential{},
+	}
+}
+
+func (u *WebAuthnUser) WebAuthnID() []byte {
 	return u.overrideID
 }
 
-func (u *webauthnUser) WebAuthnName() string {
+func (u *WebAuthnUser) WebAuthnName() string {
 	return u.user.Email
 }
 
-func (u *webauthnUser) WebAuthnDisplayName() string {
+func (u *WebAuthnUser) WebAuthnDisplayName() string {
 	return u.user.FullName
 }
 
-func (u *webauthnUser) WebAuthnIcon() string {
+func (u *WebAuthnUser) WebAuthnIcon() string {
 	return ""
 }
 
-func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
+func (u *WebAuthnUser) WebAuthnCredentials() []webauthn.Credential {
 	return u.credentials
 }
 
@@ -82,7 +91,7 @@ func (a *Authenticator) NewDiscoverableUserHandler(ctx context.Context) webauthn
 			return nil, fmt.Errorf("getting user credentials: %w", err)
 		}
 
-		wu := &webauthnUser{
+		wu := &WebAuthnUser{
 			user:       qu,
 			overrideID: validateID,
 		}

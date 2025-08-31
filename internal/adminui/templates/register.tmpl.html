@@ -1,0 +1,58 @@
+{{template "header.tmpl.html" .}}
+
+            <div class="columns is-centered">
+                <div class="column is-half">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="content has-text-centered">
+                                <div class="mb-5">
+                                    <span class="icon is-large has-text-primary">
+                                        <i class="fas fa-key fa-3x"></i>
+                                    </span>
+                                </div>
+                                <h1 class="title is-3">Register Passkey</h1>
+                                <p class="subtitle is-6 has-text-grey">Add a new security key to your account</p>
+
+                                <div id="error-message" class="notification is-danger" style="display: none;">
+                                    <button class="delete"></button>
+                                    <span class="error-text"></span>
+                                </div>
+
+                                <div id="success-message" class="notification is-success" style="display: none;">
+                                    <button class="delete"></button>
+                                    <span class="success-text"></span>
+                                </div>
+
+                                <div class="field">
+                                    <label class="label" for="keyName">Key Name</label>
+                                    <div class="control">
+                                        <input id="keyName" class="input" type="text"
+                                               placeholder="Enter a name for this passkey (e.g., 'iPhone', 'MacBook')"
+                                               required>
+                                    </div>
+                                </div>
+
+                                <div class="mt-5">
+                                    <button id="register-button" class="button is-primary is-medium is-fullwidth">
+                                        <span class="icon">
+                                            <i class="fas fa-plus"></i>
+                                        </span>
+                                        <span>Register Passkey</span>
+                                    </button>
+                                </div>
+
+                                <div class="mt-4">
+                                    <a href="/" class="button is-light is-small">
+                                        <span class="icon">
+                                            <i class="fas fa-arrow-left"></i>
+                                        </span>
+                                        <span>Back to Home</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+{{template "footer.tmpl.html" .}}

@@ -1,6 +1,6 @@
 module github.com/lstoll/webauthn-oidc-idp
 
-go 1.24.0
+go 1.25
 
 require (
 	github.com/alecthomas/kong v1.12.1
@@ -9,33 +9,32 @@ require (
 	github.com/descope/virtualwebauthn v1.0.3
 	github.com/go-webauthn/webauthn v0.13.4
 	github.com/google/uuid v1.6.0
-	github.com/lstoll/oauth2ext v0.0.0-20250831194751-3bc013b9e012
+	github.com/lstoll/oauth2ext v0.0.0-20250831201922-bf0f4653dd3a
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
-	github.com/lstoll/web v0.0.0-20250727132609-68a8d2f7e1ae
-	github.com/mattn/go-sqlite3 v1.14.29
+	github.com/lstoll/web v0.0.0-20250831224134-6a5c6329eedb
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/oklog/run v1.2.0
-	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/common v0.65.0
 	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
 	github.com/tink-crypto/tink-go/v2 v2.4.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/term v0.34.0
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/protobuf v1.36.8
 )
 
 require (
-	filippo.io/csrf v0.0.0-20250517103426-cfb6fbb0fbe3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.2 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250211171154-1ae217ad3535 // indirect
-	github.com/go-webauthn/x v0.1.23 // indirect
+	github.com/go-webauthn/x v0.1.24 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect

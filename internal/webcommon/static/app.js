@@ -236,10 +236,12 @@ class WebAuthnUI {
      */
     async autoLogin() {
         // Only auto-login if we're on a login page (has login form or button)
+        // and NOT on a registration page
         const loginForm = document.getElementById('login-form');
         const loginButton = document.getElementById('login-button');
+        const registerButton = document.getElementById('register-button');
 
-        if (loginForm || loginButton) {
+        if ((loginForm || loginButton) && !registerButton) {
             // Small delay to ensure page is fully loaded
             setTimeout(() => {
                 this.handleLogin();
@@ -303,14 +305,31 @@ class WebAuthnUI {
 
         this.registrationPending = true;
         this.setLoadingState('register', true);
+        this.hideError();
 
         try {
-            await this.webauthn.register({
+            const result = await this.webauthn.register({
                 keyName: keyNameInput.value.trim()
             });
 
-            // Success - reload page or redirect
-            window.location.reload();
+            // Parse the response
+            const responseData = await result.json();
+
+            if (responseData.success) {
+                // Show success message
+                this.showSuccess(responseData.message || "Passkey registered successfully!");
+
+                // Redirect after a short delay
+                setTimeout(() => {
+                    if (responseData.returnTo) {
+                        window.location.href = responseData.returnTo;
+                    } else {
+                        window.location.href = '/';
+                    }
+                }, 2000);
+            } else {
+                this.showError(responseData.error || "Registration failed");
+            }
         } catch (error) {
             console.error('Registration failed:', error);
             this.showError(`Failed to register key: ${error.message}`);
@@ -358,6 +377,30 @@ class WebAuthnUI {
     }
 
     /**
+     * Show success message to user
+     * @param {string} message - Success message
+     */
+    showSuccess(message) {
+        console.log("WebAuthnUI.showSuccess", message);
+        // Try to find a success display element
+        const successElement = document.getElementById('success-message');
+        const successTextElement = document.querySelector('#success-message .success-text');
+
+        if (successElement && successTextElement) {
+            successTextElement.textContent = message;
+            successElement.style.display = 'block';
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                this.hideSuccess();
+            }, 5000);
+        } else {
+            // Fallback to alert
+            alert(message);
+        }
+    }
+
+    /**
      * Show error message to user
      * @param {string} message - Error message
      */
@@ -378,6 +421,16 @@ class WebAuthnUI {
         } else {
             // Fallback to alert
             alert(message);
+        }
+    }
+
+    /**
+     * Hide success message
+     */
+    hideSuccess() {
+        const successElement = document.getElementById('success-message');
+        if (successElement) {
+            successElement.style.display = 'none';
         }
     }
 

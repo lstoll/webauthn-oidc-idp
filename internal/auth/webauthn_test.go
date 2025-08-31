@@ -204,7 +204,7 @@ func createUserWithCredential(t *testing.T, auth *Authenticator) (virtualwebauth
 	}
 
 	// Create a webauthn user for registration
-	wu := &webauthnUser{
+	wu := &WebAuthnUser{
 		user: queries.User{
 			ID:             userID,
 			Email:          "test@example.com",
