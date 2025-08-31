@@ -171,7 +171,7 @@ func TestE2E(t *testing.T) {
 		t.Fatal("server startup timed out")
 	}
 
-	provider, err := oidc.DiscoverProvider(ctx, issU.String(), nil)
+	provider, err := oidc.DiscoverProvider(ctx, issU.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,15 +320,12 @@ func TestE2E(t *testing.T) {
 
 		select {
 		case tok := <-tokC:
-			raw, _, err := provider.Userinfo(ctx, oa2Cfg.TokenSource(ctx, tok))
+			uinfo := make(map[string]any)
+			err := provider.Userinfo(ctx, oa2Cfg.TokenSource(ctx, tok), &uinfo)
 			if err != nil {
 				t.Fatalf("getting userinfo: %v", err)
 			}
-			t.Logf("userinfo: %v", string(raw))
-			// positive case
-			//
-			// TODO(lstoll) get userinfo
-			_ = tok
+			t.Logf("userinfo: %#v", uinfo)
 		case err := <-loginErrC:
 			t.Fatalf("error in CLI flow: %v", err)
 		case err := <-runErrC:

@@ -2,15 +2,15 @@ package oidcsvr
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2as"
-	"github.com/lstoll/oauth2ext/claims"
+	"github.com/lstoll/oauth2ext/jwt"
+	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
@@ -39,19 +39,21 @@ func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest)
 		return nil, fmt.Errorf("client %s not found", req.ClientID)
 	}
 
-	resp := &oauth2as.TokenResponse{
-		IDClaims: &claims.RawIDClaims{
-			Extra: map[string]any{
-				"email":          user.Email,
-				"email_verified": true,
-				"picture":        gravatarURL(user.Email),
-				"name":           user.FullName,
-			},
+	idc := jwt.IDClaims{
+		Extra: map[string]any{
+			"email":          user.Email,
+			"email_verified": true,
+			"picture":        gravatarURL(user.Email),
+			"name":           user.FullName,
 		},
 	}
 
 	if cl.UseOverrideSubject && user.OverrideSubject.Valid {
-		resp.OverrideIDSubject = user.OverrideSubject.String
+		idc.Subject = user.OverrideSubject.String
+	}
+
+	resp := &oauth2as.TokenResponse{
+		IDClaims: &idc,
 	}
 
 	if cl.ParsedTokenValidity > 0 {
@@ -76,7 +78,7 @@ func (h *Handlers) UserinfoHandler(ctx context.Context, uireq *oauth2as.Userinfo
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
-	cl := claims.RawIDClaims{
+	cl := jwt.IDClaims{
 		Issuer:  h.Issuer,
 		Subject: uireq.Subject,
 		Extra:   make(map[string]any),
@@ -96,6 +98,6 @@ func (h *Handlers) UserinfoHandler(ctx context.Context, uireq *oauth2as.Userinfo
 }
 
 func gravatarURL(email string) string {
-	hash := md5.Sum([]byte(email))
+	hash := sha256.Sum256([]byte(email))
 	return fmt.Sprintf("https://www.gravatar.com/avatar/%x.png", hash)
 }

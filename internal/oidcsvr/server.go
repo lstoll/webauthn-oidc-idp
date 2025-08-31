@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"

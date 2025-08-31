@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	_ "github.com/mattn/go-sqlite3"
 )

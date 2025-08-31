@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as"
 )
 
 // Storage is the interface for storing and retrieving grants.

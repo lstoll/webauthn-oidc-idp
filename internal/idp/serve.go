@@ -13,7 +13,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/lstoll/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/proxyhdrs"
@@ -224,7 +224,7 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 		Issuer:  issuerURL.String(),
 		Storage: oidcsvr.NewSQLiteStorage(sqldb),
 		Clients: clients,
-		Keyset:  oidcHandles,
+		Signer:  oidcHandles,
 
 		TokenHandler:    oidchHandlers.TokenHandler,
 		UserinfoHandler: oidchHandlers.UserinfoHandler,
