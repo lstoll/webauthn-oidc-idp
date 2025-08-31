@@ -258,16 +258,12 @@ func TestE2E(t *testing.T) {
 		go func() {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(enrollmentURL),
-				chromedp.WaitVisible(`//button[text()='Register Key']`),
-				chromedp.SendKeys(`//input[@id='keyName']`, "Test Passkey"),
-				chromedp.Click(`//button[text()='Register Key']`),
-				// we just go back to the same page with no feedback currently lol
-				chromedp.WaitVisible(`//button[text()='Register Key']`),
-				// but because that's the same as the page we're registering on,
-				// there's no feedback so we terminate before the request
-				// finishes. So we just sleep on it.
-				// TODO(lstoll) provide proper feedback that something is
-				// registered, so we can wait appropriately.
+				chromedp.WaitVisible(`#register-button`),
+				chromedp.SendKeys(`#keyName`, "Test Passkey"),
+				chromedp.Click(`#register-button`),
+				// Wait for success message
+				chromedp.WaitVisible(`#success-message`),
+				// Wait a bit for the success message to be visible
 				chromedp.Sleep(1*time.Second),
 			)
 			if err != nil {

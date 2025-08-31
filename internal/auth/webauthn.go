@@ -208,7 +208,7 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	delete(as.Flows, req.FlowID)
 	// we cast it back to our type to make sure we get the real ID, not the
 	// potentially legacy mapped ID.
-	as.LoggedinUserID = uuid.NullUUID{UUID: user.(*webauthnUser).user.ID, Valid: true}
+	as.LoggedinUserID = uuid.NullUUID{UUID: user.(*WebAuthnUser).user.ID, Valid: true}
 	r.Session().Set(authSessSessionKey, as)
 
 	// Return the flow's returnTo URL
