@@ -305,7 +305,6 @@ func TestE2E(t *testing.T) {
 		tokC, loginErrC := cliLoginFlow(ctx, t, oa2Cfg)
 
 		runErrC := make(chan error, 1)
-		doneC := make(chan struct{}, 1)
 		go func() {
 			err := chromedp.Run(ctx,
 				chromedp.Sleep(1*time.Second),
@@ -313,7 +312,6 @@ func TestE2E(t *testing.T) {
 			if err != nil {
 				runErrC <- err
 			}
-			doneC <- struct{}{}
 		}()
 
 		select {
@@ -332,7 +330,6 @@ func TestE2E(t *testing.T) {
 			t.Fatalf("error in browser runtime: %v", err)
 		case <-time.After(browserStepTimeout()):
 			t.Fatal("step timed out")
-		case <-doneC:
 		}
 	})
 	if !testOk {
