@@ -9,7 +9,7 @@ require (
 	github.com/descope/virtualwebauthn v1.0.3
 	github.com/go-webauthn/webauthn v0.13.4
 	github.com/google/uuid v1.6.0
-	github.com/lstoll/oauth2ext v0.0.0-20250831201922-bf0f4653dd3a
+	github.com/lstoll/oauth2ext v0.0.0-20250831235002-fe44b9a2a708
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
 	github.com/lstoll/web v0.0.0-20250831224134-6a5c6329eedb
 	github.com/mattn/go-sqlite3 v1.14.32

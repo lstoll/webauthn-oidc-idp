@@ -28,6 +28,7 @@ import (
 	clitoken "github.com/lstoll/oauth2ext/clitoken"
 	"github.com/lstoll/oauth2ext/oidc"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/admincli"
 	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
@@ -218,9 +219,11 @@ func TestE2E(t *testing.T) {
 
 	/* start testing */
 
+	var enrolledUserID string
+
 	testOk := t.Run("Registration", func(t *testing.T) {
 		var enrollBuf bytes.Buffer
-		enrollCmd := &idp.EnrollUserCmd{
+		enrollCmd := &admincli.EnrollUserCmd{
 			Email:    "test.user@example.com",
 			FullName: "Test User",
 			Output:   &enrollBuf,
@@ -231,7 +234,6 @@ func TestE2E(t *testing.T) {
 
 		// Parse the enrollment URL from enrollBuf
 		var enrollmentURL string
-		var enrolledUserID string
 		for _, line := range strings.Split(enrollBuf.String(), "\n") {
 			if strings.HasPrefix(line, "New user created: ") {
 				enrolledUserID = strings.TrimPrefix(line, "New user created: ")
@@ -331,6 +333,104 @@ func TestE2E(t *testing.T) {
 		case <-time.After(browserStepTimeout()):
 			t.Fatal("step timed out")
 		case <-doneC:
+		}
+	})
+	if !testOk {
+		t.Fatal("dependent step failed, aborting")
+	}
+	clearErrchan(chromeErrC)
+
+	testOk = t.Run("Groups Test", func(t *testing.T) {
+		// Create a group
+		var createGroupBuf bytes.Buffer
+		createGroupCmd := &admincli.CreateGroupCmd{
+			Name:        "test-group",
+			Description: "Test group for e2e testing",
+			Active:      true, // Explicitly set to true
+			Output:      &createGroupBuf,
+		}
+		if err := createGroupCmd.Run(ctx, sqldb); err != nil {
+			t.Fatalf("creating group: %v", err)
+		}
+
+		// Parse the group ID from output
+		var groupID string
+		for _, line := range strings.Split(createGroupBuf.String(), "\n") {
+			if strings.HasPrefix(line, "Group created: test-group (") {
+				groupID = strings.TrimPrefix(line, "Group created: test-group (")
+				groupID = strings.TrimSuffix(groupID, ")")
+				groupID = strings.TrimSpace(groupID)
+				break
+			}
+		}
+		if groupID == "" {
+			t.Fatalf("failed to parse group ID from output: %q", createGroupBuf.String())
+		}
+
+		// Add user to the group
+		var addUserBuf bytes.Buffer
+		addUserCmd := &admincli.AddUserToGroupCmd{
+			UserID:  enrolledUserID,
+			GroupID: groupID,
+			Output:  &addUserBuf,
+		}
+		if err := addUserCmd.Run(ctx, sqldb); err != nil {
+			t.Fatalf("adding user to group: %v", err)
+		}
+
+		// Test OIDC flow to verify groups claim is included
+		tokC, loginErrC := cliLoginFlow(ctx, t, oa2Cfg)
+
+		runErrC := make(chan error, 1)
+		go func() {
+			err := chromedp.Run(ctx,
+				chromedp.Sleep(1*time.Second),
+			)
+			if err != nil {
+				runErrC <- err
+			}
+		}()
+
+		select {
+		case tok := <-tokC:
+			uinfo := make(map[string]any)
+			err := provider.Userinfo(ctx, oa2Cfg.TokenSource(ctx, tok), &uinfo)
+			if err != nil {
+				t.Fatalf("getting userinfo: %v", err)
+			}
+			t.Logf("userinfo: %#v", uinfo)
+
+			// Check that groups claim is present
+			if groups, ok := uinfo["groups"]; ok {
+				groupsList, ok := groups.([]any)
+				if !ok {
+					t.Fatalf("groups claim is not a list: %T", groups)
+				}
+				if len(groupsList) == 0 {
+					t.Fatalf("groups claim is empty")
+				}
+				found := false
+				for _, g := range groupsList {
+					if g == "test-group" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("expected group 'test-group' not found in groups claim: %v", groupsList)
+				}
+				t.Logf("groups claim verified: %v", groupsList)
+			} else {
+				t.Fatalf("groups claim not found in userinfo")
+			}
+		case err := <-loginErrC:
+			t.Fatalf("error in CLI flow: %v", err)
+		case err := <-runErrC:
+			t.Fatalf("running browser steps: %v", err)
+		case err := <-chromeErrC:
+			t.Fatalf("error in browser runtime: %v", err)
+		case <-time.After(browserStepTimeout()):
+			t.Fatal("step timed out")
 		}
 	})
 	if !testOk {

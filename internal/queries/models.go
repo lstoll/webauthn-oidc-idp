@@ -32,6 +32,15 @@ type Grant struct {
 	ExpiresAt     time.Time
 }
 
+type Group struct {
+	ID          string
+	Name        string
+	Description sql.NullString
+	Active      bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type Migration struct {
 	Idx int64
 	At  time.Time
@@ -51,6 +60,15 @@ type User struct {
 	EnrollmentKey   sql.NullString
 	OverrideSubject sql.NullString
 	WebauthnHandle  uuid.UUID
+}
+
+type UserGroup struct {
+	ID        string
+	UserID    string
+	GroupID   string
+	StartDate time.Time
+	EndDate   sql.NullTime
+	CreatedAt time.Time
 }
 
 type WebSession struct {

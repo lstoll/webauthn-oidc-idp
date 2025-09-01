@@ -92,6 +92,9 @@ type Client struct {
 	// TokenValidity overrides the default valitity time for ID/access tokens.
 	// Go duration format.
 	TokenValidity string `json:"tokenValidity"`
+	// RequiredGroups is a list of group names that the user must be a member of
+	// to access this client. If empty, no group membership is required.
+	RequiredGroups []string `json:"requiredGroups"`
 
 	// ParsedTokenValidity is the parsed token validity time, this happens at
 	// validation time.

@@ -39,12 +39,25 @@ func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest)
 		return nil, fmt.Errorf("client %s not found", req.ClientID)
 	}
 
+	// Get user's active group memberships for claims
+	groupMemberships, err := h.Queries.GetUserActiveGroupMemberships(ctx, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("get user group memberships: %w", err)
+	}
+
+	// Extract group names for claims
+	var groupNames []string
+	for _, membership := range groupMemberships {
+		groupNames = append(groupNames, membership.GroupName)
+	}
+
 	idc := jwt.IDClaims{
 		Extra: map[string]any{
 			"email":          user.Email,
 			"email_verified": true,
 			"picture":        gravatarURL(user.Email),
 			"name":           user.FullName,
+			"groups":         groupNames,
 		},
 	}
 
@@ -78,6 +91,18 @@ func (h *Handlers) UserinfoHandler(ctx context.Context, uireq *oauth2as.Userinfo
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
+	// Get user's active group memberships for claims
+	groupMemberships, err := h.Queries.GetUserActiveGroupMemberships(ctx, uireq.Subject)
+	if err != nil {
+		return nil, fmt.Errorf("get user group memberships: %w", err)
+	}
+
+	// Extract group names for claims
+	var groupNames []string
+	for _, membership := range groupMemberships {
+		groupNames = append(groupNames, membership.GroupName)
+	}
+
 	cl := jwt.IDClaims{
 		Issuer:  h.Issuer,
 		Subject: uireq.Subject,
@@ -87,6 +112,7 @@ func (h *Handlers) UserinfoHandler(ctx context.Context, uireq *oauth2as.Userinfo
 	cl.Extra["email_verified"] = true
 	cl.Extra["picture"] = gravatarURL(user.Email) // thank u tom
 	cl.Extra["name"] = user.FullName
+	cl.Extra["groups"] = groupNames
 	nsp := strings.Split(user.FullName, " ")
 	if len(nsp) == 2 {
 		cl.Extra["given_name"] = nsp[0]
