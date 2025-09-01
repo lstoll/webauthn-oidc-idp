@@ -15,10 +15,15 @@ import (
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
+// ClientSource defines the interface for retrieving client information
+type ClientSource interface {
+	GetClient(clientID string) (*clients.Client, bool)
+}
+
 type Handlers struct {
 	Issuer  string
 	Queries *queries.Queries
-	Clients *clients.StaticClients
+	Clients ClientSource
 }
 
 func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest) (*oauth2as.TokenResponse, error) {

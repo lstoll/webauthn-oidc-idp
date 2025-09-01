@@ -43,12 +43,18 @@ func (c *ServeCmd) Run(ctx context.Context, db *sql.DB, issuerURL *url.URL) erro
 	var g run.Group
 	g.Add(run.ContextHandler(ctx))
 
-	clients, err := clients.ParseStaticClients(c.StaticClientsFile.Contents)
+	staticClients, err := clients.ParseStaticClients(c.StaticClientsFile.Contents)
 	if err != nil {
 		return fmt.Errorf("loading clients: %v", err)
 	}
 
-	idph, err := NewIDP(ctx, &g, db, issuerURL, clients)
+	// Create dynamic clients
+	dynamicClients := &clients.DynamicClients{DB: queries.New(db)}
+
+	// Create multi-clients that combines both
+	multiClients := clients.NewMultiClients(staticClients, dynamicClients)
+
+	idph, err := NewIDP(ctx, &g, db, issuerURL, multiClients)
 	if err != nil {
 		return fmt.Errorf("start server: %v", err)
 	}
@@ -117,7 +123,7 @@ func (c *ServeCmd) Run(ctx context.Context, db *sql.DB, issuerURL *url.URL) erro
 }
 
 // NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL, clients *clients.StaticClients) (http.Handler, error) {
+func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL, clients *clients.MultiClients) (http.Handler, error) {
 	oidcHandles, err := initKeysets(ctx, sqldb)
 	if err != nil {
 		return nil, fmt.Errorf("initializing keysets: %w", err)
@@ -192,21 +198,6 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 
 	mgr.AddHandlers(websvr)
 
-	// svr := oidcServer{
-	// 	issuer:          issuerURL.String(),
-	// 	oidcsvr:         legacyoidcsvr,
-	// 	tokenValidFor:   15 * time.Minute,
-	// 	refreshValidFor: 12 * time.Hour,
-	// 	// upstreamPolicy:  []byte(ucp),
-	// 	webauthn: wn,
-	// 	db:       db,
-	// 	queries:  queries.New(sqldb),
-	// }
-
-	// TODO - web should handle all this.
-	fs := http.FileServer(http.FS(webcommon.Static))
-	websvr.HandleRaw("/public/", http.StripPrefix("/public/", fs))
-
 	auth := &auth.Authenticator{
 		Webauthn: wn,
 		Queries:  queries.New(sqldb),
@@ -227,10 +218,6 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 
 		TokenHandler:    oidchHandlers.TokenHandler,
 		UserinfoHandler: oidchHandlers.UserinfoHandler,
-
-		AuthorizationPath: "/authorization",
-		TokenPath:         "/token",
-		UserinfoPath:      "/userinfo",
 	}
 
 	oauth2asServer, err := oauth2as.NewServer(oauth2asConfig)
@@ -243,6 +230,7 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 	pmd.AuthorizationEndpoint = issuerURL.String() + "/authorization"
 	pmd.TokenEndpoint = issuerURL.String() + "/token"
 	pmd.UserinfoEndpoint = issuerURL.String() + "/userinfo"
+	pmd.RegistrationEndpoint = fmt.Sprintf("%s/registerClient", issuerURL.String())
 
 	disco, err := discovery.NewOIDCConfigurationHandlerWithKeyset(pmd, oidcHandles)
 	if err != nil {
@@ -258,6 +246,9 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 	}
 
 	oidcs.AddHandlers(websvr)
+
+	// Add dynamic client registration endpoint
+	clients.AddHandlers(websvr)
 
 	// This handles the case where existing running software has discovered
 	// /auth as the endpoint, but we renamed it. Just redirect to the new
