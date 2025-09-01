@@ -16,3 +16,4 @@ go.work*
 fly.toml
 Dockerfile.fly
 /clients.fly.hujson
+/.cursor

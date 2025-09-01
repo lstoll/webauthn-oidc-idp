@@ -5,12 +5,15 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
+	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
+	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
 func init() {
@@ -29,6 +32,8 @@ type sessionAuthRequests struct {
 type Server struct {
 	Auth     *auth.Authenticator
 	OAuth2AS *oauth2as.Server
+	DB       *queries.Queries
+	Clients  *clients.StaticClients
 }
 
 func (s *Server) AddHandlers(r *web.Server) {
@@ -107,6 +112,32 @@ func (s *Server) HandleAuthorizationRequestReturn(ctx context.Context, w web.Res
 }
 
 func (s Server) createGrant(ctx context.Context, request *oauth2as.AuthRequest, userID uuid.UUID) (returnTo string, _ error) {
+	// Get client configuration
+	client, found := s.Clients.GetClient(request.ClientID)
+	if !found {
+		return "", httperror.BadRequestErrf("client %s not found", request.ClientID)
+	}
+
+	// Check required groups if any are specified
+	if len(client.RequiredGroups) > 0 {
+		// Get user's active group memberships
+		groupMemberships, err := s.DB.GetUserActiveGroupMemberships(ctx, userID.String())
+		if err != nil {
+			return "", fmt.Errorf("get user group memberships: %w", err)
+		}
+
+		// Check if user is in any of the required groups
+		hasRequiredGroup := slices.ContainsFunc(client.RequiredGroups, func(requiredGroup string) bool {
+			return slices.ContainsFunc(groupMemberships, func(membership queries.GetUserActiveGroupMembershipsRow) bool {
+				return membership.GroupName == requiredGroup
+			})
+		})
+
+		if !hasRequiredGroup {
+			return "", httperror.ForbiddenErrf("user is not a member of any required groups for client %s", request.ClientID)
+		}
+	}
+
 	grant := &oauth2as.AuthGrant{
 		Request: request,
 		UserID:  userID.String(),

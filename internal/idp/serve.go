@@ -240,6 +240,8 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 	oidcs := oidcsvr.Server{
 		Auth:     auth,
 		OAuth2AS: oauth2asServer,
+		DB:       queries.New(sqldb),
+		Clients:  clients,
 	}
 
 	oidcs.AddHandlers(websvr)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
+	"github.com/lstoll/webauthn-oidc-idp/internal/admincli"
 	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,10 +57,16 @@ var rootCmd = struct {
 
 	Version kong.VersionFlag `help:"Print version information"`
 
-	Serve           idp.ServeCmd           `cmd:"" help:"Serve the IDP server."`
-	EnrollUser      idp.EnrollUserCmd      `cmd:"" help:"Enroll a user into the system."`
-	AddCredential   idp.AddCredentialCmd   `cmd:"" help:"Add a credential to a user."`
-	ListCredentials idp.ListCredentialsCmd `cmd:"" help:"List credentials for a user."`
+	Serve               idp.ServeCmd                    `cmd:"" help:"Serve the IDP server."`
+	EnrollUser          admincli.EnrollUserCmd          `cmd:"" help:"Enroll a user into the system."`
+	AddCredential       admincli.AddCredentialCmd       `cmd:"" help:"Add a credential to a user."`
+	ListCredentials     admincli.ListCredentialsCmd     `cmd:"" help:"List credentials for a user."`
+	CreateGroup         admincli.CreateGroupCmd         `cmd:"" help:"Create a new group."`
+	ListGroups          admincli.ListGroupsCmd          `cmd:"" help:"List groups."`
+	AddUserToGroup      admincli.AddUserToGroupCmd      `cmd:"" help:"Add a user to a group."`
+	RemoveUserFromGroup admincli.RemoveUserFromGroupCmd `cmd:"" help:"Remove a user from a group."`
+	ListUserGroups      admincli.ListUserGroupsCmd      `cmd:"" help:"List groups for a user."`
+	ListUsers           admincli.ListUsersCmd           `cmd:"" help:"List all users."`
 }{}
 
 func main() {
@@ -130,5 +137,4 @@ func main() {
 	clictx.Bind(db)
 	clictx.Bind(issuerURL)
 	clictx.FatalIfErrorf(clictx.Run())
-
 }
