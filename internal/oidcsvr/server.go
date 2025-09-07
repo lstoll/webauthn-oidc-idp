@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lstoll/oauth2ext/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as/discovery"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
@@ -30,20 +31,21 @@ type sessionAuthRequests struct {
 }
 
 type Server struct {
-	Auth     *auth.Authenticator
-	OAuth2AS *oauth2as.Server
-	DB       *queries.Queries
-	Clients  *clients.StaticClients
+	Auth      *auth.Authenticator
+	OAuth2AS  *oauth2as.Server
+	Discovery *discovery.OIDCConfigurationHandler
+	DB        *queries.Queries
+	Clients   *clients.StaticClients
 }
 
 func (s *Server) AddHandlers(r *web.Server) {
 	r.Handle("GET /authorization", web.BrowserHandlerFunc(s.HandleAuthorizationRequest), auth.SkipAuthn)
 	r.Handle("GET /resumeAuthorization", web.BrowserHandlerFunc(s.HandleAuthorizationRequestReturn), auth.SkipAuthn)
 
-	r.Handle("POST /token", s.OAuth2AS, auth.SkipAuthn)
-	r.Handle("GET /userinfo", s.OAuth2AS, auth.SkipAuthn)
-	r.Handle("GET /.well-known/openid-configuration", s.OAuth2AS, auth.SkipAuthn)
-	r.Handle("GET /.well-known/jwks.json", s.OAuth2AS, auth.SkipAuthn)
+	r.Handle("POST /token", http.HandlerFunc(s.OAuth2AS.TokenHandler), auth.SkipAuthn)
+	r.Handle("GET /userinfo", http.HandlerFunc(s.OAuth2AS.UserinfoHandler), auth.SkipAuthn)
+	r.Handle("GET /.well-known/openid-configuration", s.Discovery, auth.SkipAuthn)
+	r.Handle("GET /.well-known/jwks.json", s.Discovery, auth.SkipAuthn)
 }
 
 func (s *Server) HandleAuthorizationRequest(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
