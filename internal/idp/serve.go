@@ -14,6 +14,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/lstoll/oauth2ext/oauth2as"
+	"github.com/lstoll/oauth2ext/oauth2as/discovery"
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/proxyhdrs"
@@ -237,11 +238,23 @@ func NewIDP(ctx context.Context, g *run.Group, sqldb *sql.DB, issuerURL *url.URL
 		return nil, fmt.Errorf("failed to create oauth2as server: %w", err)
 	}
 
+	pmd := discovery.DefaultCoreMetadata(issuerURL.String())
+	pmd.IDTokenSigningAlgValuesSupported = oidcHandles.SupportedAlgorithms()
+	pmd.AuthorizationEndpoint = issuerURL.String() + "/authorization"
+	pmd.TokenEndpoint = issuerURL.String() + "/token"
+	pmd.UserinfoEndpoint = issuerURL.String() + "/userinfo"
+
+	disco, err := discovery.NewOIDCConfigurationHandlerWithKeyset(pmd, oidcHandles)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create oidc configuration handler: %w", err)
+	}
+
 	oidcs := oidcsvr.Server{
-		Auth:     auth,
-		OAuth2AS: oauth2asServer,
-		DB:       queries.New(sqldb),
-		Clients:  clients,
+		Auth:      auth,
+		OAuth2AS:  oauth2asServer,
+		Discovery: disco,
+		DB:        queries.New(sqldb),
+		Clients:   clients,
 	}
 
 	oidcs.AddHandlers(websvr)

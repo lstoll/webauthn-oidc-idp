@@ -54,6 +54,8 @@ github.com/lstoll/oauth2ext v0.0.0-20250831201922-bf0f4653dd3a h1:iJ/hVWJJSe4BZd
 github.com/lstoll/oauth2ext v0.0.0-20250831201922-bf0f4653dd3a/go.mod h1:pFiKHlRG1n1IRE4TCDgNtR6kJ3uQnfYI4YhUaa6CfiQ=
 github.com/lstoll/oauth2ext v0.0.0-20250831235002-fe44b9a2a708 h1:MFFTimnwlDzhg9Vx6j2RKz/YSfws5vOOaQk315/jX9E=
 github.com/lstoll/oauth2ext v0.0.0-20250831235002-fe44b9a2a708/go.mod h1:pFiKHlRG1n1IRE4TCDgNtR6kJ3uQnfYI4YhUaa6CfiQ=
+github.com/lstoll/oauth2ext v1.0.0-beta.8.0.20250907195832-f168252453d2 h1:Ue6OAGO/heex2ZtfvNoT6hzI7QTX8Cx0ABVSgHUjD34=
+github.com/lstoll/oauth2ext v1.0.0-beta.8.0.20250907195832-f168252453d2/go.mod h1:pFiKHlRG1n1IRE4TCDgNtR6kJ3uQnfYI4YhUaa6CfiQ=
 github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215 h1:fj/z3BLXwgBJ9oWsrZNbHN98ffwajmKP2JNg+OQjsC8=
 github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215/go.mod h1:x9r6po7qyhQIvVUZSQjs0VwsCfR1sgg9xAPpvyPkfGE=
 github.com/lstoll/web v0.0.0-20250831224134-6a5c6329eedb h1:W4NadvxayfCjCB9mmuBENiJ9FJFr5u2OhBZTjQiiNZg=
