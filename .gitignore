@@ -1,9 +1,3 @@
-/bin
-/.aws-sam
-/samconfig.toml
-/env.json
-/dynamodbdata
-/dynamodata
 /.env
 go.work*
 .DS_Store

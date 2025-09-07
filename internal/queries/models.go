@@ -20,6 +20,15 @@ type Credential struct {
 	CreatedAt      time.Time
 }
 
+type DynamicClient struct {
+	ID               string
+	ClientSecretHash string
+	RegistrationBlob string
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
+	Active           bool
+}
+
 type Grant struct {
 	ID            uuid.UUID
 	AuthCode      []byte

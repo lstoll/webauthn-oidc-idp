@@ -13,7 +13,6 @@ import (
 	"github.com/lstoll/web"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
-	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
 	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 )
 
@@ -35,7 +34,7 @@ type Server struct {
 	OAuth2AS  *oauth2as.Server
 	Discovery *discovery.OIDCConfigurationHandler
 	DB        *queries.Queries
-	Clients   *clients.StaticClients
+	Clients   ClientSource
 }
 
 func (s *Server) AddHandlers(r *web.Server) {
