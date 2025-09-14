@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"html/template"
 
-	"github.com/lstoll/web"
-	"github.com/lstoll/web/templateutil"
-	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
+	"lds.li/web"
+	"lds.li/web/templateutil"
+	"lds.li/webauthn-oidc-idp/internal/webcommon"
 )
 
 //go:embed templates/*

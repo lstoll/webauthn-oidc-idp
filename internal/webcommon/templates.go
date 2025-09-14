@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"log"
 
-	"github.com/lstoll/web"
+	"lds.li/web"
 )
 
 //go:embed templates/*

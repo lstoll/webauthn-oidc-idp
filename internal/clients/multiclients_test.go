@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lstoll/oauth2ext/oidcclientreg"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	_ "github.com/mattn/go-sqlite3"
+	"lds.li/oauth2ext/oidcclientreg"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 func TestMultiClients_GetClient(t *testing.T) {

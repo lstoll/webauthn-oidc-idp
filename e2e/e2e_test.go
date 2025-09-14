@@ -25,16 +25,16 @@ import (
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 	"github.com/google/uuid"
-	clitoken "github.com/lstoll/oauth2ext/clitoken"
-	"github.com/lstoll/oauth2ext/oidc"
-	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
-	"github.com/lstoll/webauthn-oidc-idp/internal/admincli"
-	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
-	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/run"
 	"golang.org/x/oauth2"
+	clitoken "lds.li/oauth2ext/clitoken"
+	"lds.li/oauth2ext/oidc"
+	dbpkg "lds.li/webauthn-oidc-idp/db"
+	"lds.li/webauthn-oidc-idp/internal/admincli"
+	"lds.li/webauthn-oidc-idp/internal/clients"
+	"lds.li/webauthn-oidc-idp/internal/idp"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 // browserStepTimeout returns a duration to timeout browser operations. It defaults

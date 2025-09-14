@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 type ListUsersCmd struct {

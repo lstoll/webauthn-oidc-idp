@@ -31,10 +31,10 @@ go run ./cmd/webauthn-oidc-idp \
 
 ```bash
 # Test with OIDC example RP
-go run github.com/lstoll/oauth2ext/cmd/oidc-example-rp@latest
+go run lds.li/oauth2ext/cmd/oidc-example-rp@latest
 
 # Test with OIDC CLI
-go run github.com/lstoll/oauth2ext/cmd/oidccli@latest \
+go run lds.li/oauth2ext/cmd/oidccli@latest \
   -issuer=https://localhost:8085 \
   -client-id=cli \
   info

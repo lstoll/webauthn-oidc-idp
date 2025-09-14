@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/lstoll/web/session"
+	"lds.li/web/session"
 )
 
 const (
