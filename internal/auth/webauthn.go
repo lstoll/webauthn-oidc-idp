@@ -13,11 +13,11 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/lstoll/web"
-	"github.com/lstoll/web/httperror"
-	"github.com/lstoll/web/session"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
-	"github.com/lstoll/webauthn-oidc-idp/internal/webcommon"
+	"lds.li/web"
+	"lds.li/web/httperror"
+	"lds.li/web/session"
+	"lds.li/webauthn-oidc-idp/internal/queries"
+	"lds.li/webauthn-oidc-idp/internal/webcommon"
 )
 
 func init() {

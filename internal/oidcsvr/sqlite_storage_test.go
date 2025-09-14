@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2ext/oauth2as"
-	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
 	_ "github.com/mattn/go-sqlite3"
+	"lds.li/oauth2ext/oauth2as"
+	dbpkg "lds.li/webauthn-oidc-idp/db"
 )
 
 func TestSQLiteStorage(t *testing.T) {

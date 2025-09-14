@@ -8,12 +8,12 @@ import (
 	"slices"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2ext/oauth2as"
-	"github.com/lstoll/oauth2ext/oauth2as/discovery"
-	"github.com/lstoll/web"
-	"github.com/lstoll/web/httperror"
-	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"lds.li/oauth2ext/oauth2as"
+	"lds.li/oauth2ext/oauth2as/discovery"
+	"lds.li/web"
+	"lds.li/web/httperror"
+	"lds.li/webauthn-oidc-idp/internal/auth"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 func init() {

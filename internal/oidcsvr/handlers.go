@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2ext/jwt"
-	"github.com/lstoll/oauth2ext/oauth2as"
-	"github.com/lstoll/webauthn-oidc-idp/internal/clients"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"lds.li/oauth2ext/jwt"
+	"lds.li/oauth2ext/oauth2as"
+	"lds.li/webauthn-oidc-idp/internal/clients"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 // ClientSource defines the interface for retrieving client information

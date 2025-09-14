@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lstoll/oauth2ext/jwt"
-	"github.com/lstoll/oauth2ext/oauth2as"
-	"github.com/lstoll/oauth2ext/oidcclientreg"
-	"github.com/lstoll/web"
-	"github.com/lstoll/webauthn-oidc-idp/internal/auth"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"lds.li/oauth2ext/jwt"
+	"lds.li/oauth2ext/oauth2as"
+	"lds.li/oauth2ext/oidcclientreg"
+	"lds.li/web"
+	"lds.li/webauthn-oidc-idp/internal/auth"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 type DynamicClients struct {

@@ -3,9 +3,9 @@ package clients
 import (
 	"context"
 
-	"github.com/lstoll/oauth2ext/oauth2as"
-	"github.com/lstoll/oauth2ext/oidcclientreg"
-	"github.com/lstoll/web"
+	"lds.li/oauth2ext/oauth2as"
+	"lds.li/oauth2ext/oidcclientreg"
+	"lds.li/web"
 )
 
 // MultiClients combines multiple client sources, with static clients taking precedence

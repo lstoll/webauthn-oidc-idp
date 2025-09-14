@@ -1,4 +1,4 @@
-module github.com/lstoll/webauthn-oidc-idp
+module lds.li/webauthn-oidc-idp
 
 go 1.25
 
@@ -9,18 +9,18 @@ require (
 	github.com/descope/virtualwebauthn v1.0.3
 	github.com/go-webauthn/webauthn v0.13.4
 	github.com/google/uuid v1.6.0
-	github.com/lstoll/oauth2ext v1.0.0-beta.8.0.20250907205109-f0f8278c7c6c
 	github.com/lstoll/tinkrotate v0.0.0-20250628134202-3c7c777eb215
-	github.com/lstoll/web v0.0.0-20250831224134-6a5c6329eedb
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/oklog/run v1.2.0
-	github.com/prometheus/client_golang v1.23.0
-	github.com/prometheus/common v0.65.0
+	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/common v0.66.1
 	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
 	github.com/tink-crypto/tink-go/v2 v2.4.0
-	golang.org/x/oauth2 v0.30.0
-	golang.org/x/term v0.34.0
-	google.golang.org/protobuf v1.36.8
+	golang.org/x/oauth2 v0.31.0
+	golang.org/x/term v0.35.0
+	google.golang.org/protobuf v1.36.9
+	lds.li/oauth2ext v0.0.0-20250914220420-caee5f388b4a
+	lds.li/web v0.0.0-20250914000751-5c4fa2ecb9d7
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.2 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250211171154-1ae217ad3535 // indirect
-	github.com/go-webauthn/x v0.1.24 // indirect
+	github.com/go-webauthn/x v0.1.25 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
@@ -41,8 +41,9 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/crypto v0.41.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.3 // indirect
+	golang.org/x/crypto v0.42.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
 )
 
 replace crawshaw.dev/jsonfile => github.com/sr/jsonfile v0.0.0-20240301210704-69e8a5b5b148

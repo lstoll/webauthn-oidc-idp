@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lstoll/oauth2ext/jwt"
-	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/tailscale/hujson"
+	"lds.li/oauth2ext/jwt"
+	"lds.li/oauth2ext/oauth2as"
 )
 
 // StaticClients implements the oauth2as.ClientSource against a static list of clients.

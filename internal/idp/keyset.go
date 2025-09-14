@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"time"
 
-	oidcjwt "github.com/lstoll/oauth2ext/jwt"
-	"github.com/lstoll/oauth2ext/oauth2as"
 	"github.com/lstoll/tinkrotate"
 	tinkrotatev1 "github.com/lstoll/tinkrotate/proto/tinkrotate/v1"
 	tinkjwt "github.com/tink-crypto/tink-go/v2/jwt"
 	"github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+	oidcjwt "lds.li/oauth2ext/jwt"
+	"lds.li/oauth2ext/oauth2as"
 )
 
 type Keyset struct {

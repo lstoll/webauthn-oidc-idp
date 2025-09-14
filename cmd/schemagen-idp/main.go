@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/lstoll/webauthn-oidc-idp/db"
 	_ "github.com/mattn/go-sqlite3"
+	"lds.li/webauthn-oidc-idp/db"
 )
 
 func main() {

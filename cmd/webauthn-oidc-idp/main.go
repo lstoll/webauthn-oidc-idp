@@ -11,14 +11,14 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
-	dbpkg "github.com/lstoll/webauthn-oidc-idp/db"
-	"github.com/lstoll/webauthn-oidc-idp/internal/admincli"
-	"github.com/lstoll/webauthn-oidc-idp/internal/idp"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	promversion "github.com/prometheus/common/version"
 	"golang.org/x/term"
+	dbpkg "lds.li/webauthn-oidc-idp/db"
+	"lds.li/webauthn-oidc-idp/internal/admincli"
+	"lds.li/webauthn-oidc-idp/internal/idp"
 )
 
 const progname = "webauthn-oidc-idp"

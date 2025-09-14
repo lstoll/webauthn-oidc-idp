@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"github.com/lstoll/webauthn-oidc-idp/internal/queries"
+	"lds.li/webauthn-oidc-idp/internal/queries"
 )
 
 type WebAuthnUser struct {
