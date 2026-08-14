@@ -2,67 +2,42 @@ package admincli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"text/tabwriter"
 
-	"lds.li/passidp/internal/adminapi"
+	"lds.li/passidp/internal/admin"
+	"lds.li/passidp/internal/config"
 )
 
 type ListCredentialsCmd struct {
 	Output io.Writer `kong:"-"`
 }
 
-type listCredentialsResponse struct {
-	Credentials []credentialInfo `json:"credentials"`
-}
-
-type credentialInfo struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	UserID    string `json:"user_id"`
-	UserName  string `json:"user_name"`
-	UserEmail string `json:"user_email"`
-	CreatedAt string `json:"created_at"`
-}
-
-func (c *ListCredentialsCmd) Run(ctx context.Context, adminSocket adminapi.SocketPath) error {
+func (c *ListCredentialsCmd) Run(ctx context.Context, cfg *config.Config, paths Paths) error {
 	if c.Output == nil {
 		c.Output = os.Stdout
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://unix/admin/credentials", nil)
+	credStore, err := admin.OpenCredentials(paths.CredentialStorePath)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return err
 	}
 
-	resp, err := adminapi.NewClient(adminSocket).Do(req)
+	credentials, err := admin.ListCredentials(cfg, credStore)
 	if err != nil {
-		return fmt.Errorf("call admin API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("admin API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		return err
 	}
 
-	var listResp listCredentialsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-
-	if len(listResp.Credentials) == 0 {
+	if len(credentials) == 0 {
 		fmt.Fprintf(c.Output, "No credentials found.\n")
 		return nil
 	}
 
 	w := tabwriter.NewWriter(c.Output, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "ID\tName\tUser ID\tUser Name\tUser Email\tCreated At\n")
-	for _, cred := range listResp.Credentials {
+	for _, cred := range credentials {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			cred.ID,
 			cred.Name,

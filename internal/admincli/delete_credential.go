@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
-	"lds.li/passidp/internal/adminapi"
+	"github.com/google/uuid"
+	"lds.li/passidp/internal/admin"
 )
 
 type DeleteCredentialCmd struct {
@@ -16,29 +16,23 @@ type DeleteCredentialCmd struct {
 	Output io.Writer `kong:"-"`
 }
 
-func (c *DeleteCredentialCmd) Run(ctx context.Context, adminSocket adminapi.SocketPath) error {
+func (c *DeleteCredentialCmd) Run(ctx context.Context, paths Paths) error {
 	if c.Output == nil {
 		c.Output = os.Stdout
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", fmt.Sprintf("http://unix/admin/credentials/%s", c.CredentialID), nil)
+	credentialID, err := uuid.Parse(c.CredentialID)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return fmt.Errorf("invalid credential_id: %w", err)
 	}
 
-	resp, err := adminapi.NewClient(adminSocket).Do(req)
+	credStore, err := admin.OpenCredentials(paths.CredentialStorePath)
 	if err != nil {
-		return fmt.Errorf("call admin API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("credential not found")
+		return err
 	}
 
-	if resp.StatusCode != http.StatusNoContent {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("admin API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	if err := admin.DeleteCredential(credStore, credentialID); err != nil {
+		return err
 	}
 
 	fmt.Fprintf(c.Output, "Credential deleted successfully.\n")

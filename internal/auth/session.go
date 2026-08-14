@@ -4,44 +4,36 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
-	"lds.li/web/session"
+	"lds.li/passidp/internal/appsession"
 )
 
-const (
-	authSessSessionKey = "auth-sess"
-	authFlowValidFor   = 10 * time.Minute
-)
-
-// authSess is the session data for authentication
-type authSess struct {
-	LoggedinUserID uuid.NullUUID
-	ExpiresAt      time.Time
-	Flows          map[string]authSessFlow
-}
-
-type authSessFlow struct {
-	ID       string
-	ReturnTo string
-	// WebauthnData is the data for the webauthn login, for this flow.
-	WebauthnData *webauthn.SessionData
-	StartedAt    time.Time
-}
+const authFlowValidFor = 10 * time.Minute
 
 // UserIDFromContext returns the logged in user from the session accessible in
 // the context.
 func UserIDFromContext(ctx context.Context) (*uuid.UUID, bool) {
-	sess := session.MustFromContext(ctx)
-	as, ok := sess.Get(authSessSessionKey).(*authSess)
-	if !ok {
-		return nil, false
-	}
-	if !as.LoggedinUserID.Valid {
+	as := appsession.FromContext(ctx).Get().Auth
+	if !as.LoggedInUserID.Valid {
 		return nil, false
 	}
 	if time.Now().After(as.ExpiresAt) {
 		return nil, false
 	}
-	return &as.LoggedinUserID.UUID, as.LoggedinUserID.Valid
+	return &as.LoggedInUserID.UUID, true
+}
+
+// AuthTimeFromContext returns when the user last actively authenticated.
+func AuthTimeFromContext(ctx context.Context) (time.Time, bool) {
+	as := appsession.FromContext(ctx).Get().Auth
+	if !as.LoggedInUserID.Valid {
+		return time.Time{}, false
+	}
+	if time.Now().After(as.ExpiresAt) {
+		return time.Time{}, false
+	}
+	if as.AuthenticatedAt.IsZero() {
+		return time.Time{}, false
+	}
+	return as.AuthenticatedAt, true
 }

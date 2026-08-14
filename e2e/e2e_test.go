@@ -26,7 +26,6 @@ import (
 	clitoken "lds.li/oauth2ext/clitoken"
 	"lds.li/oauth2ext/oidc"
 	"lds.li/oauth2ext/provider"
-	"lds.li/passidp/internal/adminapi"
 	"lds.li/passidp/internal/admincli"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/idp"
@@ -94,9 +93,13 @@ func TestE2E(t *testing.T) {
 	})
 
 	/* start an instance of the server */
-	credstorePath := t.TempDir() + "/credential-store.json"
-	statePath := t.TempDir() + "/state.bolt"
-	adminSocketPath := adminapi.SocketPath(t.TempDir() + "/admin.sock")
+	dataDir := t.TempDir()
+	credstorePath := dataDir + "/credential-store.json"
+	statePath := dataDir + "/state.sqlite"
+	storePaths := admincli.Paths{
+		CredentialStorePath: credstorePath,
+		StatePath:           statePath,
+	}
 
 	port := mustAllocatePort()
 
@@ -146,13 +149,11 @@ func TestE2E(t *testing.T) {
 		})
 
 		idpCmd := &idp.ServeCmd{
-			ListenAddr:          net.JoinHostPort("localhost", port),
-			CertFile:            certPath,
-			KeyFile:             keyPath,
-			CredentialStorePath: credstorePath,
-			StatePath:           statePath,
+			ListenAddr: net.JoinHostPort("localhost", port),
+			CertFile:   certPath,
+			KeyFile:    keyPath,
 		}
-		serveErr <- idpCmd.Run(serveCtx, config, adminSocketPath)
+		serveErr <- idpCmd.Run(serveCtx, config, storePaths)
 	}()
 
 	select {
@@ -217,7 +218,7 @@ func TestE2E(t *testing.T) {
 			UserID: testUserID,
 			Output: &enrollBuf,
 		}
-		if err := addCredCmd.Run(ctx, config, adminSocketPath); err != nil {
+		if err := addCredCmd.Run(ctx, config, storePaths); err != nil {
 			t.Fatalf("enrolling user: %v", err)
 		}
 
@@ -283,11 +284,11 @@ func TestE2E(t *testing.T) {
 			ConfirmationKey: confirmationKey,
 			Output:          &confirmBuf,
 		}
-		if err := confirmCmd.Run(ctx, adminSocketPath); err != nil {
+		if err := confirmCmd.Run(ctx, storePaths); err != nil {
 			t.Fatalf("confirming enrollment: %v", err)
 		}
 
-		credStore, err := storage.OpenCredentialStore(credstorePath)
+		credStore, err := storage.NewCredentialFile(credstorePath)
 		if err != nil {
 			t.Fatalf("open credential store: %v", err)
 		}

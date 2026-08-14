@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,7 +14,6 @@ import (
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	promversion "github.com/prometheus/common/version"
 	"golang.org/x/term"
-	"lds.li/passidp/internal/adminapi"
 	"lds.li/passidp/internal/admincli"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/idp"
@@ -50,8 +50,8 @@ var rootCmd = struct {
 
 	Version kong.VersionFlag `help:"Print version information"`
 
-	ConfigFile      kong.NamedFileContentFlag `name:"config" required:"" env:"IDP_CONFIG_FILE" help:"Path to the config file."`
-	AdminSocketPath string                    `env:"IDP_ADMIN_SOCKET_PATH" help:"Path to Unix socket to serve the admin API (optional for serve)."`
+	ConfigFile kong.NamedFileContentFlag `name:"config" required:"" env:"IDP_CONFIG_FILE" help:"Path to the config file."`
+	Paths      admincli.Paths            `embed:""`
 
 	Serve             idp.ServeCmd                  `cmd:"" help:"Serve the IDP server."`
 	ValidateConfig    ValidateConfigCmd             `cmd:"" help:"Validate the configuration file."`
@@ -64,7 +64,6 @@ var rootCmd = struct {
 type ValidateConfigCmd struct{}
 
 func (c *ValidateConfigCmd) Run() error {
-	// Everything is already validated in main
 	slog.Info("Configuration and policies are valid")
 	return nil
 }
@@ -76,7 +75,6 @@ func main() {
 	go func() {
 		<-sigCh
 		cancel()
-		// Exit immediately on second signal
 		<-sigCh
 		os.Exit(1)
 	}()
@@ -101,10 +99,8 @@ func main() {
 	}
 	slog.SetDefault(slog.New(handler))
 
-	if clictx.Selected().Name != "serve" && clictx.Selected().Name != "validate-config" {
-		if rootCmd.AdminSocketPath == "" {
-			clictx.Fatalf("admin socket path is required")
-		}
+	if err := validatePaths(clictx.Selected().Name, rootCmd.Paths); err != nil {
+		clictx.FatalIfErrorf(err)
 	}
 
 	cfg, err := config.ParseConfig(rootCmd.ConfigFile)
@@ -117,8 +113,33 @@ func main() {
 	}
 
 	clictx.Bind(cfg)
-	clictx.Bind(adminapi.SocketPath(rootCmd.AdminSocketPath))
+	clictx.Bind(rootCmd.Paths)
 
 	clictx.BindTo(ctx, (*context.Context)(nil))
 	clictx.FatalIfErrorf(clictx.Run())
+}
+
+func validatePaths(command string, paths admincli.Paths) error {
+	switch command {
+	case "validate-config":
+		return nil
+	case "serve", "confirm-credential":
+		if paths.CredentialStorePath == "" {
+			return fmt.Errorf("credential store path is required")
+		}
+		if paths.StatePath == "" {
+			return fmt.Errorf("state path is required")
+		}
+	case "add-credential":
+		if paths.StatePath == "" {
+			return fmt.Errorf("state path is required")
+		}
+	case "list-credentials", "delete-credential":
+		if paths.CredentialStorePath == "" {
+			return fmt.Errorf("credential store path is required")
+		}
+	default:
+		return fmt.Errorf("unknown command %q", command)
+	}
+	return nil
 }

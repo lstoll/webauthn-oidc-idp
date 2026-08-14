@@ -19,8 +19,7 @@ type Client struct {
 	Public bool `json:"public"`
 	// SkipPKCE indicates that this client should not be required to use PKCE.
 	SkipPKCE bool `json:"skipPKCE"`
-	// UseRS256 indicates that this client should use RS256 for tokens/userinfo,
-	// rather than defaulting to ES256
+	// UseRS256 indicates that this client should use RS256 for signed tokens.
 	UseRS256 bool `json:"useRS256"`
 	// ClaimsPolicy is a CEL expression that can be used to modify the claims
 	// for this client.

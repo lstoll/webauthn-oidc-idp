@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"sync"
 	"time"
 
 	"crawshaw.dev/jsonfile"
@@ -33,29 +35,86 @@ type Credential struct {
 	CreatedAt time.Time `json:"created_at,omitzero"`
 }
 
-// OpenCredentialStore opens an existing credential store at the given path. If
-// the file does not exist, it will return an error.
-func OpenCredentialStore(path string) (*jsonfile.JSONFile[CredentialStore], error) {
-	s, err := jsonfile.Load[CredentialStore](path)
-	if err != nil {
-		return nil, fmt.Errorf("load credential store from %s: %w", path, err)
-	}
-	return s, nil
+// CredentialFile persists credentials to a JSON file and reloads when the
+// file changes on disk, so external tools can update credentials while the
+// server is running. The file is created lazily on the first write.
+type CredentialFile struct {
+	path string
+	mu   sync.Mutex
+	file *jsonfile.JSONFile[CredentialStore]
+	mod  time.Time
 }
 
-// NewCredentialStore creates a new credential store at the given path. If the
-// file does not exist, it will be created. If the file exists, it will be
-// loaded.
-func NewCredentialStore(path string) (*jsonfile.JSONFile[CredentialStore], error) {
-	s, err := jsonfile.Load[CredentialStore](path)
+// NewCredentialFile opens an existing credential file or starts an empty
+// in-memory store. The file is created on the first write.
+func NewCredentialFile(path string) (*CredentialFile, error) {
+	file, err := openCredentialFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	cf := &CredentialFile{path: path, file: file}
+	if info, err := os.Stat(path); err == nil {
+		cf.mod = info.ModTime()
+	}
+	return cf, nil
+}
+
+// Read calls fn with the current credential store contents.
+func (c *CredentialFile) Read(fn func(data *CredentialStore)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reloadIfChanged()
+	c.file.Read(fn)
+}
+
+// Write calls fn with a copy of the credential store, then persists changes.
+func (c *CredentialFile) Write(fn func(*CredentialStore) error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reloadIfChanged()
+	if err := c.file.Write(fn); err != nil {
+		return err
+	}
+	c.refreshModTime()
+	return nil
+}
+
+func (c *CredentialFile) reloadIfChanged() {
+	info, err := os.Stat(c.path)
+	if err != nil {
+		return
+	}
+	if !info.ModTime().After(c.mod) {
+		return
+	}
+	file, err := jsonfile.Load[CredentialStore](c.path)
+	if err != nil {
+		return
+	}
+	c.file = file
+	c.mod = info.ModTime()
+}
+
+func (c *CredentialFile) refreshModTime() {
+	info, err := os.Stat(c.path)
+	if err != nil {
+		return
+	}
+	c.mod = info.ModTime()
+}
+
+func openCredentialFile(path string) (*jsonfile.JSONFile[CredentialStore], error) {
+	file, err := jsonfile.Load[CredentialStore](path)
 	if errors.Is(err, fs.ErrNotExist) {
-		s, err = jsonfile.New[CredentialStore](path)
+		file, err = jsonfile.New[CredentialStore](path)
 		if err != nil {
 			return nil, fmt.Errorf("create credential store: %w", err)
 		}
-		return s, nil
-	} else if err != nil {
+		return file, nil
+	}
+	if err != nil {
 		return nil, fmt.Errorf("load credential store from %s: %w", path, err)
 	}
-	return s, nil
+	return file, nil
 }

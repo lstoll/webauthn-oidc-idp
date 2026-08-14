@@ -13,10 +13,8 @@ import (
 	"lds.li/oauth2ext/oidcclientreg"
 )
 
-
 func TestDynamicClients_GetClient(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dc := &DynamicClients{DB: db}
 
@@ -39,10 +37,8 @@ func TestDynamicClients_GetClient(t *testing.T) {
 	}
 }
 
-
 func TestDynamicClients_registerClient(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dc := &DynamicClients{DB: db}
 
@@ -94,7 +90,7 @@ func TestDynamicClients_registerClient(t *testing.T) {
 
 	// Verify the registration blob contains the request data
 	var storedReq oidcclientreg.ClientRegistrationRequest
-	if err := json.Unmarshal([]byte(dbClient.RegistrationBlob), &storedReq); err != nil {
+	if err := json.Unmarshal(dbClient.RegistrationBlob, &storedReq); err != nil {
 		t.Fatalf("failed to unmarshal stored registration: %v", err)
 	}
 
@@ -110,8 +106,7 @@ func TestDynamicClients_registerClient(t *testing.T) {
 }
 
 func TestDynamicClients_validateClientRegistration(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dc := &DynamicClients{DB: db}
 
@@ -235,8 +230,7 @@ func TestDynamicClients_validateClientRegistration(t *testing.T) {
 }
 
 func TestDynamicClients_shouldEnforcePKCE(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dc := &DynamicClients{DB: db}
 
@@ -302,8 +296,7 @@ func TestDynamicClients_shouldEnforcePKCE(t *testing.T) {
 }
 
 func TestDynamicClients_GetClientMetadata(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dc := &DynamicClients{DB: db}
 
@@ -350,8 +343,7 @@ func TestDynamicClients_GetClientMetadata(t *testing.T) {
 }
 
 func TestDynamicClients_ClientOpts(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dc := &DynamicClients{DB: db}
 
@@ -373,7 +365,7 @@ func TestDynamicClients_ClientOpts(t *testing.T) {
 		t.Errorf("expected no options for nonexistent dynamic client, got %d options", len(opts))
 	}
 
-	// Test with valid dynamic client - default algorithm (RS256)
+	// Test with valid dynamic client - default algorithm (ES256)
 	req := defaultTestClientRequest()
 	req.ClientName = "" // Remove ClientName for this test
 	clientID := "dc.test-opts-default"
@@ -389,19 +381,15 @@ func TestDynamicClients_ClientOpts(t *testing.T) {
 		t.Errorf("expected 2 options (signing alg + PKCE skip), got %d", len(opts))
 	}
 
-	// Test with valid dynamic client - explicit RS256 algorithm
+	// Stored RS256 registrations select the RS256 signer.
 	reqRS256 := defaultTestClientRequest()
 	reqRS256.IDTokenSignedResponseAlg = "RS256"
 	clientIDRS256 := "dc.test-opts-rs256"
 	createTestDynamicClient(t, db, clientIDRS256, reqRS256)
 
-	optsRS256, err := dc.ClientOpts(context.Background(), clientIDRS256)
-	if err != nil {
+	if optsRS256, err := dc.ClientOpts(context.Background(), clientIDRS256); err != nil {
 		t.Fatalf("failed to get RS256 client options: %v", err)
-	}
-
-	// Should have 2 options: signing algorithm and PKCE skip
-	if len(optsRS256) != 2 {
+	} else if len(optsRS256) != 2 {
 		t.Errorf("expected 2 options for RS256 client, got %d", len(optsRS256))
 	}
 
@@ -421,19 +409,13 @@ func TestDynamicClients_ClientOpts(t *testing.T) {
 		t.Errorf("expected 2 options for ES256 client, got %d", len(optsES256))
 	}
 
-	// Test with valid dynamic client - unsupported algorithm (should default to RS256)
+	// Test with invalid stored dynamic client algorithm.
 	reqUnsupported := defaultTestClientRequest()
 	reqUnsupported.IDTokenSignedResponseAlg = "PS256" // Unsupported algorithm
 	clientIDUnsupported := "dc.test-opts-unsupported"
 	createTestDynamicClient(t, db, clientIDUnsupported, reqUnsupported)
 
-	optsUnsupported, err := dc.ClientOpts(context.Background(), clientIDUnsupported)
-	if err != nil {
-		t.Fatalf("failed to get unsupported algorithm client options: %v", err)
-	}
-
-	// Should have 2 options: signing algorithm and PKCE skip
-	if len(optsUnsupported) != 2 {
-		t.Errorf("expected 2 options for unsupported algorithm client, got %d", len(optsUnsupported))
+	if _, err := dc.ClientOpts(context.Background(), clientIDUnsupported); err == nil {
+		t.Fatal("expected unsupported algorithm client options to fail")
 	}
 }

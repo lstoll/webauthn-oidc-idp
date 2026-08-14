@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"lds.li/oauth2ext/jwt"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/oidcsvr"
@@ -80,15 +81,17 @@ func (c *StaticClients) ClientOpts(_ context.Context, clientID string) ([]oauth2
 	for _, cl := range c.Clients {
 		if cl.ID == clientID {
 			opts := []oauth2as.ClientOpt{}
+			if cl.Public {
+				opts = append(opts, oauth2as.ClientOptPublic())
+			}
 			if cl.SkipPKCE {
 				opts = append(opts, oauth2as.ClientOptSkipPKCE())
 			}
+			signingAlgorithm := jwt.ES256
 			if cl.UseRS256 {
-				opts = append(opts, oauth2as.ClientOptSigningAlg("RS256"))
-			} else {
-				// TODO - we should make the default configurable on oauth2as.Server
-				opts = append(opts, oauth2as.ClientOptSigningAlg("ES256"))
+				signingAlgorithm = jwt.RS256
 			}
+			opts = append(opts, oauth2as.ClientOptIDTokenSigningAlgorithm(signingAlgorithm))
 			return opts, nil
 		}
 	}

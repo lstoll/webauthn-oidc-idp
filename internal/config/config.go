@@ -66,6 +66,9 @@ type ServingConfig struct {
 	AuthLimitRate rate.Limit `json:"authLimitRate,omitempty"`
 	// AuthLimitBucket is the burst size for authentication endpoints. Defaults to 4.
 	AuthLimitBucket int `json:"authLimitBucket,omitempty"`
+	// DBSCRefreshInterval is how often bound browsers must re-prove device possession.
+	// Defaults to 10m. Set to "0s" to disable DBSC.
+	DBSCRefreshInterval *JSONDuration `json:"dbsc_refresh_interval,omitempty"`
 }
 
 // ParseConfig parses the config from the given file, expanding environment
@@ -131,6 +134,10 @@ func (c *Config) SetDefaults() error {
 	if c.Serving.AuthLimitBucket == 0 {
 		c.Serving.AuthLimitBucket = 4
 	}
+	if c.Serving.DBSCRefreshInterval == nil {
+		d := JSONDuration(10 * time.Minute)
+		c.Serving.DBSCRefreshInterval = &d
+	}
 	return nil
 }
 
@@ -156,6 +163,9 @@ func (c *Config) Validate() error {
 		}
 		if len(cl.Secrets) == 0 && !cl.Public {
 			validErr = errors.Join(validErr, fmt.Errorf("non-public client %s missing client secrets", cl.ID))
+		}
+		if cl.Public && cl.SkipPKCE {
+			validErr = errors.Join(validErr, fmt.Errorf("client %s cannot be both public and skip PKCE", cl.ID))
 		}
 		if len(cl.RedirectURLs) == 0 {
 			validErr = errors.Join(validErr, fmt.Errorf("client %s missing redirect URLs", cl.ID))
@@ -185,6 +195,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Serving.AuthLimitBucket < 0 {
 		validErr = errors.Join(validErr, fmt.Errorf("authLimitBucket must be non-negative, got: %d", c.Serving.AuthLimitBucket))
+	}
+	if c.Serving.DBSCRefreshInterval != nil && c.Serving.DBSCRefreshInterval.Duration() < 0 {
+		validErr = errors.Join(validErr, fmt.Errorf("dbsc_refresh_interval must be non-negative, got: %s", c.Serving.DBSCRefreshInterval.Duration()))
 	}
 
 	for i, cert := range c.DPoPTrustBundle {

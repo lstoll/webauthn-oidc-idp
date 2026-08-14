@@ -4,30 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
 
-	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
+	"lds.li/oauth2ext/oauth2as"
+	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/ratelimit"
 	"lds.li/passidp/internal/storage"
 	"lds.li/passidp/internal/webcommon"
 	"lds.li/web"
 	"lds.li/web/httperror"
-	"lds.li/web/session"
 )
-
-func init() {
-	gob.Register(&authSess{})
-}
 
 type ctxKeySkipAuthn struct{}
 
@@ -40,8 +37,8 @@ func SkipAuthn(r *http.Request) *http.Request {
 
 type Authenticator struct {
 	Webauthn  *webauthn.WebAuthn
-	CredStore *jsonfile.JSONFile[storage.CredentialStore]
-	State     *storage.State
+	CredStore *storage.CredentialFile
+	OAuth2    *oauth2as.Server
 	Config    *config.Config
 }
 
@@ -70,9 +67,8 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		sess, _ := session.FromContext(r.Context())
-		as, ok := sess.Get(authSessSessionKey).(*authSess)
-		if !ok || !as.LoggedinUserID.Valid || time.Now().After(as.ExpiresAt) {
+		as := appsession.FromContext(r.Context()).Get().Auth
+		if !as.LoggedInUserID.Valid || time.Now().After(as.ExpiresAt) {
 			a.TriggerLogin(w, r, r.URL.Path)
 			return
 		}
@@ -118,41 +114,46 @@ func (a *Authenticator) TriggerLogin(w http.ResponseWriter, r *http.Request, ret
 	//
 	// alt, the caller can include this in the returnto it generates.
 
-	sess, _ := session.FromContext(r.Context())
-	as, ok := sess.Get(authSessSessionKey).(*authSess)
-	if !ok {
-		as = &authSess{}
+	q := url.Values{}
+	if returnTo != "" {
+		q.Set("return_to", returnTo)
 	}
-	if as.Flows == nil {
-		as.Flows = make(map[string]authSessFlow)
-	}
-
-	id := uuid.New()
-
-	as.Flows[id.String()] = authSessFlow{
-		ReturnTo:  returnTo,
-		StartedAt: time.Now(),
+	u := "/login"
+	if len(q) > 0 {
+		u += "?" + q.Encode()
 	}
 
-	sess.Set(authSessSessionKey, as)
-
-	http.Redirect(w, r, fmt.Sprintf("/login?flow=%s", id.String()), http.StatusSeeOther)
+	http.Redirect(w, r, u, http.StatusSeeOther)
 }
 
 func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
 	flowID := r.URL().Query().Get("flow")
-	if flowID == "" {
-		return httperror.BadRequestErrf("flow is required")
+	returnTo := r.URL().Query().Get("return_to")
+	if returnTo == "" {
+		returnTo = "/"
 	}
 
-	as, ok := r.Session().Get(authSessSessionKey).(*authSess)
-	if !ok {
-		return httperror.BadRequestErrf("auth missing from session")
+	sess := appsession.FromContext(ctx)
+	data := sess.Get()
+	as := data.Auth
+	if as.Flows == nil {
+		as.Flows = make(map[string]appsession.AuthFlow)
 	}
 
-	flow, ok := as.Flows[flowID]
-	if !ok {
-		return httperror.BadRequestErrf("flow not found in session")
+	var flow appsession.AuthFlow
+	var ok bool
+	if flowID != "" {
+		flow, ok = as.Flows[flowID]
+		if !ok {
+			return httperror.BadRequestErrf("flow not found in session")
+		}
+	} else {
+		// Generate a new flow ID
+		flowID = uuid.New().String()
+		flow = appsession.AuthFlow{
+			ReturnTo:  returnTo,
+			StartedAt: time.Now(),
+		}
 	}
 
 	response, sessionData, err := a.Webauthn.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
@@ -160,9 +161,10 @@ func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWrite
 		return fmt.Errorf("starting discoverable login: BeginDiscoverableLogin: %w", err)
 	}
 
-	flow.WebauthnData = sessionData
+	flow.WebAuthnData = sessionData
 	as.Flows[flowID] = flow
-	r.Session().Set(authSessSessionKey, as)
+	data.Auth = as
+	sess.Set(data)
 
 	return w.WriteResponse(r, &web.TemplateResponse{
 		Templates: templates,
@@ -193,8 +195,10 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 		return fmt.Errorf("unmarshalling login request: %w", err)
 	}
 
-	as, ok := r.Session().Get(authSessSessionKey).(*authSess)
-	if !ok {
+	sess := appsession.FromContext(ctx)
+	data := sess.Get()
+	as := data.Auth
+	if as.Flows == nil {
 		return httperror.BadRequestErrf("auth missing from session")
 	}
 
@@ -213,7 +217,7 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	}
 
 	// Validate the login
-	user, credential, err := a.Webauthn.ValidatePasskeyLogin(a.NewDiscoverableUserHandler(ctx), *flow.WebauthnData, parsedResponse)
+	user, credential, err := a.Webauthn.ValidatePasskeyLogin(a.NewDiscoverableUserHandler(ctx), *flow.WebAuthnData, parsedResponse)
 	if err != nil {
 		return fmt.Errorf("validating login: %w", err)
 	}
@@ -242,9 +246,12 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	delete(as.Flows, req.FlowID)
 	// we cast it back to our type to make sure we get the real ID, not the
 	// potentially legacy mapped ID.
-	as.LoggedinUserID = uuid.NullUUID{UUID: user.(*WebAuthnUser).user.ID, Valid: true}
-	as.ExpiresAt = time.Now().Add(a.Config.SessionDuration.Duration())
-	r.Session().Set(authSessSessionKey, as)
+	as.LoggedInUserID = uuid.NullUUID{UUID: user.(*WebAuthnUser).user.ID, Valid: true}
+	now := time.Now()
+	as.AuthenticatedAt = now
+	as.ExpiresAt = now.Add(a.Config.SessionDuration.Duration())
+	data.Auth = as
+	sess.Set(data)
 
 	// Return the flow's returnTo URL
 	return w.WriteResponse(r, &web.JSONResponse{
@@ -255,7 +262,8 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 }
 
 func (a *Authenticator) Logout(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
-	r.Session().Delete()
+	sess := appsession.FromContext(ctx)
+	sess.Delete()
 	return w.WriteResponse(r, &web.RedirectResponse{
 		URL: "/",
 	})
@@ -279,20 +287,26 @@ func (a *Authenticator) HandleListGrants(ctx context.Context, w web.ResponseWrit
 		return httperror.BadRequestErrf("user not logged in")
 	}
 
-	grants, err := a.State.OAuth2State().ListActiveGrantsForUser(ctx, userID.String())
-	if err != nil {
-		return fmt.Errorf("list active grants: %w", err)
-	}
-
 	var resp listGrantsResponse
-	for _, g := range grants {
-		resp.Grants = append(resp.Grants, grantInfo{
-			ID:        g.ID,
-			ClientID:  g.Grant.ClientID,
-			Scopes:    g.Grant.GrantedScopes,
-			GrantedAt: g.Grant.GrantedAt.Format(time.RFC3339),
-			ExpiresAt: g.Grant.ExpiresAt.Format(time.RFC3339),
-		})
+	var cursor string
+	for {
+		page, err := a.OAuth2.ListRefreshSessions(ctx, oauth2as.RefreshSessionQuery{UserID: userID.String(), Cursor: cursor})
+		if err != nil {
+			return fmt.Errorf("list active grants: %w", err)
+		}
+		for _, grant := range page.Sessions {
+			resp.Grants = append(resp.Grants, grantInfo{
+				ID:        grant.GrantID,
+				ClientID:  grant.ClientID,
+				Scopes:    grant.GrantedScopes,
+				GrantedAt: grant.CreatedAt.Format(time.RFC3339),
+				ExpiresAt: grant.ExpiresAt.Format(time.RFC3339),
+			})
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Sort by most recent first
@@ -318,18 +332,10 @@ func (a *Authenticator) HandleRevokeGrant(ctx context.Context, w web.ResponseWri
 		return httperror.BadRequestErrf("grant ID required")
 	}
 
-	grant, err := a.State.OAuth2State().GetGrant(ctx, grantIDStr)
-	if err != nil {
-		return fmt.Errorf("get grant: %w", err)
-	}
-	if grant == nil {
-		return httperror.NotFoundErrf("grant not found")
-	}
-	if grant.UserID != userID.String() {
-		return httperror.NotFoundErrf("grant not found")
-	}
-
-	if err := a.State.OAuth2State().RevokeGrant(ctx, grantIDStr); err != nil {
+	if err := a.OAuth2.RevokeRefreshSession(ctx, userID.String(), grantIDStr); err != nil {
+		if errors.Is(err, oauth2as.ErrNotFound) {
+			return httperror.NotFoundErrf("grant not found")
+		}
 		return fmt.Errorf("revoke grant: %w", err)
 	}
 
@@ -343,8 +349,19 @@ func (a *Authenticator) HandleRevokeAllGrants(ctx context.Context, w web.Respons
 		return httperror.BadRequestErrf("user not logged in")
 	}
 
-	if err := a.State.OAuth2State().RevokeAllGrantsForUser(ctx, userID.String()); err != nil {
-		return fmt.Errorf("revoke all grants: %w", err)
+	for {
+		page, err := a.OAuth2.ListRefreshSessions(ctx, oauth2as.RefreshSessionQuery{UserID: userID.String()})
+		if err != nil {
+			return fmt.Errorf("list grants for revocation: %w", err)
+		}
+		if len(page.Sessions) == 0 {
+			break
+		}
+		for _, grant := range page.Sessions {
+			if err := a.OAuth2.RevokeRefreshSession(ctx, userID.String(), grant.GrantID); err != nil && !errors.Is(err, oauth2as.ErrNotFound) {
+				return fmt.Errorf("revoke grant: %w", err)
+			}
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

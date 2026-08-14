@@ -19,7 +19,6 @@ func TestMultiClientsIntegration(t *testing.T) {
 				RedirectURLs: []string{"https://static.example.com/callback"},
 				Secrets:      []string{"static-secret"},
 				Public:       false,
-				UseRS256:     true,
 			},
 			{
 				ID:           "static-public-client",
@@ -31,8 +30,7 @@ func TestMultiClientsIntegration(t *testing.T) {
 	}
 
 	// Create database and dynamic clients
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dynamicClients := &DynamicClients{DB: db}
 

@@ -1,15 +1,13 @@
 package admincli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
-	"lds.li/passidp/internal/adminapi"
+	"github.com/google/uuid"
+	"lds.li/passidp/internal/admin"
 )
 
 type ConfirmCredentialCmd struct {
@@ -20,57 +18,34 @@ type ConfirmCredentialCmd struct {
 	Output io.Writer `kong:"-"`
 }
 
-type confirmEnrollmentRequest struct {
-	UserID          string `json:"user_id"`
-	EnrollmentID    string `json:"enrollment_id"`
-	ConfirmationKey string `json:"confirmation_key"`
-}
-
-type confirmEnrollmentResponse struct {
-	Name   string `json:"name"`
-	UserID string `json:"user_id"`
-}
-
-func (c *ConfirmCredentialCmd) Run(ctx context.Context, adminSocket adminapi.SocketPath) error {
+func (c *ConfirmCredentialCmd) Run(ctx context.Context, paths Paths) error {
 	if c.Output == nil {
 		c.Output = os.Stdout
 	}
 
-	reqBody := confirmEnrollmentRequest{
-		UserID:          c.UserID,
-		EnrollmentID:    c.EnrollmentID,
-		ConfirmationKey: c.ConfirmationKey,
-	}
-
-	reqJSON, err := json.Marshal(reqBody)
+	userID, err := uuid.Parse(c.UserID)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://unix/admin/enrollments/confirm", bytes.NewReader(reqJSON))
+	enrollmentID, err := uuid.Parse(c.EnrollmentID)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return fmt.Errorf("invalid enrollment_id: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := adminapi.NewClient(adminSocket).Do(req)
+	stores, err := admin.OpenStores(paths.CredentialStorePath, paths.StatePath)
 	if err != nil {
-		return fmt.Errorf("call admin API: %w", err)
+		return err
 	}
-	defer resp.Body.Close()
+	defer stores.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("admin API error (status %d): %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var confirmResp confirmEnrollmentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&confirmResp); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+	confirmed, err := admin.ConfirmEnrollment(stores.Enrollments, stores.Credentials, userID, enrollmentID, c.ConfirmationKey)
+	if err != nil {
+		return err
 	}
 
 	fmt.Fprintf(c.Output, "Credential confirmed and activated successfully!\n")
-	fmt.Fprintf(c.Output, "Name: %s\n", confirmResp.Name)
-	fmt.Fprintf(c.Output, "User ID: %s\n", confirmResp.UserID)
+	fmt.Fprintf(c.Output, "Name: %s\n", confirmed.Name)
+	fmt.Fprintf(c.Output, "User ID: %s\n", confirmed.UserID)
 	return nil
 }

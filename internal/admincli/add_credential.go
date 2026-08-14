@@ -1,15 +1,13 @@
 package admincli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
-	"lds.li/passidp/internal/adminapi"
+	"github.com/google/uuid"
+	"lds.li/passidp/internal/admin"
 	"lds.li/passidp/internal/config"
 )
 
@@ -19,54 +17,29 @@ type AddCredentialCmd struct {
 	Output io.Writer `kong:"-"`
 }
 
-type createEnrollmentRequest struct {
-	UserID string `json:"user_id"`
-}
-
-type createEnrollmentResponse struct {
-	EnrollmentID  string `json:"enrollment_id"`
-	EnrollmentKey string `json:"enrollment_key"`
-	EnrollmentURL string `json:"enrollment_url"`
-}
-
-func (c *AddCredentialCmd) Run(ctx context.Context, cfg *config.Config, adminSocket adminapi.SocketPath) error {
+func (c *AddCredentialCmd) Run(ctx context.Context, cfg *config.Config, paths Paths) error {
 	if c.Output == nil {
 		c.Output = os.Stdout
 	}
 
-	reqBody := createEnrollmentRequest{
-		UserID: c.UserID,
-	}
-
-	reqJSON, err := json.Marshal(reqBody)
+	userID, err := uuid.Parse(c.UserID)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://unix/admin/enrollments", bytes.NewReader(reqJSON))
+	stores, err := admin.OpenState(paths.StatePath)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	defer stores.Close()
 
-	resp, err := adminapi.NewClient(adminSocket).Do(req)
+	enrollment, err := admin.CreateEnrollment(cfg, stores.Enrollments, userID)
 	if err != nil {
-		return fmt.Errorf("call admin API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("admin API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		return err
 	}
 
-	var enrollmentResp createEnrollmentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&enrollmentResp); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-
-	fmt.Fprintf(c.Output, "Enrollment ID: %s\n", enrollmentResp.EnrollmentID)
-	fmt.Fprintf(c.Output, "Enrollment Key: %s\n", enrollmentResp.EnrollmentKey)
-	fmt.Fprintf(c.Output, "Enroll at: %s\n", enrollmentResp.EnrollmentURL)
+	fmt.Fprintf(c.Output, "Enrollment ID: %s\n", enrollment.EnrollmentID)
+	fmt.Fprintf(c.Output, "Enrollment Key: %s\n", enrollment.EnrollmentKey)
+	fmt.Fprintf(c.Output, "Enroll at: %s\n", enrollment.EnrollmentURL)
 	return nil
 }

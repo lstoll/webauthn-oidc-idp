@@ -12,4 +12,4 @@ Dockerfile.fly
 /config.fly.*
 
 /.cursor
-*.bolt
+*.sqlite
