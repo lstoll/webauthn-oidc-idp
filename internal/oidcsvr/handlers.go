@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"lds.li/oauth2ext/oauth2as"
-	"lds.li/passidp/claims"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/policy"
 )
@@ -65,21 +64,7 @@ func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest)
 		return nil, fmt.Errorf("client %s not found", req.ClientID)
 	}
 
-	anyGroups := make([]any, len(user.Groups))
-	for i, group := range user.Groups {
-		anyGroups[i] = group
-	}
-
-	cb := claims.IDClaims_builder{
-		Email:             new(user.Email),
-		EmailVerified:     new(true),
-		Picture:           new(gravatarURL(user.Email)),
-		Name:              new(user.FullName),
-		Groups:            user.Groups,
-		PreferredUsername: new(user.PreferredUsername),
-	}
-
-	idClaims := cb.Build()
+	idClaims := defaultIDTokenClaims(user)
 
 	if h.Policy != nil && cl.ClaimsPolicy() != "" {
 		var err error
@@ -90,7 +75,7 @@ func (h *Handlers) TokenHandler(ctx context.Context, req *oauth2as.TokenRequest)
 	}
 
 	resp := &oauth2as.TokenResponse{
-		IDTokenClaims: claims.IDTokenClaimsFromIDClaims(idClaims),
+		IDTokenClaims: idTokenClaimsFromMap(idClaims),
 	}
 
 	// Determine refresh token validity

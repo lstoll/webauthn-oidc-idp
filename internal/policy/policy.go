@@ -2,16 +2,14 @@ package policy
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/structpb"
-	"lds.li/passidp/claims"
+	"github.com/google/cel-go/common/types/traits"
 	"lds.li/passidp/internal/config"
 )
 
@@ -21,68 +19,20 @@ type PolicyEvaluator struct {
 }
 
 func NewPolicyEvaluator() (*PolicyEvaluator, error) {
+	claimsType := cel.MapType(cel.StringType, cel.DynType)
+
 	var env *cel.Env
 	var err error
 	env, err = cel.NewEnv(
 		cel.StdLib(),
-		cel.Container("passidp.claims"),
-		cel.Types(&claims.IDClaims{}),
-		cel.Variable("claims", cel.ObjectType("passidp.claims.IDClaims")),
+		cel.Variable("claims", claimsType),
 		cel.Variable("user", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Function("patch",
 			cel.MemberOverload("claims_patch_map",
-				[]*cel.Type{cel.ObjectType("passidp.claims.IDClaims"), cel.MapType(cel.StringType, cel.AnyType)},
-				cel.ObjectType("passidp.claims.IDClaims"),
+				[]*cel.Type{claimsType, cel.MapType(cel.StringType, cel.DynType)},
+				claimsType,
 				cel.BinaryBinding(func(lhs, rhs ref.Val) ref.Val {
-					c, ok := lhs.Value().(*claims.IDClaims)
-					if !ok {
-						return types.NewErr("lhs is not IDClaims, got %T", lhs.Value())
-					}
-
-					nativeMap, err := rhs.ConvertToNative(reflect.TypeFor[map[string]any]())
-					if err != nil {
-						return types.NewErr("failed to convert rhs to map: %v", err)
-					}
-					m := nativeMap.(map[string]any)
-
-					ret := proto.Clone(c).(*claims.IDClaims)
-					refRet := ret.ProtoReflect()
-					desc := refRet.Descriptor()
-
-					for k, v := range m {
-						// Look up field by JSON name or proto name
-						fd := desc.Fields().ByJSONName(k)
-						if fd == nil {
-							fd = desc.Fields().ByName(protoreflect.Name(k))
-						}
-						if fd == nil {
-							return types.NewErr("field %s not found in IDClaims", k)
-						}
-
-						if v == nil || v == structpb.NullValue_NULL_VALUE {
-							refRet.Clear(fd)
-							continue
-						}
-
-						// Handle list/repeated fields (like groups)
-						if fd.IsList() {
-							list := refRet.Mutable(fd).List()
-							// Clear existing
-							for list.Len() > 0 {
-								list.Truncate(0)
-							}
-							if g, ok := v.([]any); ok {
-								for _, gi := range g {
-									list.Append(protoreflect.ValueOf(gi))
-								}
-							}
-							continue
-						}
-
-						// Set scalar fields
-						refRet.Set(fd, protoreflect.ValueOf(v))
-					}
-					return env.CELTypeAdapter().NativeToValue(ret)
+					return patchClaimsMap(env.CELTypeAdapter(), lhs, rhs)
 				}),
 			),
 		),
@@ -122,18 +72,10 @@ func (pe *PolicyEvaluator) EvaluateAuthorization(expression string, user *config
 		return false, err
 	}
 
-	userData := map[string]any{
-		"id":       user.ID.String(),
-		"email":    user.Email,
-		"fullName": user.FullName,
-		"groups":   user.Groups,
-		"metadata": user.Metadata,
-	}
-
 	out, _, err := prg.Eval(map[string]any{
 		// TODO - we should expand this with more context, like the dpop/mtls
 		// status, more scopes stuff etc.
-		"user": userData,
+		"user": celUser(user),
 	})
 	if err != nil {
 		return false, fmt.Errorf("eval: %w", err)
@@ -147,7 +89,7 @@ func (pe *PolicyEvaluator) EvaluateAuthorization(expression string, user *config
 	return val, nil
 }
 
-func (pe *PolicyEvaluator) EvaluateClaims(expression string, initialClaims *claims.IDClaims, user *config.User) (*claims.IDClaims, error) {
+func (pe *PolicyEvaluator) EvaluateClaims(expression string, initialClaims map[string]any, user *config.User) (map[string]any, error) {
 	if expression == "" {
 		return initialClaims, nil
 	}
@@ -157,17 +99,9 @@ func (pe *PolicyEvaluator) EvaluateClaims(expression string, initialClaims *clai
 		return nil, err
 	}
 
-	userData := map[string]any{
-		"id":       user.ID.String(),
-		"email":    user.Email,
-		"fullName": user.FullName,
-		"groups":   user.Groups,
-		"metadata": user.Metadata,
-	}
-
 	out, _, err := prg.Eval(map[string]any{
 		"claims": initialClaims,
-		"user":   userData,
+		"user":   celUser(user),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("eval: %w", err)
@@ -177,10 +111,15 @@ func (pe *PolicyEvaluator) EvaluateClaims(expression string, initialClaims *clai
 		return initialClaims, nil
 	}
 
-	if idClaims, ok := out.Value().(*claims.IDClaims); ok {
-		return idClaims, nil
+	native, err := out.ConvertToNative(reflect.TypeFor[map[string]any]())
+	if err != nil {
+		return nil, fmt.Errorf("expression did not return a claims map, returned %T: %w", out.Value(), err)
 	}
-	return nil, fmt.Errorf("expression did not return an IDClaims object, returned %T", out.Value())
+	idClaims, ok := native.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expression did not return a claims map, returned %T", native)
+	}
+	return idClaims, nil
 }
 
 func (pe *PolicyEvaluator) Validate(expression string) error {
@@ -206,4 +145,49 @@ func ValidatePolicies(cfg *config.Config) error {
 		}
 	}
 	return nil
+}
+
+func celUser(user *config.User) map[string]any {
+	return map[string]any{
+		"id":       user.ID.String(),
+		"email":    user.Email,
+		"fullName": user.FullName,
+		"groups":   user.Groups,
+		"metadata": user.Metadata,
+	}
+}
+
+func patchClaimsMap(adapter types.Adapter, lhs, rhs ref.Val) ref.Val {
+	baseNative, err := lhs.ConvertToNative(reflect.TypeFor[map[string]any]())
+	if err != nil {
+		return types.NewErr("lhs is not a claims map: %v", err)
+	}
+	ret := maps.Clone(baseNative.(map[string]any))
+	if ret == nil {
+		ret = map[string]any{}
+	}
+
+	overlay, ok := rhs.(traits.Mapper)
+	if !ok {
+		return types.NewErr("rhs is not a map, got %T", rhs)
+	}
+	it := overlay.Iterator()
+	for it.HasNext() == types.True {
+		key := it.Next()
+		k, err := key.ConvertToNative(reflect.TypeFor[string]())
+		if err != nil {
+			return types.NewErr("patch key is not a string: %v", err)
+		}
+		val := overlay.Get(key)
+		if val.Type() == types.NullType {
+			delete(ret, k.(string))
+			continue
+		}
+		native, err := val.ConvertToNative(reflect.TypeFor[any]())
+		if err != nil {
+			return types.NewErr("patch value conversion: %v", err)
+		}
+		ret[k.(string)] = native
+	}
+	return adapter.NativeToValue(ret)
 }

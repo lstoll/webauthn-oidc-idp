@@ -22,7 +22,9 @@ type Client struct {
 	// UseRS256 indicates that this client should use RS256 for signed tokens.
 	UseRS256 bool `json:"useRS256"`
 	// ClaimsPolicy is a CEL expression that can be used to modify the claims
-	// for this client.
+	// for this client. `claims` is a JSON object of ID token claims. Use
+	// claims.patch({...}) to overlay values; null deletes a claim. The
+	// expression should return the claims map to issue.
 	ClaimsPolicy string `json:"claimsPolicy"`
 	// AuthorizationPolicy is a CEL expression that can be used to determine if
 	// a user is authorized to access this client.

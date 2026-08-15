@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"lds.li/passidp/claims"
 	"lds.li/passidp/internal/config"
 )
 
@@ -88,34 +87,51 @@ func TestPolicyEvaluator_EvaluateClaims(t *testing.T) {
 		},
 	}
 
-	initialClaims := &claims.IDClaims{}
-	initialClaims.SetSubject("original")
-	initialClaims.SetEmail("test@example.com")
+	initialClaims := map[string]any{
+		"sub":   "original",
+		"email": "test@example.com",
+	}
 
 	tests := []struct {
-		name       string
-		expression string
+		name        string
+		expression  string
 		wantSubject string
-		wantErr    bool
+		wantErr     bool
+		check       func(t *testing.T, got map[string]any)
 	}{
 		{
-			name:       "empty expression",
-			expression: "",
+			name:        "empty expression",
+			expression:  "",
 			wantSubject: "original",
 		},
 		{
-			name:       "override subject",
-			expression: "has(user.metadata.overrideSubject) ? claims.patch({ 'sub': user.metadata.overrideSubject }) : claims",
+			name:        "override subject",
+			expression:  "has(user.metadata.overrideSubject) ? claims.patch({ 'sub': user.metadata.overrideSubject }) : claims",
 			wantSubject: "overridden",
 		},
 		{
-			name:       "clear email",
-			expression: "claims.patch({ 'email': null })",
+			name:        "clear email",
+			expression:  "claims.patch({ 'email': null })",
 			wantSubject: "original",
+			check: func(t *testing.T, got map[string]any) {
+				if _, ok := got["email"]; ok {
+					t.Errorf("EvaluateClaims() email should be cleared")
+				}
+			},
 		},
 		{
-			name:       "invalid field",
-			expression: "claims.patch({ 'nonexistent': 'value' })",
+			name:        "add custom claim",
+			expression:  "claims.patch({ 'custom': 'value' })",
+			wantSubject: "original",
+			check: func(t *testing.T, got map[string]any) {
+				if got["custom"] != "value" {
+					t.Errorf("EvaluateClaims() custom = %v, want value", got["custom"])
+				}
+			},
+		},
+		{
+			name:       "non-map result",
+			expression: "'hello'",
 			wantErr:    true,
 		},
 	}
@@ -127,11 +143,14 @@ func TestPolicyEvaluator_EvaluateClaims(t *testing.T) {
 				t.Errorf("EvaluateClaims() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && got.GetSubject() != tt.wantSubject {
-				t.Errorf("EvaluateClaims() got subject = %v, want %v", got.GetSubject(), tt.wantSubject)
+			if tt.wantErr {
+				return
 			}
-			if !tt.wantErr && tt.name == "clear email" && got.HasEmail() {
-				t.Errorf("EvaluateClaims() email should be cleared")
+			if got["sub"] != tt.wantSubject {
+				t.Errorf("EvaluateClaims() got subject = %v, want %v", got["sub"], tt.wantSubject)
+			}
+			if tt.check != nil {
+				tt.check(t, got)
 			}
 		})
 	}

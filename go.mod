@@ -4,8 +4,6 @@ go 1.27
 
 toolchain go1.27rc3
 
-replace lds.li/passidp/claims => ./claims
-
 require (
 	crawshaw.dev/jsonfile v0.0.0-20240206193014-699d1dad804e
 	github.com/alecthomas/kong v1.14.0
@@ -23,10 +21,8 @@ require (
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.44.0
 	golang.org/x/time v0.15.0
-	google.golang.org/protobuf v1.36.11
 	lds.li/keyset v0.0.0-20260814215456-f6e0540f1600
 	lds.li/oauth2ext v0.3.2-0.20260815192241-46bedb0ccff0
-	lds.li/passidp/claims v0.0.0-00010101000000-000000000000
 	lds.li/session v0.0.0-20260815215255-3609b70e900f
 	lds.li/web v0.0.0-20260711155052-b5bda5b245fc
 	modernc.org/sqlite v1.53.0
@@ -64,6 +60,7 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
