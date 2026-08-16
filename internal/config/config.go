@@ -13,9 +13,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/alecthomas/kong"
-	"github.com/google/uuid"
 	"github.com/tailscale/hujson"
 	"golang.org/x/time/rate"
 	"sigs.k8s.io/yaml"
@@ -173,7 +173,7 @@ func (c *Config) Validate() error {
 	}
 
 	for _, u := range c.Users {
-		if u.ID == uuid.Nil {
+		if u.ID == uuid.Nil() {
 			validErr = errors.Join(validErr, fmt.Errorf("user %s missing ID", u.ID))
 		}
 		if u.Email == "" {
@@ -182,7 +182,7 @@ func (c *Config) Validate() error {
 		if u.FullName == "" {
 			validErr = errors.Join(validErr, fmt.Errorf("user %s missing full name", u.ID))
 		}
-		if u.WebauthnHandle == uuid.Nil {
+		if u.WebauthnHandle == uuid.Nil() {
 			validErr = errors.Join(validErr, fmt.Errorf("user %s missing webauthn handle", u.ID))
 		}
 		if u.WebauthnHandle == u.ID {

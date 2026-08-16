@@ -11,10 +11,10 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"uuid"
 
 	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/config"
 )
 
@@ -205,7 +205,7 @@ func (cs *CredentialStore) LookupAccountByHandle(handle []byte) (uuid.UUID, bool
 			return user.AccountID, true
 		}
 	}
-	return uuid.Nil, false
+	return uuid.Nil(), false
 }
 
 // RememberHandle records an observed authenticator user.id as an alias.

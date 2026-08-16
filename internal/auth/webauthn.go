@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/config"
@@ -68,7 +68,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 		}
 
 		as := appsession.FromContext(r.Context()).Get().Auth
-		if !as.LoggedInUserID.Valid || time.Now().After(as.ExpiresAt) {
+		if as.LoggedInUserID == nil || time.Now().After(as.ExpiresAt) {
 			a.TriggerLogin(w, r, r.URL.Path)
 			return
 		}
@@ -234,7 +234,8 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	delete(as.Flows, req.FlowID)
 	// we cast it back to our type to make sure we get the real ID, not the
 	// potentially legacy mapped ID.
-	as.LoggedInUserID = uuid.NullUUID{UUID: user.(*WebAuthnUser).user.ID, Valid: true}
+	id := user.(*WebAuthnUser).user.ID
+	as.LoggedInUserID = &id
 	now := time.Now()
 	as.AuthenticatedAt = now
 	as.ExpiresAt = now.Add(a.Config.SessionDuration.Duration())

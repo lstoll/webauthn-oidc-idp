@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 	"fmt"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
 )
@@ -19,7 +19,7 @@ type WebAuthnUser struct {
 // NewWebAuthnUser creates a WebAuthn user for registration.
 func NewWebAuthnUser(user *config.User, passkeyUserID string, credentials []webauthn.Credential) *WebAuthnUser {
 	id := []byte(passkeyUserID)
-	if len(id) == 0 && user.WebauthnHandle != uuid.Nil {
+	if len(id) == 0 && user.WebauthnHandle != uuid.Nil() {
 		id = user.WebauthnHandle[:]
 	}
 	return &WebAuthnUser{
@@ -81,14 +81,12 @@ func (a *Authenticator) lookupUser(userHandle []byte) (*config.User, error) {
 
 	// Legacy handles that have not yet been recorded as aliases.
 	if len(userHandle) == 16 && ((userHandle[6]&0xf0)>>4) == 4 {
-		handle, err := uuid.FromBytes(userHandle)
-		if err != nil {
-			return nil, fmt.Errorf("invalid UUIDv4: %w", err)
-		}
+		var handle uuid.UUID
+		copy(handle[:], userHandle)
 		return a.Config.Users.GetUserByWebauthnHandle(handle)
 	}
-	if err := uuid.Validate(string(userHandle)); err == nil {
-		return a.Config.Users.GetUserByStringID(string(userHandle))
+	if parsed, err := uuid.Parse(string(userHandle)); err == nil {
+		return a.Config.Users.GetUser(parsed)
 	}
 	for _, u := range a.Config.Users {
 		if os, ok := u.Metadata["overrideSubject"].(string); ok && os == string(userHandle) {

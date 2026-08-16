@@ -3,8 +3,8 @@ package auth
 import (
 	"testing"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/appsession"
 )
 
@@ -12,7 +12,7 @@ func TestAuthTimeFromContext(t *testing.T) {
 	now := time.Now()
 	userID := uuid.New()
 	req, _ := requestWithSession(t, "GET", "/", appsession.Data{Auth: appsession.Auth{
-		LoggedInUserID:  uuid.NullUUID{UUID: userID, Valid: true},
+		LoggedInUserID:  &userID,
 		AuthenticatedAt: now,
 		ExpiresAt:       now.Add(time.Hour),
 	}})
@@ -27,7 +27,7 @@ func TestAuthTimeFromContext(t *testing.T) {
 
 	t.Run("expired session", func(t *testing.T) {
 		req, _ := requestWithSession(t, "GET", "/", appsession.Data{Auth: appsession.Auth{
-			LoggedInUserID:  uuid.NullUUID{UUID: userID, Valid: true},
+			LoggedInUserID:  &userID,
 			AuthenticatedAt: now,
 			ExpiresAt:       now.Add(-time.Second),
 		}})

@@ -3,8 +3,8 @@ package admin
 import (
 	"fmt"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
 )

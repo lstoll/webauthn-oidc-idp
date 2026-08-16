@@ -15,10 +15,10 @@ import (
 	"encoding/base64"
 
 	"bytes"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"

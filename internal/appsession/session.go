@@ -5,9 +5,9 @@ import (
 	"context"
 	"net/http"
 	"time"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/session"
 )
@@ -19,7 +19,7 @@ type Data struct {
 }
 
 type Auth struct {
-	LoggedInUserID  uuid.NullUUID       `json:"loggedInUserId,omitzero"`
+	LoggedInUserID  *uuid.UUID          `json:"loggedInUserId,omitzero"`
 	AuthenticatedAt time.Time           `json:"authenticatedAt,omitzero"`
 	ExpiresAt       time.Time           `json:"expiresAt,omitzero"`
 	Flows           map[string]AuthFlow `json:"flows,omitzero"`

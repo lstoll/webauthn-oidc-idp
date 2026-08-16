@@ -3,8 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // note : `uuidgen | tr '[:upper:]' '[:lower:]'` can be used on macOS to generate a UUID.
@@ -44,10 +43,10 @@ func (u *User) PasskeyHandleAliases() [][]byte {
 		return nil
 	}
 	aliases := make([][]byte, 0, 3)
-	if u.WebauthnHandle != uuid.Nil {
+	if u.WebauthnHandle != uuid.Nil() {
 		aliases = append(aliases, bytes.Clone(u.WebauthnHandle[:]))
 	}
-	if u.ID != uuid.Nil {
+	if u.ID != uuid.Nil() {
 		aliases = append(aliases, []byte(u.ID.String()))
 	}
 	if subject, ok := u.Metadata["overrideSubject"].(string); ok && subject != "" {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"uuid"
 
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/admin"
 	"lds.li/passidp/internal/config"
 )
