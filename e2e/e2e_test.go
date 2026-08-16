@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"crypto/x509"
 
 	"github.com/alecthomas/kong"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	cdpwebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
@@ -89,6 +91,13 @@ func TestE2E(t *testing.T) {
 			s := ev.ExceptionDetails.Error()
 			t.Logf("*BROWSER* runtime exception: %s", s)
 			chromeErrC <- errors.New(s)
+		case *page.EventJavascriptDialogOpening:
+			t.Logf("*BROWSER* js dialog: %s", ev.Message)
+			go func() {
+				if err := chromedp.Run(ctx, page.HandleJavaScriptDialog(true)); err != nil {
+					t.Logf("handle js dialog: %v", err)
+				}
+			}()
 		}
 	})
 
@@ -385,6 +394,90 @@ func TestE2E(t *testing.T) {
 	}
 	clearErrchan(chromeErrC)
 
+	testOk = t.Run("Add Credential", func(t *testing.T) {
+		before := passkeyNames(t, credstorePath)
+
+		runErrC := make(chan error, 1)
+		doneC := make(chan struct{}, 1)
+		go func() {
+			err := chromedp.Run(ctx,
+				chromedp.Navigate(config.Issuer+"/"),
+				chromedp.WaitVisible(`#credentials-list`),
+				chromedp.Click(`a[href="/registration"]`),
+				chromedp.WaitVisible(`#register-button`),
+				chromedp.SendKeys(`#keyName`, "Home Passkey"),
+				chromedp.Click(`#register-button`),
+				chromedp.WaitVisible(`#success-message`),
+			)
+			if err != nil {
+				runErrC <- err
+			}
+			doneC <- struct{}{}
+		}()
+
+		select {
+		case err := <-runErrC:
+			t.Fatalf("running browser steps: %v", err)
+		case err := <-chromeErrC:
+			t.Fatalf("error in browser runtime: %v", err)
+		case <-time.After(browserStepTimeout()):
+			t.Fatal("step timed out")
+		case <-doneC:
+		}
+
+		got := passkeyNames(t, credstorePath)
+		if len(got) != len(before)+1 {
+			t.Fatalf("passkeys after add = %q, want one more than %q", got, before)
+		}
+		if !slices.Contains(got, "Home Passkey") {
+			t.Fatalf("passkeys after add = %q, want Home Passkey", got)
+		}
+	})
+	if !testOk {
+		t.Fatal("dependent step failed, aborting")
+	}
+	clearErrchan(chromeErrC)
+
+	testOk = t.Run("Delete Credential", func(t *testing.T) {
+		runErrC := make(chan error, 1)
+		doneC := make(chan struct{}, 1)
+		go func() {
+			err := chromedp.Run(ctx,
+				chromedp.Navigate(config.Issuer+"/"),
+				chromedp.WaitVisible(`#credentials-list`),
+				chromedp.Poll(`document.querySelectorAll('#credentials-table-body tr').length >= 2`, nil, chromedp.WithPollingTimeout(browserStepTimeout())),
+				chromedp.Click(`//tr[contains(., 'Home Passkey')]//button[contains(@class, 'delete-credential')]`, chromedp.BySearch),
+				chromedp.Poll(`document.querySelectorAll('#credentials-table-body tr').length === 1`, nil, chromedp.WithPollingTimeout(browserStepTimeout())),
+			)
+			if err != nil {
+				runErrC <- err
+			}
+			doneC <- struct{}{}
+		}()
+
+		select {
+		case err := <-runErrC:
+			t.Fatalf("running browser steps: %v", err)
+		case err := <-chromeErrC:
+			t.Fatalf("error in browser runtime: %v", err)
+		case <-time.After(browserStepTimeout()):
+			t.Fatal("step timed out")
+		case <-doneC:
+		}
+
+		got := passkeyNames(t, credstorePath)
+		if slices.Contains(got, "Home Passkey") {
+			t.Fatalf("Home Passkey still present after delete: %q", got)
+		}
+		if len(got) == 0 {
+			t.Fatal("expected the original passkey to remain")
+		}
+	})
+	if !testOk {
+		t.Fatal("dependent step failed, aborting")
+	}
+	clearErrchan(chromeErrC)
+
 	testOk = t.Run("Failed Login", func(t *testing.T) {
 		// remove all credentials, test the case where it fails.
 		if err := chromedp.Run(ctx,
@@ -567,6 +660,23 @@ loop:
 			break loop
 		}
 	}
+}
+
+func passkeyNames(t *testing.T, path string) []string {
+	t.Helper()
+	credStore, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	credStore.Read(func(cs *storage.CredentialStore) {
+		for _, user := range cs.Users {
+			for _, passkey := range user.Passkeys {
+				names = append(names, passkey.Name)
+			}
+		}
+	})
+	return names
 }
 
 // chromeDPopener is an opener that uses chromedp. It assume the context passed

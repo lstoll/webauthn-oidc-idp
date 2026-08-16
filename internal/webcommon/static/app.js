@@ -676,13 +676,167 @@ class GrantManagerUI {
     }
 }
 
+/**
+ * Credential Management UI - list/delete passkeys on the home page
+ */
+class CredentialManagerUI {
+    constructor() {
+        if (!document.getElementById('credentials-list') && !document.getElementById('no-credentials')) {
+            return;
+        }
+        this.credentials = [];
+        this.bindEvents();
+        this.loadCredentials();
+    }
+
+    bindEvents() {
+        const errorDeleteButton = document.querySelector('#credentials-error .delete');
+        if (errorDeleteButton) {
+            errorDeleteButton.addEventListener('click', () => {
+                const errorEl = document.getElementById('credentials-error');
+                if (errorEl) errorEl.style.display = 'none';
+            });
+        }
+
+        const successDeleteButton = document.querySelector('#credentials-success .delete');
+        if (successDeleteButton) {
+            successDeleteButton.addEventListener('click', () => {
+                const successEl = document.getElementById('credentials-success');
+                if (successEl) successEl.style.display = 'none';
+            });
+        }
+    }
+
+    async loadCredentials() {
+        const loadingEl = document.getElementById('credentials-loading');
+        try {
+            const response = await fetch('/api/credentials');
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    throw new Error('Not authenticated. Please log in.');
+                }
+                const errorText = await response.text();
+                throw new Error(`Failed to load passkeys: ${response.status} ${errorText}`);
+            }
+            const data = await response.json();
+            this.credentials = data.credentials || [];
+            this.renderCredentials();
+        } catch (error) {
+            console.error('Error loading credentials:', error);
+            if (loadingEl) {
+                loadingEl.innerHTML = `<p class="has-text-danger">Error: ${error.message}</p>`;
+            } else {
+                this.showError('Failed to load passkeys: ' + error.message);
+            }
+        } finally {
+            if (loadingEl) {
+                loadingEl.style.display = 'none';
+            }
+        }
+    }
+
+    renderCredentials() {
+        const tbody = document.getElementById('credentials-table-body');
+        const listEl = document.getElementById('credentials-list');
+        const noCredsEl = document.getElementById('no-credentials');
+
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+
+        if (this.credentials.length === 0) {
+            if (listEl) listEl.style.display = 'none';
+            if (noCredsEl) noCredsEl.style.display = 'block';
+            return;
+        }
+
+        if (listEl) listEl.style.display = 'block';
+        if (noCredsEl) noCredsEl.style.display = 'none';
+
+        this.credentials.forEach(cred => {
+            const row = document.createElement('tr');
+            const created = cred.created_at ? new Date(cred.created_at).toLocaleString() : '';
+            const name = cred.name && cred.name.trim() ? cred.name : 'Unnamed passkey';
+
+            row.innerHTML = `
+                <td class="pl-5">${this.escapeHtml(name)}</td>
+                <td>${this.escapeHtml(created)}</td>
+                <td class="pr-5">
+                    <button class="button is-danger is-small delete-credential" data-id="${cred.id}">
+                        <span class="icon">
+                            <i class="fas fa-trash"></i>
+                        </span>
+                        <span>Delete</span>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        document.querySelectorAll('.delete-credential').forEach(btn => {
+            btn.addEventListener('click', () => this.deleteCredential(btn.dataset.id));
+        });
+    }
+
+    async deleteCredential(credentialId) {
+        if (!confirm('Delete this passkey? If this is your last one, you may not be able to sign in.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/credentials/${credentialId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete passkey');
+            }
+
+            this.showSuccess('Passkey deleted');
+            await this.loadCredentials();
+        } catch (error) {
+            console.error('Error deleting credential:', error);
+            this.showError(`Failed to delete passkey: ${error.message}`);
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    showError(message) {
+        const errorEl = document.getElementById('credentials-error');
+        const errorTextEl = document.querySelector('#credentials-error .error-text');
+        if (errorEl && errorTextEl) {
+            errorTextEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => errorEl.style.display = 'none', 5000);
+        }
+    }
+
+    showSuccess(message, autoHide = true) {
+        const successEl = document.getElementById('credentials-success');
+        const successTextEl = document.querySelector('#credentials-success .success-text');
+        if (successEl && successTextEl) {
+            successTextEl.textContent = message;
+            successEl.style.display = 'block';
+            if (autoHide) {
+                setTimeout(() => successEl.style.display = 'none', 5000);
+            }
+        }
+    }
+}
+
 // Initialize WebAuthn UI when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     new WebAuthnUI();
     new GrantManagerUI();
+    new CredentialManagerUI();
 });
 
 // Export for potential module usage
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { WebAuthn, WebAuthnUI, GrantManagerUI };
+    module.exports = { WebAuthn, WebAuthnUI, GrantManagerUI, CredentialManagerUI };
 }

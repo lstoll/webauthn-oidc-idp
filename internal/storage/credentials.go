@@ -237,6 +237,49 @@ func (cs *CredentialStore) AddPasskey(accountID uuid.UUID, aliases [][]byte, pas
 	user.Passkeys = append(user.Passkeys, passkey)
 }
 
+// UserCredential is a listed passkey or legacy credential for an account.
+type UserCredential struct {
+	ID        uuid.UUID
+	Name      string
+	CreatedAt time.Time
+}
+
+// UserCredentials returns the account's legacy credentials and C2SP passkeys.
+func (cs *CredentialStore) UserCredentials(accountID uuid.UUID) []UserCredential {
+	var out []UserCredential
+	for _, cred := range cs.Credentials {
+		if cred.UserID == accountID {
+			out = append(out, UserCredential{ID: cred.ID, Name: cred.Name, CreatedAt: cred.CreatedAt})
+		}
+	}
+	if user := cs.passkeyUser(accountID); user != nil {
+		for _, passkey := range user.Passkeys {
+			out = append(out, UserCredential{ID: passkey.ID, Name: passkey.Name, CreatedAt: passkey.CreatedAt})
+		}
+	}
+	return out
+}
+
+// DeleteUserCredential removes a legacy credential or C2SP passkey owned by
+// the account. It returns false if no matching credential was found.
+func (cs *CredentialStore) DeleteUserCredential(accountID, credentialID uuid.UUID) bool {
+	for i, cred := range cs.Credentials {
+		if cred.ID == credentialID && cred.UserID == accountID {
+			cs.Credentials = append(cs.Credentials[:i], cs.Credentials[i+1:]...)
+			return true
+		}
+	}
+	if user := cs.passkeyUser(accountID); user != nil {
+		for i, passkey := range user.Passkeys {
+			if passkey.ID == credentialID {
+				user.Passkeys = append(user.Passkeys[:i], user.Passkeys[i+1:]...)
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // WebAuthnCredentials returns go-webauthn credentials for login/registration,
 // including legacy blobs and decoded C2SP records.
 func (cs *CredentialStore) WebAuthnCredentials(accountID uuid.UUID) []webauthn.Credential {

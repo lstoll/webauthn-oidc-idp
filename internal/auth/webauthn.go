@@ -57,6 +57,9 @@ func (a *Authenticator) AddHandlers(r *web.Server) {
 	r.Handle("GET /api/grants", a.Middleware(web.BrowserHandlerFunc(a.HandleListGrants)))
 	r.Handle("DELETE /api/grants/", a.Middleware(web.BrowserHandlerFunc(a.HandleRevokeGrant)))
 	r.Handle("DELETE /api/grants", a.Middleware(web.BrowserHandlerFunc(a.HandleRevokeAllGrants)))
+
+	r.Handle("GET /api/credentials", a.Middleware(web.BrowserHandlerFunc(a.HandleListCredentials)))
+	r.Handle("DELETE /api/credentials/", a.Middleware(web.BrowserHandlerFunc(a.HandleDeleteCredential)))
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {

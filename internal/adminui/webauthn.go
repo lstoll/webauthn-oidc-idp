@@ -45,7 +45,7 @@ func (w *WebAuthnManager) AddHandlers(websvr *web.Server) {
 }
 
 // registration is a page used to add a new key. It should handle either a user
-// in the session (from the logged in keys page), or a boostrap token and user
+// in the session (from the logged in keys page), or a bootstrap token and user
 // id as query params for an inactive user.
 func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWriter, req *web.Request) error {
 	// first, check the URL for a registration token and user id. If it exists,
@@ -75,12 +75,22 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 			EnrollmentID: enrollment.ID.String(),
 		}
 		sess.Set(data)
+	} else if userID, ok := auth.UserIDFromContext(ctx); ok {
+		sess := appsession.FromContext(ctx)
+		data := sess.Get()
+		data.Enrollment = &appsession.Enrollment{
+			ForUserID: userID.String(),
+			ReturnTo:  "/",
+		}
+		sess.Set(data)
 	}
 
 	// Get the pending enrollment from session
 	pwe := appsession.FromContext(ctx).Get().Enrollment
 	if pwe == nil || pwe.ForUserID == "" {
-		return fmt.Errorf("no enroll to user id set in session")
+		return rw.WriteResponse(req, &web.RedirectResponse{
+			URL: "/login?return_to=/registration",
+		})
 	}
 
 	if pwe.EnrollmentID != "" {
@@ -117,18 +127,8 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 	sess := appsession.FromContext(ctx)
 	data := sess.Get()
 	pwe := data.Enrollment
-	if pwe == nil || pwe.ForUserID == "" {
-		return fmt.Errorf("no enroll to user id set in session")
-	}
-
-	if pwe.EnrollmentID != "" {
-		enrollmentID, err := uuid.Parse(pwe.EnrollmentID)
-		if err != nil {
-			return fmt.Errorf("invalid enrollment_id: %w", err)
-		}
-		if _, err := w.enrollments.GetPendingEnrollmentByID(enrollmentID); err != nil {
-			return fmt.Errorf("invalid enrollment: %w", err)
-		}
+	if err := w.checkEnrollment(ctx, pwe); err != nil {
+		return err
 	}
 
 	user, err := w.config.Users.GetUserByStringID(pwe.ForUserID)
@@ -179,8 +179,8 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 	sess := appsession.FromContext(ctx)
 	data := sess.Get()
 	pwe := data.Enrollment
-	if pwe == nil || pwe.ForUserID == "" {
-		return fmt.Errorf("no enroll to user id set in session")
+	if err := w.checkEnrollment(ctx, pwe); err != nil {
+		return err
 	}
 
 	user, err := w.config.Users.GetUserByStringID(pwe.ForUserID)
@@ -227,21 +227,20 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 		return fmt.Errorf("creating credential: %w", err)
 	}
 
-	if pwe.EnrollmentID == "" {
-		return fmt.Errorf("no enrollment ID in session")
-	}
-
-	enrollmentID, err := uuid.Parse(pwe.EnrollmentID)
-	if err != nil {
-		return fmt.Errorf("invalid enrollment_id: %w", err)
-	}
-
 	userID, err := uuid.Parse(pwe.ForUserID)
 	if err != nil {
 		return fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	if err := admin.CompleteEnrollment(w.config, w.enrollments, w.credStore, userID, enrollmentID, credential, keyName); err != nil {
+	if pwe.EnrollmentID != "" {
+		enrollmentID, err := uuid.Parse(pwe.EnrollmentID)
+		if err != nil {
+			return fmt.Errorf("invalid enrollment_id: %w", err)
+		}
+		if err := admin.CompleteEnrollment(w.config, w.enrollments, w.credStore, userID, enrollmentID, credential, keyName); err != nil {
+			return err
+		}
+	} else if err := admin.StorePasskey(w.config, w.credStore, userID, credential, keyName); err != nil {
 		return err
 	}
 
@@ -252,4 +251,28 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 			"returnTo": returnTo,
 		},
 	})
+}
+
+func (w *WebAuthnManager) checkEnrollment(ctx context.Context, pwe *appsession.Enrollment) error {
+	if pwe == nil || pwe.ForUserID == "" {
+		return fmt.Errorf("no enroll to user id set in session")
+	}
+	if pwe.EnrollmentID != "" {
+		enrollmentID, err := uuid.Parse(pwe.EnrollmentID)
+		if err != nil {
+			return fmt.Errorf("invalid enrollment_id: %w", err)
+		}
+		if _, err := w.enrollments.GetPendingEnrollmentByID(enrollmentID); err != nil {
+			return fmt.Errorf("invalid enrollment: %w", err)
+		}
+		return nil
+	}
+	userID, ok := auth.UserIDFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("not logged in")
+	}
+	if userID.String() != pwe.ForUserID {
+		return fmt.Errorf("enrollment user mismatch")
+	}
+	return nil
 }

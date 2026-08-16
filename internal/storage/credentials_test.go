@@ -228,3 +228,65 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 		t.Fatalf("on-disk handleAliases = %q, want padded std base64 %q", file.Users[0].HandleAliases, padded)
 	}
 }
+
+func TestUserCredentialsAndDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	store, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accountID := uuid.New()
+	otherID := uuid.New()
+	legacyID := uuid.New()
+	passkeyID := uuid.New()
+	otherLegacyID := uuid.New()
+	otherPasskeyID := uuid.New()
+
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		cs.Credentials = append(cs.Credentials,
+			&storage.Credential{ID: legacyID, UserID: accountID, Name: "legacy"},
+			&storage.Credential{ID: otherLegacyID, UserID: otherID, Name: "other-legacy"},
+		)
+		cs.AddPasskey(accountID, nil, &storage.Passkey{ID: passkeyID, Name: "passkey"})
+		cs.AddPasskey(otherID, nil, &storage.Passkey{ID: otherPasskeyID, Name: "other-passkey"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	store.Read(func(cs *storage.CredentialStore) {
+		got := cs.UserCredentials(accountID)
+		if len(got) != 2 {
+			t.Fatalf("UserCredentials = %d, want 2", len(got))
+		}
+		names := []string{got[0].Name, got[1].Name}
+		if !slices.Contains(names, "legacy") || !slices.Contains(names, "passkey") {
+			t.Fatalf("UserCredentials names = %q", names)
+		}
+	})
+
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		if cs.DeleteUserCredential(accountID, otherPasskeyID) {
+			t.Fatal("deleted another user's passkey")
+		}
+		if !cs.DeleteUserCredential(accountID, legacyID) {
+			t.Fatal("expected to delete own legacy credential")
+		}
+		if !cs.DeleteUserCredential(accountID, passkeyID) {
+			t.Fatal("expected to delete own passkey")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	store.Read(func(cs *storage.CredentialStore) {
+		if n := len(cs.UserCredentials(accountID)); n != 0 {
+			t.Fatalf("expected no credentials after delete, got %d", n)
+		}
+		if n := len(cs.UserCredentials(otherID)); n != 2 {
+			t.Fatalf("other user's credentials mutated, got %d", n)
+		}
+	})
+}

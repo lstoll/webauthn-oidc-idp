@@ -49,6 +49,18 @@ func CompleteEnrollment(
 	credential *webauthn.Credential,
 	name string,
 ) error {
+	enrollment, err := enrollments.ConsumePendingEnrollment(enrollmentID)
+	if err != nil {
+		return fmt.Errorf("consume enrollment: %w", err)
+	}
+	if enrollment.UserID != userID {
+		return fmt.Errorf("enrollment user_id mismatch")
+	}
+	return StorePasskey(cfg, credStore, userID, credential, name)
+}
+
+// StorePasskey writes a C2SP passkey for the account.
+func StorePasskey(cfg *config.Config, credStore *storage.CredentialFile, userID uuid.UUID, credential *webauthn.Credential, name string) error {
 	record, err := storage.EncodePasskeyRecord(credential)
 	if err != nil {
 		return fmt.Errorf("encode passkey record: %w", err)
@@ -56,14 +68,6 @@ func CompleteEnrollment(
 	user, err := cfg.Users.GetUser(userID)
 	if err != nil {
 		return err
-	}
-
-	enrollment, err := enrollments.ConsumePendingEnrollment(enrollmentID)
-	if err != nil {
-		return fmt.Errorf("consume enrollment: %w", err)
-	}
-	if enrollment.UserID != userID {
-		return fmt.Errorf("enrollment user_id mismatch")
 	}
 
 	if err := credStore.Write(func(cs *storage.CredentialStore) error {
