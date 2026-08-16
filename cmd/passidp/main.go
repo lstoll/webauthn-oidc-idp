@@ -53,12 +53,9 @@ var rootCmd = struct {
 	ConfigFile kong.NamedFileContentFlag `name:"config" required:"" env:"IDP_CONFIG_FILE" help:"Path to the config file."`
 	Paths      admincli.Paths            `embed:""`
 
-	Serve             idp.ServeCmd                  `cmd:"" help:"Serve the IDP server."`
-	ValidateConfig    ValidateConfigCmd             `cmd:"" help:"Validate the configuration file."`
-	AddCredential     admincli.AddCredentialCmd     `cmd:"" help:"Add a credential to a user."`
-	ConfirmCredential admincli.ConfirmCredentialCmd `cmd:"" help:"Confirm a pending credential enrollment."`
-	ListCredentials   admincli.ListCredentialsCmd   `cmd:"" help:"List all credentials."`
-	DeleteCredential  admincli.DeleteCredentialCmd  `cmd:"" help:"Delete a credential."`
+	Serve          idp.ServeCmd              `cmd:"" help:"Serve the IDP server."`
+	ValidateConfig ValidateConfigCmd         `cmd:"" help:"Validate the configuration file."`
+	AddCredential  admincli.AddCredentialCmd `cmd:"" help:"Add a credential to a user."`
 }{}
 
 type ValidateConfigCmd struct{}
@@ -123,7 +120,7 @@ func validatePaths(command string, paths admincli.Paths) error {
 	switch command {
 	case "validate-config":
 		return nil
-	case "serve", "confirm-credential":
+	case "serve":
 		if paths.CredentialStorePath == "" {
 			return fmt.Errorf("credential store path is required")
 		}
@@ -133,10 +130,6 @@ func validatePaths(command string, paths admincli.Paths) error {
 	case "add-credential":
 		if paths.StatePath == "" {
 			return fmt.Errorf("state path is required")
-		}
-	case "list-credentials", "delete-credential":
-		if paths.CredentialStorePath == "" {
-			return fmt.Errorf("credential store path is required")
 		}
 	default:
 		return fmt.Errorf("unknown command %q", command)

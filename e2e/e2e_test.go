@@ -222,38 +222,26 @@ func TestE2E(t *testing.T) {
 			t.Fatalf("enrolling user: %v", err)
 		}
 
-		// Parse the enrollment URL, enrollment ID from enrollBuf
+		// Parse the enrollment URL from enrollBuf
 		var enrollmentURL string
-		var enrollmentID string
 		for line := range strings.SplitSeq(enrollBuf.String(), "\n") {
 			if rest, ok := strings.CutPrefix(line, "Enroll at: "); ok {
 				enrollmentURL = strings.TrimSpace(rest)
-			}
-			if rest, ok := strings.CutPrefix(line, "Enrollment ID: "); ok {
-				enrollmentID = strings.TrimSpace(rest)
 			}
 		}
 		if enrollmentURL == "" {
 			t.Fatalf("failed to parse enrollment URL from output: %q", enrollBuf.String())
 		}
-		if enrollmentID == "" {
-			t.Fatalf("failed to parse enrollment ID from output: %q", enrollBuf.String())
-		}
 
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
-		var confirmationKey string
 		go func() {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(enrollmentURL),
 				chromedp.WaitVisible(`#register-button`),
 				chromedp.SendKeys(`#keyName`, "Test Passkey"),
 				chromedp.Click(`#register-button`),
-				// Wait for success message
 				chromedp.WaitVisible(`#success-message`),
-				// Extract confirmation key from data attribute
-				chromedp.Evaluate(`document.body.dataset.confirmationKey || ''`, &confirmationKey),
-				// Wait a bit for the success message to be visible
 				chromedp.Sleep(1*time.Second),
 			)
 			if err != nil {
@@ -270,22 +258,6 @@ func TestE2E(t *testing.T) {
 		case <-time.After(browserStepTimeout()):
 			t.Fatal("step timed out")
 		case <-doneC:
-		}
-
-		if confirmationKey == "" {
-			t.Fatal("failed to extract confirmation key from enrollment response")
-		}
-
-		// Confirm the enrollment
-		var confirmBuf bytes.Buffer
-		confirmCmd := &admincli.ConfirmCredentialCmd{
-			UserID:          testUserID,
-			EnrollmentID:    enrollmentID,
-			ConfirmationKey: confirmationKey,
-			Output:          &confirmBuf,
-		}
-		if err := confirmCmd.Run(ctx, config, storePaths); err != nil {
-			t.Fatalf("confirming enrollment: %v", err)
 		}
 
 		credStore, err := storage.NewCredentialFile(credstorePath)

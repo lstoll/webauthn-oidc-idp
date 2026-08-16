@@ -1,8 +1,10 @@
 package storage_test
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,6 +26,15 @@ func TestNewCredentialFileLazyCreate(t *testing.T) {
 		t.Fatalf("expected no file before first write, stat err=%v", err)
 	}
 
+	if err := store.Write(func(*storage.CredentialStore) error {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected no file after no-op write, stat err=%v", err)
+	}
+
 	if err := store.Write(func(cs *storage.CredentialStore) error {
 		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "test"})
 		return nil
@@ -36,30 +47,56 @@ func TestNewCredentialFileLazyCreate(t *testing.T) {
 	}
 }
 
-func TestCredentialFileReloadsExternalChanges(t *testing.T) {
+func TestCredentialFilePrettyPrinted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	store, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "test"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte("\n  ")) {
+		t.Fatalf("expected indented JSON, got:\n%s", raw)
+	}
+	if raw[len(raw)-1] != '\n' {
+		t.Fatal("expected trailing newline")
+	}
+}
+
+func TestCredentialFileWriteRollback(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "credentials.json")
 	store, err := storage.NewCredentialFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	other, err := storage.NewCredentialFile(path)
-	if err != nil {
-		t.Fatal(err)
+	err = store.Write(func(cs *storage.CredentialStore) error {
+		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "nope"})
+		return errors.New("boom")
+	})
+	if err == nil {
+		t.Fatal("expected write error")
 	}
-	if err := other.Write(func(cs *storage.CredentialStore) error {
-		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "external"})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected no file after failed write, stat err=%v", err)
 	}
 
 	var count int
 	store.Read(func(cs *storage.CredentialStore) {
 		count = len(cs.Credentials)
 	})
-	if count != 1 {
-		t.Fatalf("expected reloaded credential count 1, got %d", count)
+	if count != 0 {
+		t.Fatalf("expected empty store after failed write, got %d credentials", count)
 	}
 }
 
@@ -148,9 +185,10 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 		mustLookup([]byte(accountID.String()))
 		mustLookup([]byte("custom-subject"))
 
-		padded := base64.StdEncoding.EncodeToString(handle[:])
-		if !slices.Contains(pu.HandleAliases, padded) {
-			t.Fatalf("handle aliases = %q, want padded std base64 %q", pu.HandleAliases, padded)
+		if !slices.ContainsFunc(pu.HandleAliases, func(alias []byte) bool {
+			return bytes.Equal(alias, handle[:])
+		}) {
+			t.Fatalf("handle aliases = %q, want raw handle %q", pu.HandleAliases, handle[:])
 		}
 	})
 
@@ -172,7 +210,9 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 	}
 	var file struct {
 		Credentials json.RawMessage `json:"credentials"`
-		Users       json.RawMessage `json:"users"`
+		Users       []struct {
+			HandleAliases []string `json:"handleAliases"`
+		} `json:"users"`
 	}
 	if err := json.Unmarshal(raw, &file); err != nil {
 		t.Fatal(err)
@@ -180,7 +220,11 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 	if len(file.Credentials) == 0 || string(file.Credentials) == "null" {
 		t.Fatalf("credentials key missing from file: %s", raw)
 	}
-	if len(file.Users) == 0 || string(file.Users) == "null" {
+	if len(file.Users) == 0 {
 		t.Fatalf("users key missing from file: %s", raw)
+	}
+	padded := base64.StdEncoding.EncodeToString(handle[:])
+	if !slices.Contains(file.Users[0].HandleAliases, padded) {
+		t.Fatalf("on-disk handleAliases = %q, want padded std base64 %q", file.Users[0].HandleAliases, padded)
 	}
 }

@@ -3,17 +3,18 @@ package storage
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/base64"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
 	"uuid"
 
-	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"lds.li/passidp/internal/config"
 )
@@ -31,7 +32,7 @@ type CredentialStore struct {
 type PasskeyUser struct {
 	AccountID     uuid.UUID  `json:"accountId,omitzero"`
 	PasskeyUserID string     `json:"passkeyUserId,omitzero"`
-	HandleAliases []string   `json:"handleAliases,omitzero"` // standard padded base64, same as encoding/json/v2 format:base64
+	HandleAliases [][]byte   `json:"handleAliases,omitzero"` // json/v2 encodes []byte as RFC 4648 §4 padded standard base64
 	Passkeys      []*Passkey `json:"passkeys,omitzero"`
 }
 
@@ -53,29 +54,33 @@ type Credential struct {
 	CreatedAt      time.Time            `json:"created_at,omitzero"`
 }
 
-// CredentialFile persists credentials to a JSON file and reloads when the
-// file changes on disk, so external tools can update credentials while the
-// server is running. The file is created lazily on the first write.
+// CredentialFile persists credentials to a JSON file. The file is created
+// lazily on the first write that changes the store.
 type CredentialFile struct {
 	path string
-	mu   sync.Mutex
-	file *jsonfile.JSONFile[CredentialStore]
-	mod  time.Time
+	mu   sync.RWMutex
+	data CredentialStore
+	raw  []byte
 }
+
+var emptyStoreJSON = []byte("{}\n")
 
 // NewCredentialFile opens an existing credential file or starts an empty
 // in-memory store. The file is created on the first write.
 func NewCredentialFile(path string) (*CredentialFile, error) {
-	file, err := openCredentialFile(path)
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return &CredentialFile{path: path, raw: emptyStoreJSON}, nil
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load credential store from %s: %w", path, err)
 	}
 
-	cf := &CredentialFile{path: path, file: file}
-	if info, err := os.Stat(path); err == nil {
-		cf.mod = info.ModTime()
+	var data CredentialStore
+	if err := jsonv2.Unmarshal(raw, &data); err != nil {
+		return nil, fmt.Errorf("load credential store from %s: %w", path, err)
 	}
-	return cf, nil
+	return &CredentialFile{path: path, data: data, raw: raw}, nil
 }
 
 // ApplyConfig ensures a passkey user record exists for each config user and
@@ -91,61 +96,73 @@ func (c *CredentialFile) ApplyConfig(users config.Users) error {
 
 // Read calls fn with the current credential store contents.
 func (c *CredentialFile) Read(fn func(data *CredentialStore)) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.reloadIfChanged()
-	c.file.Read(fn)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	fn(&c.data)
 }
 
 // Write calls fn with a copy of the credential store, then persists changes.
 func (c *CredentialFile) Write(fn func(*CredentialStore) error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.reloadIfChanged()
-	if err := c.file.Write(fn); err != nil {
+
+	var next CredentialStore
+	if err := jsonv2.Unmarshal(c.raw, &next); err != nil {
+		return fmt.Errorf("clone credential store: %w", err)
+	}
+	if err := fn(&next); err != nil {
 		return err
 	}
-	c.refreshModTime()
+	b, err := marshalStore(&next)
+	if err != nil {
+		return fmt.Errorf("marshal credential store: %w", err)
+	}
+	if bytes.Equal(b, c.raw) {
+		return nil
+	}
+	if err := writeFileAtomic(c.path, b); err != nil {
+		return fmt.Errorf("write credential store: %w", err)
+	}
+
+	var stored CredentialStore
+	if err := jsonv2.Unmarshal(b, &stored); err != nil {
+		return fmt.Errorf("reload credential store: %w", err)
+	}
+	c.data = stored
+	c.raw = b
 	return nil
 }
 
-func (c *CredentialFile) reloadIfChanged() {
-	info, err := os.Stat(c.path)
+func marshalStore(cs *CredentialStore) ([]byte, error) {
+	b, err := jsonv2.Marshal(cs, jsontext.WithIndent("  "))
 	if err != nil {
-		return
+		return nil, err
 	}
-	if !info.ModTime().After(c.mod) {
-		return
+	if len(b) == 0 || b[len(b)-1] != '\n' {
+		b = append(b, '\n')
 	}
-	file, err := jsonfile.Load[CredentialStore](c.path)
-	if err != nil {
-		return
-	}
-	c.file = file
-	c.mod = info.ModTime()
+	return b, nil
 }
 
-func (c *CredentialFile) refreshModTime() {
-	info, err := os.Stat(c.path)
+func writeFileAtomic(path string, b []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
 	if err != nil {
-		return
+		return fmt.Errorf("temp: %w", err)
 	}
-	c.mod = info.ModTime()
-}
-
-func openCredentialFile(path string) (*jsonfile.JSONFile[CredentialStore], error) {
-	file, err := jsonfile.Load[CredentialStore](path)
-	if errors.Is(err, fs.ErrNotExist) {
-		file, err = jsonfile.New[CredentialStore](path)
-		if err != nil {
-			return nil, fmt.Errorf("create credential store: %w", err)
-		}
-		return file, nil
+	tmp := f.Name()
+	_, err = f.Write(b)
+	if err1 := f.Close(); err1 != nil && err == nil {
+		err = err1
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load credential store from %s: %w", path, err)
+		os.Remove(tmp)
+		return err
 	}
-	return file, nil
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
 }
 
 // EnsurePasskeyUser returns the passkey user for accountID, creating it with a
@@ -196,12 +213,13 @@ func (cs *CredentialStore) PasskeyUserID(accountID uuid.UUID) (string, bool) {
 
 // LookupAccountByHandle finds an account by passkey user id or a stored alias.
 func (cs *CredentialStore) LookupAccountByHandle(handle []byte) (uuid.UUID, bool) {
-	encoded := base64.StdEncoding.EncodeToString(handle)
 	for _, user := range cs.Users {
 		if bytes.Equal([]byte(user.PasskeyUserID), handle) {
 			return user.AccountID, true
 		}
-		if slices.Contains(user.HandleAliases, encoded) {
+		if slices.ContainsFunc(user.HandleAliases, func(alias []byte) bool {
+			return bytes.Equal(alias, handle)
+		}) {
 			return user.AccountID, true
 		}
 	}
@@ -245,10 +263,11 @@ func (pu *PasskeyUser) addAliases(handles [][]byte) {
 		if len(handle) == 0 || bytes.Equal(handle, []byte(pu.PasskeyUserID)) {
 			continue
 		}
-		alias := base64.StdEncoding.EncodeToString(handle)
-		if slices.Contains(pu.HandleAliases, alias) {
+		if slices.ContainsFunc(pu.HandleAliases, func(alias []byte) bool {
+			return bytes.Equal(alias, handle)
+		}) {
 			continue
 		}
-		pu.HandleAliases = append(pu.HandleAliases, alias)
+		pu.HandleAliases = append(pu.HandleAliases, bytes.Clone(handle))
 	}
 }

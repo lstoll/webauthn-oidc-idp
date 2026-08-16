@@ -297,15 +297,6 @@ class WebAuthnUI {
                 this.hideSuccess();
             });
         }
-
-        // Confirmation box close button
-        const confDeleteButton = document.querySelector('#confirmation-box .delete');
-        if (confDeleteButton) {
-            confDeleteButton.addEventListener('click', () => {
-                const confBox = document.getElementById('confirmation-box');
-                if (confBox) confBox.style.display = 'none';
-            });
-        }
     }
 
     /**
@@ -333,51 +324,25 @@ class WebAuthnUI {
             const responseData = await result.json();
 
             if (responseData.success) {
-                // Build success message
                 let successMsg = responseData.message || "Passkey registered successfully!";
 
-                // If there's a confirmation key, show it in the dedicated box
-                if (responseData.confirmation_key) {
-                    const confBox = document.getElementById('confirmation-box');
-                    const confKeyVal = document.getElementById('confirmation-key-value');
-                    const enrollIdVal = document.getElementById('enrollment-id-value');
-
-                    if (confBox && confKeyVal) {
-                        confKeyVal.textContent = responseData.confirmation_key;
-                        if (enrollIdVal) enrollIdVal.textContent = responseData.enrollment_id || 'N/A';
-                        confBox.style.display = 'block';
-
-                        // Hide the registration form since registration is complete
-                        const registrationForm = document.getElementById('registration-form');
-                        if (registrationForm) {
-                            registrationForm.style.display = 'none';
-                        }
-
-                        // Update the card title and subtitle to reflect completion
-                        const titleElement = document.querySelector('.title');
-                        const subtitleElement = document.querySelector('.subtitle');
-                        if (titleElement) {
-                            titleElement.textContent = 'Passkey Registered';
-                        }
-                        if (subtitleElement) {
-                            subtitleElement.textContent = 'Registration pending administrator confirmation';
-                        }
-                    }
+                const registrationForm = document.getElementById('registration-form');
+                if (registrationForm) {
+                    registrationForm.style.display = 'none';
                 }
 
-                // Store confirmation details in data attributes for easy extraction
-                if (responseData.confirmation_key) {
-                    document.body.dataset.confirmationKey = responseData.confirmation_key;
+                const titleElement = document.querySelector('.title');
+                const subtitleElement = document.querySelector('.subtitle');
+                if (titleElement) {
+                    titleElement.textContent = 'Passkey Registered';
                 }
-                if (responseData.enrollment_id) {
-                    document.body.dataset.enrollmentId = responseData.enrollment_id;
+                if (subtitleElement) {
+                    subtitleElement.textContent = 'This passkey can now be used to sign in';
                 }
 
-                // Show success message, auto-hide it as requested
                 this.showSuccess(successMsg, true);
 
-                // Don't redirect automatically when confirmation is needed
-                if (!responseData.confirmation_key && responseData.returnTo) {
+                if (responseData.returnTo) {
                     setTimeout(() => {
                         window.location.href = responseData.returnTo;
                     }, 2000);

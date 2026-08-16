@@ -2,33 +2,28 @@ package storage
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 	"uuid"
-
-	"github.com/go-webauthn/webauthn/webauthn"
 )
 
-const PendingEnrollmentMaxAge = 24 * time.Hour
+const DefaultEnrollmentValidity = 15 * time.Minute
 
 // EnrollmentStore persists in-progress credential enrollments in SQLite.
 type EnrollmentStore struct {
 	db *sql.DB
 }
 
-// PendingEnrollment is an in-progress passkey registration.
+// PendingEnrollment is a short-lived passkey enrollment token.
 type PendingEnrollment struct {
-	ID              uuid.UUID
-	UserID          uuid.UUID
-	EnrollmentKey   string
-	CreatedAt       time.Time
-	ConfirmationKey string
-	CredentialID    []byte
-	CredentialData  json.RawMessage
-	Name            string
+	ID            uuid.UUID
+	UserID        uuid.UUID
+	EnrollmentKey string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
 }
 
 // NewEnrollmentStore returns a SQL-backed pending enrollment store.
@@ -36,44 +31,23 @@ func NewEnrollmentStore(sqlDB *sql.DB) *EnrollmentStore {
 	return &EnrollmentStore{db: sqlDB}
 }
 
-// EnrollmentHasCredential reports whether a pending enrollment has a registered passkey.
-func EnrollmentHasCredential(row PendingEnrollment) bool {
-	return len(row.CredentialData) > 0
-}
-
-// EnrollmentCredential decodes the registered passkey, or nil if not yet registered.
-func EnrollmentCredential(row PendingEnrollment) (*webauthn.Credential, error) {
-	if !EnrollmentHasCredential(row) {
-		return nil, nil
+func (e *EnrollmentStore) CreatePendingEnrollment(userID uuid.UUID, validity time.Duration) (PendingEnrollment, error) {
+	if validity <= 0 {
+		return PendingEnrollment{}, fmt.Errorf("enrollment validity must be positive")
 	}
-
-	var credential webauthn.Credential
-	if err := json.Unmarshal(row.CredentialData, &credential); err != nil {
-		return nil, fmt.Errorf("unmarshal credential: %w", err)
-	}
-	return &credential, nil
-}
-
-func marshalEnrollmentCredential(credential *webauthn.Credential) (json.RawMessage, error) {
-	data, err := json.Marshal(credential)
-	if err != nil {
-		return nil, fmt.Errorf("marshal credential: %w", err)
-	}
-	return data, nil
-}
-
-func (e *EnrollmentStore) CreatePendingEnrollment(userID uuid.UUID) (PendingEnrollment, error) {
+	now := time.Now()
 	enrollment := PendingEnrollment{
 		ID:            uuid.New(),
 		UserID:        userID,
-		EnrollmentKey: uuid.New().String(),
-		CreatedAt:     time.Now(),
+		EnrollmentKey: rand.Text(),
+		CreatedAt:     now,
+		ExpiresAt:     now.Add(validity),
 	}
 
 	_, err := e.db.ExecContext(context.Background(), `
-		INSERT INTO pending_enrollments (id, user_id, enrollment_key, created_at)
-		VALUES (?, ?, ?, ?)`,
-		enrollment.ID, enrollment.UserID, enrollment.EnrollmentKey, enrollment.CreatedAt)
+		INSERT INTO pending_enrollments (id, user_id, enrollment_key, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		enrollment.ID, enrollment.UserID, enrollment.EnrollmentKey, enrollment.CreatedAt, enrollment.ExpiresAt)
 	if err != nil {
 		return PendingEnrollment{}, fmt.Errorf("insert enrollment: %w", err)
 	}
@@ -81,63 +55,32 @@ func (e *EnrollmentStore) CreatePendingEnrollment(userID uuid.UUID) (PendingEnro
 }
 
 func (e *EnrollmentStore) GetPendingEnrollmentByKey(enrollmentKey string) (PendingEnrollment, error) {
-	row, err := scanEnrollment(e.db.QueryRowContext(context.Background(), enrollmentSelect+`
-		WHERE enrollment_key = ?`, enrollmentKey))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return PendingEnrollment{}, fmt.Errorf("enrollment not found")
-		}
-		return PendingEnrollment{}, fmt.Errorf("get enrollment by key: %w", err)
-	}
-	return row, nil
+	return e.getPendingEnrollment(enrollmentSelect+` WHERE enrollment_key = ?`, enrollmentKey)
 }
 
 func (e *EnrollmentStore) GetPendingEnrollmentByID(enrollmentID uuid.UUID) (PendingEnrollment, error) {
-	row, err := scanEnrollment(e.db.QueryRowContext(context.Background(), enrollmentSelect+`
-		WHERE id = ?`, enrollmentID))
+	return e.getPendingEnrollment(enrollmentSelect+` WHERE id = ?`, enrollmentID)
+}
+
+func (e *EnrollmentStore) getPendingEnrollment(query string, arg any) (PendingEnrollment, error) {
+	row, err := scanEnrollment(e.db.QueryRowContext(context.Background(), query, arg))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PendingEnrollment{}, fmt.Errorf("enrollment not found")
 		}
-		return PendingEnrollment{}, fmt.Errorf("get enrollment by id: %w", err)
+		return PendingEnrollment{}, fmt.Errorf("get enrollment: %w", err)
+	}
+	if row.Expired() {
+		return PendingEnrollment{}, fmt.Errorf("enrollment expired")
 	}
 	return row, nil
 }
 
-func (e *EnrollmentStore) UpdatePendingEnrollment(enrollmentID uuid.UUID, credentialID []byte, credentialData *webauthn.Credential, name string, confirmationKey string) error {
-	enrollment, err := e.GetPendingEnrollmentByID(enrollmentID)
-	if err != nil {
-		return err
-	}
-
-	if EnrollmentHasCredential(enrollment) {
-		return fmt.Errorf("enrollment already completed - a passkey has already been registered for this enrollment")
-	}
-
-	credentialJSON, err := marshalEnrollmentCredential(credentialData)
-	if err != nil {
-		return err
-	}
-
-	_, err = e.db.ExecContext(context.Background(), `
-		UPDATE pending_enrollments
-		SET confirmation_key = ?, credential_id = ?, credential_data = ?, name = ?
-		WHERE id = ?`,
-		confirmationKey, credentialID, credentialJSON, name, enrollmentID)
-	return err
-}
-
-func (e *EnrollmentStore) ConfirmPendingEnrollment(enrollmentID uuid.UUID, confirmationKey string) (PendingEnrollment, error) {
+// ConsumePendingEnrollment deletes a still-valid enrollment and returns it.
+func (e *EnrollmentStore) ConsumePendingEnrollment(enrollmentID uuid.UUID) (PendingEnrollment, error) {
 	enrollment, err := e.GetPendingEnrollmentByID(enrollmentID)
 	if err != nil {
 		return PendingEnrollment{}, err
-	}
-
-	if enrollment.ConfirmationKey == "" || enrollment.ConfirmationKey != confirmationKey {
-		return PendingEnrollment{}, fmt.Errorf("invalid confirmation key")
-	}
-	if !EnrollmentHasCredential(enrollment) {
-		return PendingEnrollment{}, fmt.Errorf("enrollment not completed")
 	}
 
 	result, err := e.db.ExecContext(context.Background(), `DELETE FROM pending_enrollments WHERE id = ?`, enrollmentID)
@@ -151,7 +94,6 @@ func (e *EnrollmentStore) ConfirmPendingEnrollment(enrollmentID uuid.UUID, confi
 	if rows == 0 {
 		return PendingEnrollment{}, fmt.Errorf("enrollment not found")
 	}
-
 	return enrollment, nil
 }
 
@@ -169,6 +111,9 @@ func (e *EnrollmentStore) ListPendingEnrollmentsByUser(userID uuid.UUID) ([]Pend
 		if err != nil {
 			return nil, fmt.Errorf("list enrollments: %w", err)
 		}
+		if row.Expired() {
+			continue
+		}
 		enrollments = append(enrollments, row)
 	}
 	if err := rows.Err(); err != nil {
@@ -178,9 +123,8 @@ func (e *EnrollmentStore) ListPendingEnrollmentsByUser(userID uuid.UUID) ([]Pend
 }
 
 func (e *EnrollmentStore) GarbageCollectPendingEnrollments() (int, error) {
-	cutoff := time.Now().Add(-PendingEnrollmentMaxAge)
 	result, err := e.db.ExecContext(context.Background(), `
-		DELETE FROM pending_enrollments WHERE created_at < ?`, cutoff)
+		DELETE FROM pending_enrollments WHERE expires_at < ?`, time.Now())
 	if err != nil {
 		return 0, fmt.Errorf("delete expired enrollments: %w", err)
 	}
@@ -191,8 +135,12 @@ func (e *EnrollmentStore) GarbageCollectPendingEnrollments() (int, error) {
 	return int(deleted), nil
 }
 
+func (p PendingEnrollment) Expired() bool {
+	return !p.ExpiresAt.After(time.Now())
+}
+
 const enrollmentSelect = `
-	SELECT id, user_id, enrollment_key, created_at, confirmation_key, credential_id, credential_data, name
+	SELECT id, user_id, enrollment_key, created_at, expires_at
 	FROM pending_enrollments`
 
 type enrollmentScanner interface {
@@ -200,27 +148,16 @@ type enrollmentScanner interface {
 }
 
 func scanEnrollment(s enrollmentScanner) (PendingEnrollment, error) {
-	var (
-		e               PendingEnrollment
-		confirmationKey sql.NullString
-		name            sql.NullString
-		credentialData  []byte
-	)
+	var e PendingEnrollment
 	err := s.Scan(
 		&e.ID,
 		&e.UserID,
 		&e.EnrollmentKey,
 		&e.CreatedAt,
-		&confirmationKey,
-		&e.CredentialID,
-		&credentialData,
-		&name,
+		&e.ExpiresAt,
 	)
 	if err != nil {
 		return PendingEnrollment{}, err
 	}
-	e.ConfirmationKey = confirmationKey.String
-	e.Name = name.String
-	e.CredentialData = credentialData
 	return e, nil
 }
