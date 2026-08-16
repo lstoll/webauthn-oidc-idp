@@ -217,29 +217,17 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	}
 
 	// Validate the login
-	user, credential, err := a.Webauthn.ValidatePasskeyLogin(a.NewDiscoverableUserHandler(ctx), *flow.WebAuthnData, parsedResponse)
+	user, _, err := a.Webauthn.ValidatePasskeyLogin(a.NewDiscoverableUserHandler(ctx), *flow.WebAuthnData, parsedResponse)
 	if err != nil {
 		return fmt.Errorf("validating login: %w", err)
 	}
 
+	cfgUser := user.(*WebAuthnUser).user
 	if err := a.CredStore.Write(func(cs *storage.CredentialStore) error {
-		// TODO(lstoll) - what data is being updated here, if it's just the
-		// counter we should maybe split that out into the working store, to
-		// stop changing the file.
-		var updated bool
-		for _, cred := range cs.Credentials {
-			if bytes.Equal(cred.CredentialID, credential.ID) {
-				cred.CredentialData = credential
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			return fmt.Errorf("no credential found for %s to update", credential.ID)
-		}
+		cs.RememberHandle(cfgUser.ID, parsedResponse.Response.UserHandle, cfgUser.PasskeyHandleAliases())
 		return nil
 	}); err != nil {
-		return fmt.Errorf("writing credential to store: %w", err)
+		return fmt.Errorf("record passkey handle: %w", err)
 	}
 
 	// Set user ID in session

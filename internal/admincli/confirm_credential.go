@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"lds.li/passidp/internal/admin"
+	"lds.li/passidp/internal/config"
 )
 
 type ConfirmCredentialCmd struct {
@@ -18,7 +19,7 @@ type ConfirmCredentialCmd struct {
 	Output io.Writer `kong:"-"`
 }
 
-func (c *ConfirmCredentialCmd) Run(ctx context.Context, paths Paths) error {
+func (c *ConfirmCredentialCmd) Run(ctx context.Context, cfg *config.Config, paths Paths) error {
 	if c.Output == nil {
 		c.Output = os.Stdout
 	}
@@ -39,7 +40,7 @@ func (c *ConfirmCredentialCmd) Run(ctx context.Context, paths Paths) error {
 	}
 	defer stores.Close()
 
-	confirmed, err := admin.ConfirmEnrollment(stores.Enrollments, stores.Credentials, userID, enrollmentID, c.ConfirmationKey)
+	confirmed, err := admin.ConfirmEnrollment(cfg, stores.Enrollments, stores.Credentials, userID, enrollmentID, c.ConfirmationKey)
 	if err != nil {
 		return err
 	}

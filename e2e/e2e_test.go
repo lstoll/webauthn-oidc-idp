@@ -284,7 +284,7 @@ func TestE2E(t *testing.T) {
 			ConfirmationKey: confirmationKey,
 			Output:          &confirmBuf,
 		}
-		if err := confirmCmd.Run(ctx, storePaths); err != nil {
+		if err := confirmCmd.Run(ctx, config, storePaths); err != nil {
 			t.Fatalf("confirming enrollment: %v", err)
 		}
 
@@ -294,8 +294,20 @@ func TestE2E(t *testing.T) {
 		}
 
 		credStore.Read(func(cs *storage.CredentialStore) {
-			if len(cs.Credentials) == 0 {
-				t.Fatalf("expected at least 1 credential, got: %d", len(cs.Credentials))
+			if len(cs.Credentials) != 0 {
+				t.Fatalf("new enrollments should not write legacy credentials, got %d", len(cs.Credentials))
+			}
+			n := 0
+			for _, user := range cs.Users {
+				n += len(user.Passkeys)
+				for _, passkey := range user.Passkeys {
+					if !strings.HasPrefix(passkey.Record, "$webauthn$v=1$") {
+						t.Fatalf("expected C2SP passkey record, got %q", passkey.Record)
+					}
+				}
+			}
+			if n == 0 {
+				t.Fatalf("expected at least 1 passkey, got: %d", n)
 			}
 		})
 	})
