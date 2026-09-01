@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,13 +13,9 @@ import (
 
 	"github.com/descope/virtualwebauthn"
 
-	"encoding/base64"
-
-	"bytes"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
+	"filippo.io/passkey"
 	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
@@ -29,14 +26,18 @@ import (
 	"lds.li/web/webtest"
 )
 
+const (
+	testRPID   = "test.example.com"
+	testOrigin = "https://example.com"
+)
+
 func TestWebauthnAuth(t *testing.T) {
-	wn, err := webauthn.New(&webauthn.Config{
-		RPID:          "test.example.com",
-		RPDisplayName: "Test",
-		RPOrigins:     []string{"https://example.com"},
+	rp, err := passkey.NewRelyingParty(&passkey.Options{
+		RPID:   testRPID,
+		Origin: testOrigin,
 	})
 	if err != nil {
-		t.Fatalf("create webauthn: %v", err)
+		t.Fatalf("create relying party: %v", err)
 	}
 
 	credStore, err := storage.NewCredentialFile(t.TempDir() + "/credential-store.json")
@@ -45,13 +46,13 @@ func TestWebauthnAuth(t *testing.T) {
 	}
 
 	auth := &Authenticator{
-		Webauthn:  wn,
+		Passkey:   rp,
 		CredStore: credStore,
 		Config:    &config.Config{SessionDuration: config.JSONDuration(1 * time.Hour)},
 	}
 
-	t.Run("login_legacy", func(t *testing.T) {
-		authenticator, credential, _ := createUserWithCredential(t, auth)
+	t.Run("login_c2sp", func(t *testing.T) {
+		authenticator, credential, _ := createUserWithPasskey(t, auth, nil)
 		as := doTestLogin(t, auth, authenticator, credential)
 
 		t.Run("session_expiry", func(t *testing.T) {
@@ -70,10 +71,134 @@ func TestWebauthnAuth(t *testing.T) {
 		})
 	})
 
-	t.Run("login_c2sp", func(t *testing.T) {
-		authenticator, credential, _ := createUserWithPasskeyRecord(t, auth)
+	t.Run("login_legacy_user_ids", func(t *testing.T) {
+		t.Run("raw_uuid_bytes", func(t *testing.T) {
+			handle := uuid.MustParse("70e0b33f-9ae9-4127-824b-7ad384c0de29")
+			authenticator, credential, _ := createUserWithPasskey(t, auth, func(u *config.User) string {
+				u.WebauthnHandle = handle
+				return string(handle[:])
+			})
+			doTestLogin(t, auth, authenticator, credential)
+		})
+		t.Run("account_uuid_string", func(t *testing.T) {
+			authenticator, credential, _ := createUserWithPasskey(t, auth, func(u *config.User) string {
+				return u.ID.String()
+			})
+			doTestLogin(t, auth, authenticator, credential)
+		})
+		t.Run("override_subject", func(t *testing.T) {
+			authenticator, credential, _ := createUserWithPasskey(t, auth, func(u *config.User) string {
+				u.Metadata = map[string]any{"overrideSubject": "legacy-subject"}
+				return "legacy-subject"
+			})
+			doTestLogin(t, auth, authenticator, credential)
+		})
+	})
+
+	t.Run("login_imported_legacy_blob", func(t *testing.T) {
+		authenticator, credential, userID := createUserWithPasskey(t, auth, nil)
+		var (
+			record  json.RawMessage
+			name    string
+			id      uuid.UUID
+			created time.Time
+		)
+		auth.CredStore.Read(func(cs *storage.CredentialStore) {
+			for _, pu := range cs.Users {
+				if pu.AccountID != userID {
+					continue
+				}
+				if len(pu.Passkeys) != 1 {
+					t.Fatalf("expected 1 passkey, got %d", len(pu.Passkeys))
+				}
+				pk := pu.Passkeys[0]
+				id, name, created = pk.ID, pk.Name, pk.CreatedAt
+				blob, err := json.Marshal(map[string]any{
+					"attestation": map[string][]byte{
+						"authenticatorData": mustAuthDataFromRecord(t, pk.Record),
+					},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				record = blob
+			}
+		})
+		if err := auth.CredStore.Write(func(cs *storage.CredentialStore) error {
+			for _, pu := range cs.Users {
+				if pu.AccountID == userID {
+					pu.Passkeys = nil
+				}
+			}
+			cs.Credentials = append(cs.Credentials, &storage.Credential{
+				ID:             id,
+				UserID:         userID,
+				Name:           name,
+				CredentialData: record,
+				CreatedAt:      created,
+			})
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := auth.CredStore.ApplyConfig(auth.Config.Users, testRPID); err != nil {
+			t.Fatal(err)
+		}
 		doTestLogin(t, auth, authenticator, credential)
 	})
+}
+
+func TestLookupUser(t *testing.T) {
+	rp, err := passkey.NewRelyingParty(&passkey.Options{RPID: testRPID, Origin: testOrigin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credStore, err := storage.NewCredentialFile(t.TempDir() + "/credential-store.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accountID := uuid.MustParse("4854735c-5a01-4a2d-b7a0-330a5b5928a9")
+	handle := uuid.MustParse("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+	user := &config.User{
+		ID:             accountID,
+		Email:          "legacy@example.com",
+		FullName:       "Legacy User",
+		WebauthnHandle: handle,
+		Metadata:       map[string]any{"overrideSubject": "custom-subject"},
+	}
+	if err := credStore.Write(func(cs *storage.CredentialStore) error {
+		cs.EnsurePasskeyUser(accountID, user.PasskeyHandleAliases())
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	auth := &Authenticator{
+		Passkey:   rp,
+		CredStore: credStore,
+		Config:    &config.Config{Users: config.Users{user}},
+	}
+
+	mustFind := func(t *testing.T, userID string) {
+		t.Helper()
+		got, err := auth.lookupUser(userID)
+		if err != nil {
+			t.Fatalf("lookup %q: %v", userID, err)
+		}
+		if got.ID != accountID {
+			t.Fatalf("lookup %q: got %s, want %s", userID, got.ID, accountID)
+		}
+	}
+
+	var passkeyUserID string
+	credStore.Read(func(cs *storage.CredentialStore) {
+		passkeyUserID, _ = cs.PasskeyUserID(accountID)
+	})
+	mustFind(t, passkeyUserID)
+	mustFind(t, string(handle[:]))
+	mustFind(t, accountID.String())
+	mustFind(t, "custom-subject")
 }
 
 func doTestLogin(t *testing.T, auth *Authenticator, authenticator virtualwebauthn.Authenticator, credential virtualwebauthn.Credential) appsession.Auth {
@@ -116,51 +241,53 @@ func doTestLogin(t *testing.T, auth *Authenticator, authenticator virtualwebauth
 	}
 
 	reFlowID := regexp.MustCompile(`<div\s+data-flow-id="([^"]+)"`)
-	reChallenge := regexp.MustCompile(`<div\s+data-webauthn-challenge="([^"]+)"`)
-
 	flowIDMatch := reFlowID.FindSubmatch(body)
 	if flowIDMatch == nil {
 		t.Fatalf("could not find data-flow-id in response body")
 	}
 	extractedFlowID := string(flowIDMatch[1])
 
-	challengeMatch := reChallenge.FindSubmatch(body)
-	if challengeMatch == nil {
-		t.Fatalf("could not find data-webauthn-challenge in response body")
-	}
-	extractedChallenge := string(challengeMatch[1])
+	beginReq, beginChange := requestWithSession(t, "POST", "/login/begin",
+		change.Data(),
+		webtest.RequestWithJSONBody(map[string]any{"flowID": extractedFlowID}),
+	)
 
-	challengeBytes, err := base64.RawURLEncoding.DecodeString(extractedChallenge)
+	beginRw := webtest.NewResponse()
+	if err := auth.BeginLogin(beginReq.RawRequest().Context(), beginRw, beginReq); err != nil {
+		t.Fatalf("begin login: %v", err)
+	}
+	if beginRw.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected begin status OK, got %d", beginRw.Result().StatusCode)
+	}
+
+	optionsJSON, err := io.ReadAll(beginRw.Result().Body)
 	if err != nil {
-		t.Fatalf("decode challenge: %v", err)
+		t.Fatalf("read begin response body: %v", err)
+	}
+
+	assertionOptions, err := virtualwebauthn.ParseAssertionOptions(string(optionsJSON))
+	if err != nil {
+		t.Fatalf("parse assertion options: %v", err)
 	}
 
 	assertionResponse := virtualwebauthn.CreateAssertionResponse(
 		virtualwebauthn.RelyingParty{
-			ID:     "test.example.com",
+			ID:     testRPID,
 			Name:   "Test",
-			Origin: "https://example.com",
+			Origin: testOrigin,
 		},
 		authenticator,
 		credential,
-		virtualwebauthn.AssertionOptions{
-			Challenge:      challengeBytes,
-			RelyingPartyID: "test.example.com",
-		},
+		*assertionOptions,
 	)
-
-	var assertionData map[string]any
-	if err := json.Unmarshal([]byte(assertionResponse), &assertionData); err != nil {
-		t.Fatalf("unmarshal assertion response: %v", err)
-	}
 
 	loginData := map[string]any{
 		"flowID":                      extractedFlowID,
-		"credentialAssertionResponse": assertionData,
+		"credentialAssertionResponse": json.RawMessage(assertionResponse),
 	}
 
 	loginReq, loginChange := requestWithSession(t, "POST", "/finishWebauthnLogin",
-		change.Data(),
+		beginChange.Data(),
 		webtest.RequestWithJSONBody(loginData),
 	)
 
@@ -200,98 +327,18 @@ func doTestLogin(t *testing.T, auth *Authenticator, authenticator virtualwebauth
 	return as
 }
 
-// Helper function to create a user with a registered credential. When we re-do
-// registration, we should probably replace this with that.
-func createUserWithCredential(t *testing.T, auth *Authenticator) (virtualwebauthn.Authenticator, virtualwebauthn.Credential, uuid.UUID) {
-	userID := uuid.New()
-	webauthnHandle := uuid.New()
-
-	auth.Config.Users = append(auth.Config.Users, &config.User{
-		ID:             userID,
-		Email:          "test@example.com",
-		FullName:       "Test User",
-		WebauthnHandle: webauthnHandle,
-	})
-
-	// Create a webauthn user for registration
-	wu := &WebAuthnUser{
-		user: &config.User{
-			ID:             userID,
-			Email:          "test@example.com",
-			FullName:       "Test User",
-			WebauthnHandle: webauthnHandle,
-		},
-		webAuthnID: webauthnHandle[:],
-	}
-
-	// Begin registration
-	options, sessionData, err := auth.Webauthn.BeginRegistration(wu)
-	if err != nil {
-		t.Fatalf("begin registration: %v", err)
-	}
-
-	// Create virtual authenticator for registration
-	authenticator := virtualwebauthn.NewAuthenticator()
-	authenticator.Options.UserHandle = webauthnHandle[:]
-	credential := virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2)
-	authenticator.AddCredential(credential)
-
-	// Create attestation response
-	challengeBytes := []byte(options.Response.Challenge)
-
-	attestationResponse := virtualwebauthn.CreateAttestationResponse(
-		virtualwebauthn.RelyingParty{
-			ID:     "test.example.com",
-			Name:   "Test",
-			Origin: "https://example.com",
-		},
-		authenticator,
-		credential,
-		virtualwebauthn.AttestationOptions{
-			Challenge:       challengeBytes,
-			RelyingPartyID:  "test.example.com",
-			UserID:          string(webauthnHandle[:]),
-			UserName:        "test@example.com",
-			UserDisplayName: "Test User",
-		},
-	)
-
-	// Create the credential using go-webauthn
-	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(bytes.NewReader([]byte(attestationResponse)))
-	if err != nil {
-		t.Fatalf("parse credential creation response: %v", err)
-	}
-
-	createdCredential, err := auth.Webauthn.CreateCredential(wu, *sessionData, parsedResponse)
-	if err != nil {
-		t.Fatalf("create credential: %v", err)
-	}
-
-	if err := auth.CredStore.Write(func(cs *storage.CredentialStore) error {
-		cs.Credentials = append(cs.Credentials, &storage.Credential{
-			ID:             uuid.New(),
-			CredentialID:   createdCredential.ID,
-			CredentialData: createdCredential,
-			Name:           "Test Credential",
-			UserID:         userID,
-		})
-		return nil
-	}); err != nil {
-		t.Fatalf("write credential to store: %v", err)
-	}
-
-	return authenticator, credential, webauthnHandle
-}
-
-func createUserWithPasskeyRecord(t *testing.T, auth *Authenticator) (virtualwebauthn.Authenticator, virtualwebauthn.Credential, uuid.UUID) {
+func createUserWithPasskey(t *testing.T, auth *Authenticator, registrationUserID func(*config.User) string) (virtualwebauthn.Authenticator, virtualwebauthn.Credential, uuid.UUID) {
 	t.Helper()
 	userID := uuid.New()
-	webauthnHandle := uuid.New()
 	user := &config.User{
 		ID:             userID,
-		Email:          "c2sp@example.com",
+		Email:          "c2sp-" + userID.String() + "@example.com",
 		FullName:       "C2SP User",
-		WebauthnHandle: webauthnHandle,
+		WebauthnHandle: uuid.New(),
+	}
+	var registerID string
+	if registrationUserID != nil {
+		registerID = registrationUserID(user)
 	}
 	auth.Config.Users = append(auth.Config.Users, user)
 
@@ -299,15 +346,30 @@ func createUserWithPasskeyRecord(t *testing.T, auth *Authenticator) (virtualweba
 	if err := auth.CredStore.Write(func(cs *storage.CredentialStore) error {
 		pu := cs.EnsurePasskeyUser(userID, user.PasskeyHandleAliases())
 		passkeyUserID = pu.PasskeyUserID
+		if registerID != "" {
+			passkeyUserID = registerID
+		}
 		return nil
 	}); err != nil {
 		t.Fatalf("ensure passkey user: %v", err)
 	}
 
-	wu := NewWebAuthnUser(user, passkeyUserID, nil)
-	options, sessionData, err := auth.Webauthn.BeginRegistration(wu)
+	var records []string
+	auth.CredStore.Read(func(cs *storage.CredentialStore) {
+		records = cs.PasskeyRecords(userID)
+	})
+
+	optionsJSON, err := auth.Passkey.NewRegistration(passkey.User{
+		ID:   passkeyUserID,
+		Name: user.Email,
+	}, records)
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
+	}
+
+	attestationOptions, err := virtualwebauthn.ParseAttestationOptions(string(optionsJSON))
+	if err != nil {
+		t.Fatalf("parse attestation options: %v", err)
 	}
 
 	authenticator := virtualwebauthn.NewAuthenticator()
@@ -317,34 +379,18 @@ func createUserWithPasskeyRecord(t *testing.T, auth *Authenticator) (virtualweba
 
 	attestationResponse := virtualwebauthn.CreateAttestationResponse(
 		virtualwebauthn.RelyingParty{
-			ID:     "test.example.com",
+			ID:     testRPID,
 			Name:   "Test",
-			Origin: "https://example.com",
+			Origin: testOrigin,
 		},
 		authenticator,
 		credential,
-		virtualwebauthn.AttestationOptions{
-			Challenge:       []byte(options.Response.Challenge),
-			RelyingPartyID:  "test.example.com",
-			UserID:          passkeyUserID,
-			UserName:        user.Email,
-			UserDisplayName: user.FullName,
-		},
+		*attestationOptions,
 	)
 
-	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(bytes.NewReader([]byte(attestationResponse)))
+	record, err := auth.Passkey.Register([]byte(attestationResponse))
 	if err != nil {
-		t.Fatalf("parse credential creation response: %v", err)
-	}
-
-	createdCredential, err := auth.Webauthn.CreateCredential(wu, *sessionData, parsedResponse)
-	if err != nil {
-		t.Fatalf("create credential: %v", err)
-	}
-
-	record, err := storage.EncodePasskeyRecord(createdCredential)
-	if err != nil {
-		t.Fatalf("encode passkey record: %v", err)
+		t.Fatalf("register passkey: %v", err)
 	}
 
 	if err := auth.CredStore.Write(func(cs *storage.CredentialStore) error {
@@ -359,7 +405,7 @@ func createUserWithPasskeyRecord(t *testing.T, auth *Authenticator) (virtualweba
 		t.Fatalf("write passkey: %v", err)
 	}
 
-	return authenticator, credential, webauthnHandle
+	return authenticator, credential, userID
 }
 
 func requestWithSession(t *testing.T, method, url string, data appsession.Data, opts ...webtest.RequestOpt) (*web.Request, *sessiontest.Change[appsession.Data]) {
@@ -372,4 +418,20 @@ func requestWithSession(t *testing.T, method, url string, data appsession.Data, 
 	raw, change := sessiontest.WithSession(t, req.RawRequest(), manager, data)
 	raw = raw.WithContext(appsession.WithManagerContext(raw.Context(), manager))
 	return web.NewRequestFrom(raw), change
+}
+
+func mustAuthDataFromRecord(t *testing.T, record string) []byte {
+	t.Helper()
+	rest, ok := strings.CutPrefix(record, "$webauthn$v=1$")
+	if !ok {
+		t.Fatalf("not a passkey record: %s", record)
+	}
+	if _, payload, ok := strings.Cut(rest, "$"); ok {
+		rest = payload
+	}
+	ad, err := base64.RawStdEncoding.DecodeString(rest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ad
 }

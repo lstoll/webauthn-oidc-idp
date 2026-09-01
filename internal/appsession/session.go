@@ -7,7 +7,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/webauthn"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/session"
 )
@@ -26,17 +25,16 @@ type Auth struct {
 }
 
 type AuthFlow struct {
-	ReturnTo     string                `json:"returnTo,omitzero"`
-	WebAuthnData *webauthn.SessionData `json:"webAuthnData,omitzero"`
-	StartedAt    time.Time             `json:"startedAt,omitzero"`
+	ReturnTo       string    `json:"returnTo,omitzero"`
+	PasskeyRequest []byte    `json:"passkeyRequest,omitzero"`
+	StartedAt      time.Time `json:"startedAt,omitzero"`
 }
 
 type Enrollment struct {
-	ForUserID    string                `json:"forUserId,omitzero"`
-	EnrollmentID string                `json:"enrollmentId,omitzero"`
-	KeyName      string                `json:"keyName,omitzero"`
-	WebAuthnData *webauthn.SessionData `json:"webAuthnData,omitzero"`
-	ReturnTo     string                `json:"returnTo,omitzero"`
+	ForUserID    string `json:"forUserId,omitzero"`
+	EnrollmentID string `json:"enrollmentId,omitzero"`
+	KeyName      string `json:"keyName,omitzero"`
+	ReturnTo     string `json:"returnTo,omitzero"`
 }
 
 type contextKey struct{}

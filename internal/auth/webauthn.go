@@ -1,9 +1,7 @@
 package auth
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,8 +12,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
+	"filippo.io/passkey"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/config"
@@ -36,7 +33,7 @@ func SkipAuthn(r *http.Request) *http.Request {
 }
 
 type Authenticator struct {
-	Webauthn  *webauthn.WebAuthn
+	Passkey   *passkey.RelyingParty
 	CredStore *storage.CredentialFile
 	OAuth2    *oauth2as.Server
 	Config    *config.Config
@@ -50,6 +47,7 @@ func (a *Authenticator) AddHandlers(r *web.Server) {
 
 	r.Handle("GET /{$}", a.Middleware(web.BrowserHandlerFunc(a.HandleIndex)))
 	r.Handle("GET /login", rl.Wrap(web.BrowserHandlerFunc(a.HandleLoginPage)), SkipAuthn)
+	r.Handle("POST /login/begin", rl.Wrap(web.BrowserHandlerFunc(a.BeginLogin)), SkipAuthn)
 	r.Handle("GET /logout", web.BrowserHandlerFunc(a.Logout), SkipAuthn)
 	r.Handle("POST /finishWebauthnLogin", rl.Wrap(web.BrowserHandlerFunc(a.DoLogin)), SkipAuthn)
 
@@ -143,31 +141,19 @@ func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWrite
 		as.Flows = make(map[string]appsession.AuthFlow)
 	}
 
-	var flow appsession.AuthFlow
-	var ok bool
 	if flowID != "" {
-		flow, ok = as.Flows[flowID]
-		if !ok {
+		if _, ok := as.Flows[flowID]; !ok {
 			return httperror.BadRequestErrf("flow not found in session")
 		}
 	} else {
-		// Generate a new flow ID
 		flowID = uuid.New().String()
-		flow = appsession.AuthFlow{
+		as.Flows[flowID] = appsession.AuthFlow{
 			ReturnTo:  returnTo,
 			StartedAt: time.Now(),
 		}
+		data.Auth = as
+		sess.Set(data)
 	}
-
-	response, sessionData, err := a.Webauthn.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
-	if err != nil {
-		return fmt.Errorf("starting discoverable login: BeginDiscoverableLogin: %w", err)
-	}
-
-	flow.WebAuthnData = sessionData
-	as.Flows[flowID] = flow
-	data.Auth = as
-	sess.Set(data)
 
 	return w.WriteResponse(r, &web.TemplateResponse{
 		Templates: templates,
@@ -176,10 +162,57 @@ func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWrite
 			LayoutData: webcommon.LayoutData{
 				Title: "Login - IDP",
 			},
-			FlowID:            flowID,
-			WebauthnChallenge: base64.RawURLEncoding.EncodeToString(response.Response.Challenge),
+			FlowID: flowID,
 		},
 	})
+}
+
+type beginLoginRequest struct {
+	FlowID string `json:"flowID"`
+}
+
+func (a *Authenticator) BeginLogin(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
+	var req beginLoginRequest
+	if err := r.UnmarshalJSONBody(&req); err != nil {
+		return fmt.Errorf("unmarshalling login begin request: %w", err)
+	}
+	if req.FlowID == "" {
+		return httperror.BadRequestErrf("flow ID required")
+	}
+
+	sess := appsession.FromContext(ctx)
+	data := sess.Get()
+	as := data.Auth
+	if as.Flows == nil {
+		return httperror.BadRequestErrf("auth missing from session")
+	}
+
+	flow, ok := as.Flows[req.FlowID]
+	if !ok {
+		return httperror.BadRequestErrf("flow not found in session")
+	}
+
+	if !flow.StartedAt.IsZero() && time.Since(flow.StartedAt) > authFlowValidFor {
+		return httperror.BadRequestErrf("flow expired")
+	}
+
+	request, optionsJSON, err := a.Passkey.NewLogin()
+	if err != nil {
+		return fmt.Errorf("starting discoverable login: %w", err)
+	}
+
+	var options any
+	if err := json.Unmarshal(optionsJSON, &options); err != nil {
+		return fmt.Errorf("encoding login options: %w", err)
+	}
+
+	flow.PasskeyRequest = request
+	flow.StartedAt = time.Now()
+	as.Flows[req.FlowID] = flow
+	data.Auth = as
+	sess.Set(data)
+
+	return w.WriteResponse(r, &web.JSONResponse{Data: options})
 }
 
 type loginRequest struct {
@@ -213,31 +246,38 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	if time.Since(flow.StartedAt) > authFlowValidFor {
 		return httperror.BadRequestErrf("flow expired")
 	}
+	if len(flow.PasskeyRequest) == 0 {
+		return httperror.BadRequestErrf("login not started")
+	}
 
-	parsedResponse, err := protocol.ParseCredentialRequestResponseBody(bytes.NewReader(req.CredentialAssertionResponse))
+	parsed, err := passkey.ParseResponse(req.CredentialAssertionResponse)
 	if err != nil {
 		return fmt.Errorf("parsing credential assertion response: %w", err)
 	}
 
-	// Validate the login
-	user, _, err := a.Webauthn.ValidatePasskeyLogin(a.NewDiscoverableUserHandler(ctx), *flow.WebAuthnData, parsedResponse)
+	cfgUser, err := a.lookupUser(parsed.UnauthenticatedUserID())
 	if err != nil {
 		return fmt.Errorf("validating login: %w", err)
 	}
 
-	cfgUser := user.(*WebAuthnUser).user
+	var records []string
+	a.CredStore.Read(func(cs *storage.CredentialStore) {
+		records = cs.PasskeyRecords(cfgUser.ID)
+	})
+
+	if _, err := a.Passkey.Login(parsed, flow.PasskeyRequest, records); err != nil {
+		return fmt.Errorf("validating login: %w", err)
+	}
+
 	if err := a.CredStore.Write(func(cs *storage.CredentialStore) error {
-		cs.RememberHandle(cfgUser.ID, parsedResponse.Response.UserHandle, cfgUser.PasskeyHandleAliases())
+		cs.RememberHandle(cfgUser.ID, []byte(parsed.UnauthenticatedUserID()), cfgUser.PasskeyHandleAliases())
 		return nil
 	}); err != nil {
 		return fmt.Errorf("record passkey handle: %w", err)
 	}
 
-	// Set user ID in session
 	delete(as.Flows, req.FlowID)
-	// we cast it back to our type to make sure we get the real ID, not the
-	// potentially legacy mapped ID.
-	id := user.(*WebAuthnUser).user.ID
+	id := cfgUser.ID
 	as.LoggedInUserID = &id
 	now := time.Now()
 	as.AuthenticatedAt = now
@@ -245,7 +285,6 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	data.Auth = as
 	sess.Set(data)
 
-	// Return the flow's returnTo URL
 	return w.WriteResponse(r, &web.JSONResponse{
 		Data: loginResponse{
 			ReturnTo: flow.ReturnTo,

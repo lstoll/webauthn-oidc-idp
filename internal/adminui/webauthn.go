@@ -1,14 +1,12 @@
 package adminui
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
+	"filippo.io/passkey"
 	"lds.li/passidp/internal/admin"
 	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/auth"
@@ -26,15 +24,15 @@ type WebAuthnManager struct {
 	config      *config.Config
 	credStore   *storage.CredentialFile
 	enrollments *storage.EnrollmentStore
-	webauthn    *webauthn.WebAuthn
+	passkey     *passkey.RelyingParty
 }
 
-func NewWebAuthnManager(config *config.Config, credStore *storage.CredentialFile, enrollments *storage.EnrollmentStore, webauthn *webauthn.WebAuthn) *WebAuthnManager {
+func NewWebAuthnManager(config *config.Config, credStore *storage.CredentialFile, enrollments *storage.EnrollmentStore, rp *passkey.RelyingParty) *WebAuthnManager {
 	return &WebAuthnManager{
 		config:      config,
 		credStore:   credStore,
 		enrollments: enrollments,
-		webauthn:    webauthn,
+		passkey:     rp,
 	}
 }
 
@@ -142,31 +140,32 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 		return fmt.Errorf("key name required")
 	}
 
-	authSelect := protocol.AuthenticatorSelection{
-		RequireResidentKey: protocol.ResidentKeyRequired(),
-		UserVerification:   protocol.VerificationRequired,
-	}
-	conveyancePref := protocol.ConveyancePreference(protocol.PreferDirectAttestation)
-
 	var (
 		passkeyUserID string
-		existing      []webauthn.Credential
+		records       []string
 	)
 	w.credStore.Read(func(cs *storage.CredentialStore) {
 		passkeyUserID, _ = cs.PasskeyUserID(user.ID)
-		existing = cs.WebAuthnCredentials(user.ID)
+		records = cs.PasskeyRecords(user.ID)
 	})
 	if passkeyUserID == "" {
 		return fmt.Errorf("passkey user id missing for %s", user.ID)
 	}
 
-	options, sessionData, err := w.webauthn.BeginRegistration(auth.NewWebAuthnUser(user, passkeyUserID, existing), webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
+	optionsJSON, err := w.passkey.NewRegistration(passkey.User{
+		ID:   passkeyUserID,
+		Name: user.Email,
+	}, records)
 	if err != nil {
 		return fmt.Errorf("beginning registration: %w", err)
 	}
 
+	var options any
+	if err := json.Unmarshal(optionsJSON, &options); err != nil {
+		return fmt.Errorf("encoding registration options: %w", err)
+	}
+
 	pwe.KeyName = keyName
-	pwe.WebAuthnData = sessionData
 	data.Enrollment = pwe
 	sess.Set(data)
 
@@ -183,15 +182,10 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 		return err
 	}
 
-	user, err := w.config.Users.GetUserByStringID(pwe.ForUserID)
-	if err != nil {
+	if _, err := w.config.Users.GetUserByStringID(pwe.ForUserID); err != nil {
 		return fmt.Errorf("getting user %s: %w", pwe.ForUserID, err)
 	}
 
-	if pwe.WebAuthnData == nil {
-		return fmt.Errorf("session data not in session")
-	}
-	sessionData := *pwe.WebAuthnData
 	keyName := pwe.KeyName
 
 	// purge the data from the session
@@ -199,30 +193,12 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 	data.Enrollment = nil
 	sess.Set(data)
 
-	// Parse the credential creation request from the body
 	var credentialRequest json.RawMessage
 	if err := req.UnmarshalJSONBody(&credentialRequest); err != nil {
 		return fmt.Errorf("unmarshalling credential request: %w", err)
 	}
 
-	parsedResponse, err := protocol.ParseCredentialCreationResponseBody(bytes.NewReader(credentialRequest))
-	if err != nil {
-		return fmt.Errorf("parsing credential creation response: %w", err)
-	}
-
-	var (
-		passkeyUserID string
-		existing      []webauthn.Credential
-	)
-	w.credStore.Read(func(cs *storage.CredentialStore) {
-		passkeyUserID, _ = cs.PasskeyUserID(user.ID)
-		existing = cs.WebAuthnCredentials(user.ID)
-	})
-	if passkeyUserID == "" {
-		return fmt.Errorf("passkey user id missing for %s", user.ID)
-	}
-
-	credential, err := w.webauthn.CreateCredential(auth.NewWebAuthnUser(user, passkeyUserID, existing), sessionData, parsedResponse)
+	record, err := w.passkey.Register(credentialRequest)
 	if err != nil {
 		return fmt.Errorf("creating credential: %w", err)
 	}
@@ -237,10 +213,10 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 		if err != nil {
 			return fmt.Errorf("invalid enrollment_id: %w", err)
 		}
-		if err := admin.CompleteEnrollment(w.config, w.enrollments, w.credStore, userID, enrollmentID, credential, keyName); err != nil {
+		if err := admin.CompleteEnrollment(w.config, w.enrollments, w.credStore, userID, enrollmentID, record, keyName); err != nil {
 			return err
 		}
-	} else if err := admin.StorePasskey(w.config, w.credStore, userID, credential, keyName); err != nil {
+	} else if err := admin.StorePasskey(w.config, w.credStore, userID, record, keyName); err != nil {
 		return err
 	}
 

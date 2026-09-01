@@ -7,6 +7,27 @@
             "fullName": "Test User",
             "groups": ["test-group"],
             "webauthnHandle": "70e0b33f-9ae9-4127-824b-7ad384c0de29"
+        },
+        {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "uuid-string@example.com",
+            "fullName": "UUID String User",
+            "webauthnHandle": "22222222-2222-4222-8222-222222222222"
+        },
+        {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "email": "subject@example.com",
+            "fullName": "Subject User",
+            "webauthnHandle": "44444444-4444-4ddd-8444-444444444444",
+            "metadata": {
+                "overrideSubject": "legacy-subject"
+            }
+        },
+        {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "email": "raw-uuid@example.com",
+            "fullName": "Raw UUID User",
+            "webauthnHandle": "66666666-6666-4666-8666-666666666666"
         }
     ],
     "clients": [

@@ -11,8 +11,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
+	"filippo.io/passkey"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"lds.li/keyset"
@@ -96,7 +95,7 @@ func (c *ServeCmd) Run(ctx context.Context, config *config.Config, paths admincl
 		&clients.DynamicClients{DB: dynamicClientStore},
 	)
 
-	if err := credStore.ApplyConfig(config.Users); err != nil {
+	if err := credStore.ApplyConfig(config.Users, config.ParsedIssuer.Hostname()); err != nil {
 		return fmt.Errorf("apply passkey user config: %w", err)
 	}
 
@@ -244,23 +243,15 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *st
 		return nil, fmt.Errorf("inserting force tls middleware: %w", err)
 	}
 
-	wn, err := webauthn.New(&webauthn.Config{
-		RPDisplayName: issuerURL.Hostname(), // Display Name for your site
-		RPID:          issuerURL.Hostname(), // Generally the FQDN for your site
-		RPOrigins: []string{
-			issuerURL.String(),
-		},
-		AuthenticatorSelection: protocol.AuthenticatorSelection{
-			UserVerification:   protocol.VerificationRequired,
-			RequireResidentKey: new(true),
-		},
+	rp, err := passkey.NewRelyingParty(&passkey.Options{
+		RPID:   issuerURL.Hostname(),
+		Origin: issuerURL.Scheme + "://" + issuerURL.Host,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("configuring webauthn: %w", err)
+		return nil, fmt.Errorf("configuring passkey relying party: %w", err)
 	}
 
-	// start configuration of webauthn manager
-	mgr := adminui.NewWebAuthnManager(cfg, credStore, enrollments, wn)
+	mgr := adminui.NewWebAuthnManager(cfg, credStore, enrollments, rp)
 
 	mgr.AddHandlers(websvr)
 
@@ -270,7 +261,7 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *st
 	}
 
 	auth := &auth.Authenticator{
-		Webauthn:  wn,
+		Passkey:   rp,
 		CredStore: credStore,
 		Config:    cfg,
 	}

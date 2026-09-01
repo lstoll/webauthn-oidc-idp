@@ -12,30 +12,6 @@
 
 class WebAuthn {
     /**
-     * Decode a base64 string into a Uint8Array
-     * @param {string} value - Base64 encoded string
-     * @returns {Uint8Array} Decoded buffer
-     */
-    static _decodeBuffer(value) {
-        return Uint8Array.from(atob(value
-            .replace(/-/g, "+")
-            .replace(/_/g, "/")
-        ), c => c.charCodeAt(0));
-    }
-
-    /**
-     * Encode an ArrayBuffer into a url-safe base64 string
-     * @param {ArrayBuffer} value - Buffer to encode
-     * @returns {string} URL-safe base64 string
-     */
-    static _encodeBuffer(value) {
-        return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=/g, "");
-    }
-
-    /**
      * Check if the response status matches the expected status
      * @param {number} status - Expected HTTP status code
      * @returns {Function} Response handler function
@@ -64,20 +40,11 @@ class WebAuthn {
         });
 
         const res = await WebAuthn._checkStatus(200)(response);
-        const registrationData = await res.json();
+        const options = await res.json();
 
-        // Decode challenge and user ID
-        registrationData.publicKey.challenge = WebAuthn._decodeBuffer(registrationData.publicKey.challenge);
-        registrationData.publicKey.user.id = WebAuthn._decodeBuffer(registrationData.publicKey.user.id);
-
-        // Decode exclude credentials if present
-        if (registrationData.publicKey.excludeCredentials) {
-            registrationData.publicKey.excludeCredentials.forEach(credential => {
-                credential.id = WebAuthn._decodeBuffer(credential.id);
-            });
-        }
-
-        const credential = await navigator.credentials.create(registrationData);
+        const credential = await navigator.credentials.create({
+            publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options),
+        });
 
         const finishResponse = await fetch('/registration/finish', {
             method: 'POST',
@@ -85,92 +52,32 @@ class WebAuthn {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                id: credential.id,
-                rawId: WebAuthn._encodeBuffer(credential.rawId),
-                response: {
-                    attestationObject: WebAuthn._encodeBuffer(credential.response.attestationObject),
-                    clientDataJSON: WebAuthn._encodeBuffer(credential.response.clientDataJSON)
-                },
-                type: credential.type
-            }),
+            body: JSON.stringify(credential),
         });
 
         return WebAuthn._checkStatus(200)(finishResponse);
     }
 
     /**
-     * Authenticate with WebAuthn using discoverable credentials
-     * @param {string} sessionID - Session identifier
-     * @returns {Promise<Response>} Authentication response
+     * Authenticate with WebAuthn using a begin/finish ceremony
+     * @param {string} flowID - Flow identifier
+     * @returns {Promise<Object>} Authentication response with returnTo or error
      */
-    async login(sessionID) {
-        const response = await fetch(`/start?sessionID=${encodeURIComponent(sessionID)}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({})
-        });
-
-        const res = await WebAuthn._checkStatus(200)(response);
-        const authData = await res.json();
-
-        // Decode challenge
-        authData.publicKey.challenge = WebAuthn._decodeBuffer(authData.publicKey.challenge);
-
-        // Decode allow credentials if present
-        if (authData.publicKey.allowCredentials) {
-            authData.publicKey.allowCredentials.forEach(credential => {
-                credential.id = WebAuthn._decodeBuffer(credential.id);
-            });
-        }
-
-        const credential = await navigator.credentials.get(authData);
-
-        const finishResponse = await fetch(`/finish?sessionID=${encodeURIComponent(sessionID)}`, {
+    async login(flowID) {
+        const beginResponse = await fetch('/login/begin', {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                id: credential.id,
-                rawId: WebAuthn._encodeBuffer(credential.rawId),
-                type: credential.type,
-                response: {
-                    clientDataJSON: WebAuthn._encodeBuffer(credential.response.clientDataJSON),
-                    authenticatorData: WebAuthn._encodeBuffer(credential.response.authenticatorData),
-                    signature: WebAuthn._encodeBuffer(credential.response.signature),
-                    userHandle: WebAuthn._encodeBuffer(credential.response.userHandle)
-                }
-            }),
+            body: JSON.stringify({ flowID }),
         });
 
-        return WebAuthn._checkStatus(200)(finishResponse);
-    }
+        const options = await (await WebAuthn._checkStatus(200)(beginResponse)).json();
 
-    /**
-     * Authenticate with WebAuthn using embedded challenge and flow ID
-     * @param {string} challenge - Base64 encoded challenge from the page
-     * @param {string} flowID - Flow identifier
-     * @returns {Promise<Object>} Authentication response with returnTo or error
-     */
-    async loginWithEmbeddedChallenge(challenge, flowID) {
-        // Decode the challenge
-        const decodedChallenge = WebAuthn._decodeBuffer(challenge);
-
-        // Create the authentication options
-        const authOptions = {
-            publicKey: {
-                challenge: decodedChallenge,
-                rpId: window.location.hostname,
-                allowCredentials: [], // Empty array for discoverable credentials
-                userVerification: 'preferred'
-            }
-        };
-
-        const credential = await navigator.credentials.get(authOptions);
+        const credential = await navigator.credentials.get({
+            publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options),
+        });
 
         const finishResponse = await fetch('/finishWebauthnLogin', {
             method: 'POST',
@@ -180,17 +87,7 @@ class WebAuthn {
             },
             body: JSON.stringify({
                 flowID: flowID,
-                credentialAssertionResponse: {
-                    id: credential.id,
-                    rawId: WebAuthn._encodeBuffer(credential.rawId),
-                    type: credential.type,
-                    response: {
-                        clientDataJSON: WebAuthn._encodeBuffer(credential.response.clientDataJSON),
-                        authenticatorData: WebAuthn._encodeBuffer(credential.response.authenticatorData),
-                        signature: WebAuthn._encodeBuffer(credential.response.signature),
-                        userHandle: WebAuthn._encodeBuffer(credential.response.userHandle)
-                    }
-                }
+                credentialAssertionResponse: credential,
             }),
         });
 
@@ -214,21 +111,15 @@ class WebAuthnUI {
     }
 
     /**
-     * Get embedded challenge and flow ID from the page
-     * @returns {Object} Object containing challenge and flowID
+     * Get the login flow ID from the page
+     * @returns {string} Flow identifier
      */
-    getEmbeddedData() {
+    getFlowID() {
         const flowElement = document.querySelector('[data-flow-id]');
-        const challengeElement = document.querySelector('[data-webauthn-challenge]');
-
-        if (!flowElement || !challengeElement) {
-            throw new Error('Required embedded data not found on page');
+        if (!flowElement || !flowElement.dataset.flowId) {
+            throw new Error('Login flow ID not found on page');
         }
-
-        return {
-            flowID: flowElement.dataset.flowId,
-            challenge: challengeElement.dataset.webauthnChallenge
-        };
+        return flowElement.dataset.flowId;
     }
 
     /**
@@ -370,14 +261,7 @@ class WebAuthnUI {
         this.hideError();
 
         try {
-            // Get embedded challenge data
-            const embeddedData = this.getEmbeddedData();
-
-            // Use embedded challenge flow
-            const result = await this.webauthn.loginWithEmbeddedChallenge(
-                embeddedData.challenge,
-                embeddedData.flowID
-            );
+            const result = await this.webauthn.login(this.getFlowID());
 
             if (result.error) {
                 this.showError(result.error);
