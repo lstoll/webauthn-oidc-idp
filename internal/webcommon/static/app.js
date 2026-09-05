@@ -466,8 +466,11 @@ class GrantManagerUI {
             const grantedDate = new Date(grant.granted_at).toLocaleString();
             const expiresDate = new Date(grant.expires_at).toLocaleString();
 
+            const dpopLabel = grant.dpop_bound
+                ? '<span class="tag is-info is-light ml-2" title="Refresh token is DPoP bound">DPoP</span>'
+                : '';
             row.innerHTML = `
-                <td class="pl-5">${this.escapeHtml(grant.client_id)}</td>
+                <td class="pl-5">${this.escapeHtml(grant.client_id)}${dpopLabel}</td>
                 <td>${grantedDate}</td>
                 <td>${expiresDate}</td>
                 <td class="pr-5">
