@@ -157,7 +157,7 @@ func (s *Server) stashAuthRequestAndLogin(ctx context.Context, w web.ResponseWri
 
 	reqID := uuid.New().String()
 	data.AuthRequests[reqID] = *authReq
-	sess.Set(data)
+	sess.Save()
 
 	s.Auth.TriggerLogin(w, r.RawRequest(), "/resumeAuthorization?id="+reqID)
 	return nil

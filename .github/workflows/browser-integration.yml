@@ -8,25 +8,32 @@ on:
   pull_request:
     branches:
       - 'main'
+
+permissions: {}
+
 jobs:
 
   integ:
     name: Chrome Integration Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v6
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         # go-version: stable
         go-version: 1.27.0-rc.3
+        cache: false
 
     - name: Set up Chrome
-      uses: browser-actions/setup-chrome@v2
-
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
 
     - name: Run Browser Integration Test
       run: |
