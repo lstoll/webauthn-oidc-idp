@@ -33,10 +33,11 @@ func SkipAuthn(r *http.Request) *http.Request {
 }
 
 type Authenticator struct {
-	Passkey   *passkey.RelyingParty
-	CredStore *storage.CredentialFile
-	OAuth2    *oauth2as.Server
-	Config    *config.Config
+	Passkey      *passkey.RelyingParty
+	CredStore    *storage.CredentialFile
+	OAuth2       *oauth2as.Server
+	OAuth2Grants *storage.OAuth2Grants
+	Config       *config.Config
 }
 
 func (a *Authenticator) AddHandlers(r *web.Server) {
@@ -306,6 +307,7 @@ type grantInfo struct {
 	Scopes    []string `json:"scopes"`
 	GrantedAt string   `json:"granted_at"`
 	ExpiresAt string   `json:"expires_at"`
+	DPoPBound bool     `json:"dpop_bound"`
 }
 
 type listGrantsResponse struct {
@@ -325,6 +327,18 @@ func (a *Authenticator) HandleListGrants(ctx context.Context, w web.ResponseWrit
 		if err != nil {
 			return fmt.Errorf("list active grants: %w", err)
 		}
+		dpopBound := map[string]bool{}
+		if a.OAuth2Grants != nil && len(page.Sessions) > 0 {
+			grantIDs := make([]string, len(page.Sessions))
+			for i, grant := range page.Sessions {
+				grantIDs[i] = grant.GrantID
+			}
+			var err error
+			dpopBound, err = a.OAuth2Grants.DPoPBound(ctx, grantIDs)
+			if err != nil {
+				return fmt.Errorf("lookup dpop-bound grants: %w", err)
+			}
+		}
 		for _, grant := range page.Sessions {
 			resp.Grants = append(resp.Grants, grantInfo{
 				ID:        grant.GrantID,
@@ -332,6 +346,7 @@ func (a *Authenticator) HandleListGrants(ctx context.Context, w web.ResponseWrit
 				Scopes:    grant.GrantedScopes,
 				GrantedAt: grant.CreatedAt.Format(time.RFC3339),
 				ExpiresAt: grant.ExpiresAt.Format(time.RFC3339),
+				DPoPBound: dpopBound[grant.GrantID],
 			})
 		}
 		if page.NextCursor == "" {
