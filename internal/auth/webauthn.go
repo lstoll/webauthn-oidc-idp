@@ -152,7 +152,7 @@ func (a *Authenticator) HandleLoginPage(ctx context.Context, w web.ResponseWrite
 			StartedAt: time.Now(),
 		}
 		data.Auth = as
-		sess.Set(data)
+		sess.Save()
 	}
 
 	return w.WriteResponse(r, &web.TemplateResponse{
@@ -210,7 +210,7 @@ func (a *Authenticator) BeginLogin(ctx context.Context, w web.ResponseWriter, r 
 	flow.StartedAt = time.Now()
 	as.Flows[req.FlowID] = flow
 	data.Auth = as
-	sess.Set(data)
+	sess.Save()
 
 	return w.WriteResponse(r, &web.JSONResponse{Data: options})
 }
@@ -283,7 +283,7 @@ func (a *Authenticator) DoLogin(ctx context.Context, w web.ResponseWriter, r *we
 	as.AuthenticatedAt = now
 	as.ExpiresAt = now.Add(a.Config.SessionDuration.Duration())
 	data.Auth = as
-	sess.Set(data)
+	sess.Reset()
 
 	return w.WriteResponse(r, &web.JSONResponse{
 		Data: loginResponse{

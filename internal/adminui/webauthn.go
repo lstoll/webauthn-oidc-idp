@@ -72,7 +72,7 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 			ForUserID:    uid,
 			EnrollmentID: enrollment.ID.String(),
 		}
-		sess.Set(data)
+		sess.Save()
 	} else if userID, ok := auth.UserIDFromContext(ctx); ok {
 		sess := appsession.FromContext(ctx)
 		data := sess.Get()
@@ -80,7 +80,7 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 			ForUserID: userID.String(),
 			ReturnTo:  "/",
 		}
-		sess.Set(data)
+		sess.Save()
 	}
 
 	// Get the pending enrollment from session
@@ -167,7 +167,7 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 
 	pwe.KeyName = keyName
 	data.Enrollment = pwe
-	sess.Set(data)
+	sess.Save()
 
 	return rw.WriteResponse(req, &web.JSONResponse{
 		Data: options,
@@ -191,7 +191,7 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 	// purge the data from the session
 	returnTo := pwe.ReturnTo
 	data.Enrollment = nil
-	sess.Set(data)
+	sess.Save()
 
 	var credentialRequest json.RawMessage
 	if err := req.UnmarshalJSONBody(&credentialRequest); err != nil {
