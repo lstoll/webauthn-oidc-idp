@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -12,28 +11,9 @@ import (
 	"lds.li/passidp/internal/storage"
 )
 
-// setupTestDB creates a temporary BoltDB database for testing
-func setupTestDB(t *testing.T) (*storage.DynamicClientStore, func()) {
-	// Create temporary file for BoltDB
-	tmpfile, err := os.CreateTemp("", "test-dynamic-clients-*.db")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	tmpfile.Close()
-
-	// Create State instance (which initializes buckets)
-	state, err := storage.NewState(tmpfile.Name())
-	if err != nil {
-		os.Remove(tmpfile.Name())
-		t.Fatalf("failed to create state: %v", err)
-	}
-
-	cleanup := func() {
-		state.Close()
-		os.Remove(tmpfile.Name())
-	}
-
-	return state.DynamicClientStore(), cleanup
+func setupTestDB(t *testing.T) *storage.DynamicClientStore {
+	t.Helper()
+	return storage.NewDynamicClientStore(storage.OpenTest(t))
 }
 
 // createTestDynamicClient creates a dynamic client in the database for testing
@@ -43,7 +23,6 @@ func createTestDynamicClient(t *testing.T, db *storage.DynamicClientStore, clien
 		t.Fatalf("failed to marshal request: %v", err)
 	}
 
-	// Use clientID as part of secret to ensure uniqueness
 	testSecret := fmt.Sprintf("test-secret-%s", clientID)
 
 	if err := db.CreateDynamicClient(context.Background(), clientID, testSecret, string(reqBody), time.Now().AddDate(0, 0, 14)); err != nil {

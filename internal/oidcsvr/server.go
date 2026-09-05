@@ -2,7 +2,7 @@ package oidcsvr
 
 import (
 	"context"
-	"encoding/gob"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/oauth2ext/oauth2as/discovery"
+	"lds.li/oauth2ext/oauth2as/oauth2proto"
+	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/auth"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/policy"
@@ -18,19 +20,6 @@ import (
 	"lds.li/web"
 	"lds.li/web/httperror"
 )
-
-func init() {
-	gob.Register(&sessionAuthRequests{})
-	gob.Register(&oauth2as.AuthRequest{})
-}
-
-const (
-	sessionKeyAuthRequest = "authRequest"
-)
-
-type sessionAuthRequests struct {
-	Requests map[string]oauth2as.AuthRequest
-}
 
 type Server struct {
 	Auth      *auth.Authenticator
@@ -59,30 +48,17 @@ func (s *Server) AddHandlers(r *web.Server) {
 func (s *Server) HandleAuthorizationRequest(ctx context.Context, w web.ResponseWriter, r *web.Request) error {
 	authReq, err := s.OAuth2AS.ParseAuthRequest(r.RawRequest())
 	if err != nil {
-		return err
+		return writeOAuth2ProtoError(w, r, err)
 	}
 
 	userID, ok := auth.UserIDFromContext(ctx)
-	if !ok {
-		// stash req in session, set return to with ID.
-		sessAuthReqs, ok := r.Session().Get(sessionKeyAuthRequest).(*sessionAuthRequests)
-		if !ok {
-			sessAuthReqs = &sessionAuthRequests{
-				Requests: make(map[string]oauth2as.AuthRequest),
-			}
-		}
-
-		reqID := uuid.New().String()
-		sessAuthReqs.Requests[reqID] = *authReq
-		r.Session().Set(sessionKeyAuthRequest, sessAuthReqs)
-
-		s.Auth.TriggerLogin(w, r.RawRequest(), "/resumeAuthorization?id="+reqID)
-		return nil
+	if !ok || authTimeExceeded(ctx, authReq) {
+		return s.stashAuthRequestAndLogin(ctx, w, r, authReq)
 	}
 
 	redir, err := s.createGrant(ctx, authReq, *userID)
 	if err != nil {
-		return err
+		return writeOAuth2ProtoError(w, r, err)
 	}
 
 	return w.WriteResponse(r, &web.RedirectResponse{
@@ -100,19 +76,19 @@ func (s *Server) HandleAuthorizationRequestReturn(ctx context.Context, w web.Res
 	if reqID == "" {
 		return httperror.BadRequestErrf("no request ID")
 	}
-	sessAuthReqs, ok := r.Session().Get(sessionKeyAuthRequest).(*sessionAuthRequests)
-	if !ok {
+	data := appsession.FromContext(ctx).Get()
+	if data.AuthRequests == nil {
 		return httperror.BadRequestErrf("no requests in session")
 	}
 
-	authReq, ok := sessAuthReqs.Requests[reqID]
+	authReq, ok := data.AuthRequests[reqID]
 	if !ok {
 		return httperror.BadRequestErrf("no request in session")
 	}
 
 	redir, err := s.createGrant(ctx, &authReq, *userID)
 	if err != nil {
-		return err
+		return writeOAuth2ProtoError(w, r, err)
 	}
 
 	return w.WriteResponse(r, &web.RedirectResponse{
@@ -141,7 +117,12 @@ func (s *Server) createGrant(ctx context.Context, request *oauth2as.AuthRequest,
 		}
 
 		if !authorized {
-			return "", httperror.ForbiddenErrf("user is not authorized for client %s by policy", request.ClientID)
+			return "", &oauth2proto.AuthError{
+				State:       request.State,
+				Code:        oauth2proto.AuthErrorCodeAccessDenied,
+				Description: fmt.Sprintf("user is not authorized for client %s", request.ClientID),
+				RedirectURI: request.RedirectURI,
+			}
 		}
 	}
 
@@ -150,6 +131,9 @@ func (s *Server) createGrant(ctx context.Context, request *oauth2as.AuthRequest,
 		UserID:  userID.String(),
 		// TODO - set scopes appropriately
 		GrantedScopes: request.Scopes,
+	}
+	if authTime, ok := auth.AuthTimeFromContext(ctx); ok {
+		grant.AuthenticatedAt = authTime
 	}
 	if client.GrantValidity() != nil {
 		grant.ExpiresAt = time.Now().Add(*client.GrantValidity())
@@ -162,4 +146,38 @@ func (s *Server) createGrant(ctx context.Context, request *oauth2as.AuthRequest,
 		return "", fmt.Errorf("grant auth: %w", err)
 	}
 	return redir, nil
+}
+
+func (s *Server) stashAuthRequestAndLogin(ctx context.Context, w web.ResponseWriter, r *web.Request, authReq *oauth2as.AuthRequest) error {
+	sess := appsession.FromContext(ctx)
+	data := sess.Get()
+	if data.AuthRequests == nil {
+		data.AuthRequests = make(map[string]oauth2as.AuthRequest)
+	}
+
+	reqID := uuid.New().String()
+	data.AuthRequests[reqID] = *authReq
+	sess.Set(data)
+
+	s.Auth.TriggerLogin(w, r.RawRequest(), "/resumeAuthorization?id="+reqID)
+	return nil
+}
+
+func authTimeExceeded(ctx context.Context, authReq *oauth2as.AuthRequest) bool {
+	if authReq.MaxAge == nil {
+		return false
+	}
+	authTime, ok := auth.AuthTimeFromContext(ctx)
+	if !ok {
+		return false
+	}
+	return oauth2as.AuthTimeExceeded(authTime, *authReq.MaxAge, time.Now())
+}
+
+func writeOAuth2ProtoError(w web.ResponseWriter, r *web.Request, err error) error {
+	if _, ok := errors.AsType[*oauth2proto.AuthError](err); ok {
+		_ = oauth2proto.WriteError(w, r.RawRequest(), err)
+		return nil
+	}
+	return err
 }

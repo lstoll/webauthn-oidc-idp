@@ -21,7 +21,8 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: stable
+        # go-version: stable
+        go-version: 1.27.0-rc.3
       id: go
 
     - name: Test
@@ -31,7 +32,9 @@ jobs:
     - name: Lint
       uses: golangci/golangci-lint-action@v9
       with:
-        version: latest
+        # version: latest
+        version: 5cc065b
+        install-mode: goinstall
 
     - name: Docker meta
       id: meta

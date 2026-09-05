@@ -3,56 +3,37 @@ package adminui
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 
-	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
+	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/auth"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
 	"lds.li/passidp/internal/webcommon"
 	"lds.li/web"
-	"lds.li/web/session"
 )
-
-func init() {
-	gob.Register(&pendingWebauthnEnrollment{})
-}
-
-const pendingWebauthnEnrollmentSessionKey = "pending_webauthn_enrollment"
-
-// pendingWebauthnEnrollment tracks enrollment info across an authenticator
-// registration.
-type pendingWebauthnEnrollment struct {
-	ForUserID           string                `json:"for_user_id,omitempty"`
-	EnrollmentID        string                `json:"enrollment_id,omitempty"`
-	KeyName             string                `json:"key_name,omitempty"`
-	WebauthnSessionData *webauthn.SessionData `json:"webauthn_session_data,omitempty"`
-	// ReturnTo redirects the user here after the key is registered.
-	ReturnTo string `json:"return_to,omitempty"`
-}
 
 type registerData struct {
 	webcommon.LayoutData
 }
 
 type WebAuthnManager struct {
-	config    *config.Config
-	credStore *jsonfile.JSONFile[storage.CredentialStore]
-	state     *storage.State
-	webauthn  *webauthn.WebAuthn
+	config      *config.Config
+	credStore   *storage.CredentialFile
+	enrollments *storage.EnrollmentStore
+	webauthn    *webauthn.WebAuthn
 }
 
-func NewWebAuthnManager(config *config.Config, credStore *jsonfile.JSONFile[storage.CredentialStore], state *storage.State, webauthn *webauthn.WebAuthn) *WebAuthnManager {
+func NewWebAuthnManager(config *config.Config, credStore *storage.CredentialFile, enrollments *storage.EnrollmentStore, webauthn *webauthn.WebAuthn) *WebAuthnManager {
 	return &WebAuthnManager{
-		config:    config,
-		credStore: credStore,
-		state:     state,
-		webauthn:  webauthn,
+		config:      config,
+		credStore:   credStore,
+		enrollments: enrollments,
+		webauthn:    webauthn,
 	}
 }
 
@@ -77,7 +58,7 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 			return fmt.Errorf("invalid user_id: %w", err)
 		}
 
-		enrollment, err := w.state.PendingEnrollments().GetPendingEnrollmentByKey(et)
+		enrollment, err := w.enrollments.GetPendingEnrollmentByKey(et)
 		if err != nil {
 			return fmt.Errorf("invalid enrollment token: %w", err)
 		}
@@ -87,21 +68,22 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 		}
 
 		// Check if enrollment already has a credential registered
-		if enrollment.CredentialData != nil {
+		if storage.EnrollmentHasCredential(enrollment) {
 			return fmt.Errorf("enrollment already completed - a passkey has already been registered for this enrollment")
 		}
 
-		sess := session.MustFromContext(ctx)
-		sess.Set(pendingWebauthnEnrollmentSessionKey, &pendingWebauthnEnrollment{
+		sess := appsession.FromContext(ctx)
+		data := sess.Get()
+		data.Enrollment = &appsession.Enrollment{
 			ForUserID:    uid,
 			EnrollmentID: enrollment.ID.String(),
-		})
+		}
+		sess.Set(data)
 	}
 
 	// Get the pending enrollment from session
-	sess := session.MustFromContext(ctx)
-	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
-	if !ok || pwe.ForUserID == "" {
+	pwe := appsession.FromContext(ctx).Get().Enrollment
+	if pwe == nil || pwe.ForUserID == "" {
 		return fmt.Errorf("no enroll to user id set in session")
 	}
 
@@ -109,8 +91,8 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 	if pwe.EnrollmentID != "" {
 		enrollmentID, err := uuid.Parse(pwe.EnrollmentID)
 		if err == nil {
-			enrollment, err := w.state.PendingEnrollments().GetPendingEnrollmentByID(enrollmentID)
-			if err == nil && enrollment.CredentialData != nil {
+			enrollment, err := w.enrollments.GetPendingEnrollmentByID(enrollmentID)
+			if err == nil && storage.EnrollmentHasCredential(enrollment) {
 				return fmt.Errorf("enrollment already completed - a passkey has already been registered for this enrollment")
 			}
 		}
@@ -137,10 +119,10 @@ func (w *WebAuthnManager) registration(ctx context.Context, rw web.ResponseWrite
 }
 
 func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.ResponseWriter, req *web.Request) error {
-	sess := session.MustFromContext(ctx)
-
-	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
-	if !ok || pwe.ForUserID == "" {
+	sess := appsession.FromContext(ctx)
+	data := sess.Get()
+	pwe := data.Enrollment
+	if pwe == nil || pwe.ForUserID == "" {
 		return fmt.Errorf("no enroll to user id set in session")
 	}
 
@@ -148,8 +130,8 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 	if pwe.EnrollmentID != "" {
 		enrollmentID, err := uuid.Parse(pwe.EnrollmentID)
 		if err == nil {
-			enrollment, err := w.state.PendingEnrollments().GetPendingEnrollmentByID(enrollmentID)
-			if err == nil && enrollment.CredentialData != nil {
+			enrollment, err := w.enrollments.GetPendingEnrollmentByID(enrollmentID)
+			if err == nil && storage.EnrollmentHasCredential(enrollment) {
 				return fmt.Errorf("enrollment already completed - a passkey has already been registered for this enrollment")
 			}
 		}
@@ -178,8 +160,9 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 	}
 
 	pwe.KeyName = keyName
-	pwe.WebauthnSessionData = sessionData
-	sess.Set(pendingWebauthnEnrollmentSessionKey, pwe)
+	pwe.WebAuthnData = sessionData
+	data.Enrollment = pwe
+	sess.Set(data)
 
 	return rw.WriteResponse(req, &web.JSONResponse{
 		Data: options,
@@ -187,10 +170,10 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 }
 
 func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.ResponseWriter, req *web.Request) error {
-	sess := session.MustFromContext(ctx)
-
-	pwe, ok := sess.Get(pendingWebauthnEnrollmentSessionKey).(*pendingWebauthnEnrollment)
-	if !ok || pwe.ForUserID == "" {
+	sess := appsession.FromContext(ctx)
+	data := sess.Get()
+	pwe := data.Enrollment
+	if pwe == nil || pwe.ForUserID == "" {
 		return fmt.Errorf("no enroll to user id set in session")
 	}
 
@@ -199,15 +182,16 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 		return fmt.Errorf("getting user %s: %w", pwe.ForUserID, err)
 	}
 
-	if pwe.WebauthnSessionData == nil {
+	if pwe.WebAuthnData == nil {
 		return fmt.Errorf("session data not in session")
 	}
-	sessionData := *pwe.WebauthnSessionData
+	sessionData := *pwe.WebAuthnData
 	keyName := pwe.KeyName
 
 	// purge the data from the session
 	returnTo := pwe.ReturnTo
-	sess.Set(pendingWebauthnEnrollmentSessionKey, nil)
+	data.Enrollment = nil
+	sess.Set(data)
 
 	// Parse the credential creation request from the body
 	var credentialRequest json.RawMessage
@@ -235,7 +219,7 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 		return fmt.Errorf("invalid enrollment_id: %w", err)
 	}
 
-	enrollment, err := w.state.PendingEnrollments().GetPendingEnrollmentByID(enrollmentID)
+	enrollment, err := w.enrollments.GetPendingEnrollmentByID(enrollmentID)
 	if err != nil {
 		return fmt.Errorf("get pending enrollment: %w", err)
 	}
@@ -250,7 +234,7 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 	}
 
 	// Check if enrollment already has a credential registered
-	if enrollment.CredentialData != nil {
+	if storage.EnrollmentHasCredential(enrollment) {
 		return fmt.Errorf("enrollment already completed - a passkey has already been registered for this enrollment")
 	}
 
@@ -258,7 +242,7 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 	confirmationKey := uuid.New().String()
 
 	// Store the credential as a pending enrollment (not active yet)
-	if err := w.state.PendingEnrollments().UpdatePendingEnrollment(enrollment.ID, credential.ID, credential, keyName, confirmationKey); err != nil {
+	if err := w.enrollments.UpdatePendingEnrollment(enrollmentID, credential.ID, credential, keyName, confirmationKey); err != nil {
 		return fmt.Errorf("update pending enrollment: %w", err)
 	}
 
@@ -268,7 +252,7 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 			"success":          true,
 			"message":          "Passkey registered successfully!",
 			"confirmation_key": confirmationKey,
-			"enrollment_id":    enrollment.ID.String(),
+			"enrollment_id":    enrollment.ID,
 			"returnTo":         returnTo,
 		},
 	})

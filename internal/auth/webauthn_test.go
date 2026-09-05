@@ -19,10 +19,13 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
+	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
 	"lds.li/passidp/internal/webcommon"
-	"lds.li/web/session"
+	"lds.li/session"
+	"lds.li/session/sessiontest"
+	"lds.li/web"
 	"lds.li/web/webtest"
 )
 
@@ -36,7 +39,7 @@ func TestWebauthnAuth(t *testing.T) {
 		t.Fatalf("create webauthn: %v", err)
 	}
 
-	credStore, err := storage.NewCredentialStore(t.TempDir() + "/credential-store.json")
+	credStore, err := storage.NewCredentialFile(t.TempDir() + "/credential-store.json")
 	if err != nil {
 		t.Fatalf("create credential store: %v", err)
 	}
@@ -54,14 +57,10 @@ func TestWebauthnAuth(t *testing.T) {
 		// We keep this as a pointer, so we can mutate and track it over time.
 		// This feels bad though, we should update the lstoll/web test stuff to
 		// handle this all better.
-		as := &authSess{}
+		as := appsession.Auth{}
 
 		lrw := httptest.NewRecorder()
 		lrr := httptest.NewRequest("GET", "/needredir", nil)
-		lrctx, _ := session.TestContext(lrr.Context(), nil)
-		session.MustFromContext(lrctx).Set(authSessSessionKey, as)
-		lrr = lrr.WithContext(lrctx)
-
 		auth.TriggerLogin(lrw, lrr, "/dashboard")
 
 		if lrw.Result().StatusCode != http.StatusSeeOther {
@@ -71,8 +70,12 @@ func TestWebauthnAuth(t *testing.T) {
 			t.Fatalf("expected redirect, got no location")
 		}
 
-		req := webtest.NewRequest("GET", lrw.Result().Header.Get("Location"),
-			webtest.RequestWithSessionValues(map[string]any{authSessSessionKey: as}),
+		if len(as.Flows) != 0 {
+			t.Fatalf("expected no flows to be created in session during TriggerLogin, got %d", len(as.Flows))
+		}
+
+		req, change := requestWithSession(t, "GET", lrw.Result().Header.Get("Location"),
+			appsession.Data{Auth: as},
 			webtest.RequestWithStaticContent(webcommon.Static, "/static"),
 		)
 
@@ -138,11 +141,8 @@ func TestWebauthnAuth(t *testing.T) {
 		}
 
 		// Now submit the login request
-		loginReq := webtest.NewRequest("POST", "/finishWebauthnLogin",
-			// TODO - this only works because the previous session stuff mutates
-			// the data in place. This isn't awesome, so we should make sure we
-			// have a better way to track and update a session over time.
-			webtest.RequestWithSessionValues(map[string]any{authSessSessionKey: as}),
+		loginReq, loginChange := requestWithSession(t, "POST", "/finishWebauthnLogin",
+			change.Data(),
 			webtest.RequestWithJSONBody(loginData),
 		)
 
@@ -177,8 +177,12 @@ func TestWebauthnAuth(t *testing.T) {
 
 		t.Logf("login successful, returnTo: %s", loginResponse.ReturnTo)
 
+		as = loginChange.Data().Auth
 		if as.ExpiresAt.IsZero() {
 			t.Fatal("ExpiresAt not set after login")
+		}
+		if as.AuthenticatedAt.IsZero() {
+			t.Fatal("AuthenticatedAt not set after login")
 		}
 
 		t.Run("session_expiry", func(t *testing.T) {
@@ -186,8 +190,8 @@ func TestWebauthnAuth(t *testing.T) {
 			as.ExpiresAt = time.Now().Add(-1 * time.Second)
 
 			// Try to access a protected resource (e.g., HandleIndex)
-			req := webtest.NewRequest("GET", "/",
-				webtest.RequestWithSessionValues(map[string]any{authSessSessionKey: as}),
+			req, _ := requestWithSession(t, "GET", "/",
+				appsession.Data{Auth: as},
 			)
 			rw := webtest.NewResponse()
 
@@ -285,4 +289,16 @@ func createUserWithCredential(t *testing.T, auth *Authenticator) (virtualwebauth
 	}
 
 	return authenticator, credential, webauthnHandle
+}
+
+func requestWithSession(t *testing.T, method, url string, data appsession.Data, opts ...webtest.RequestOpt) (*web.Request, *sessiontest.Change[appsession.Data]) {
+	t.Helper()
+	req := webtest.NewRequest(method, url, opts...)
+	manager, err := session.NewKVManager[appsession.Data](session.NewMemoryKV(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, change := sessiontest.WithSession(t, req.RawRequest(), manager, data)
+	raw = raw.WithContext(appsession.WithManagerContext(raw.Context(), manager))
+	return web.NewRequestFrom(raw), change
 }

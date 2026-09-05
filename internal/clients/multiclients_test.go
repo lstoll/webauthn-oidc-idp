@@ -20,8 +20,7 @@ func TestMultiClients_GetClient(t *testing.T) {
 		},
 	}
 
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dynamicClients := &DynamicClients{DB: db}
 
@@ -64,8 +63,7 @@ func TestMultiClients_IsValidClientID(t *testing.T) {
 		},
 	}
 
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dynamicClients := &DynamicClients{DB: db}
 
@@ -115,8 +113,7 @@ func TestMultiClients_RedirectURIs(t *testing.T) {
 		},
 	}
 
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dynamicClients := &DynamicClients{DB: db}
 
@@ -160,13 +157,11 @@ func TestMultiClients_ClientOpts(t *testing.T) {
 				RedirectURLs: []string{"https://example.com/callback"},
 				Secrets:      []string{"secret1"},
 				Public:       false,
-				UseRS256:     true, // This should create a signing alg option
 			},
 		},
 	}
 
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	db := setupTestDB(t)
 
 	dynamicClients := &DynamicClients{DB: db}
 

@@ -11,16 +11,17 @@ import (
 	"net/url"
 	"time"
 
-	"crawshaw.dev/jsonfile"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"lds.li/keyset"
 	"lds.li/oauth2ext/dpop"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/oauth2ext/oauth2as/discovery"
-	"lds.li/passidp/internal/adminapi"
+	"lds.li/passidp/internal/admincli"
 	"lds.li/passidp/internal/adminui"
+	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/auth"
 	"lds.li/passidp/internal/clients"
 	"lds.li/passidp/internal/config"
@@ -28,61 +29,81 @@ import (
 	"lds.li/passidp/internal/policy"
 	"lds.li/passidp/internal/storage"
 	"lds.li/passidp/internal/webcommon"
+	"lds.li/session"
 	"lds.li/web"
 	"lds.li/web/csp"
 	"lds.li/web/proxyhdrs"
 	"lds.li/web/requestid"
-	"lds.li/web/session"
+)
+
+const (
+	dbscRegistrationPath = "/dbsc/register"
+	dbscRefreshPath      = "/dbsc/refresh"
 )
 
 type ServeCmd struct {
-	ListenAddr          string `default:"localhost:8085" env:"IDP_LISTEN_ADDR" help:"Listen address for the server."`
-	MetricsAddr         string `env:"IDP_METRICS_ADDR" help:"Expose Prometheus metrics on the given host:port."`
-	CertFile            string `env:"IDP_CERT_FILE" help:"Path to the TLS certificate file."`
-	KeyFile             string `env:"IDP_KEY_FILE" help:"Path to the TLS key file."`
-	CredentialStorePath string `env:"IDP_CREDENTIAL_STORE_PATH" required:"" help:"Path to the credential store file."`
-	StatePath           string `env:"IDP_STATE_PATH" required:"" help:"Path to the state file."`
+	ListenAddr  string `default:"localhost:8085" env:"IDP_LISTEN_ADDR" help:"Listen address for the server."`
+	MetricsAddr string `env:"IDP_METRICS_ADDR" help:"Expose Prometheus metrics on the given host:port."`
+	CertFile    string `env:"IDP_CERT_FILE" help:"Path to the TLS certificate file."`
+	KeyFile     string `env:"IDP_KEY_FILE" help:"Path to the TLS key file."`
 }
 
-func (c *ServeCmd) Run(ctx context.Context, config *config.Config, adminSocket adminapi.SocketPath) error {
+func (c *ServeCmd) Run(ctx context.Context, config *config.Config, paths admincli.Paths) error {
 	var g run.Group
 	g.Add(run.ContextHandler(ctx))
 
-	credStore, err := storage.NewCredentialStore(c.CredentialStorePath)
+	credStore, err := storage.NewCredentialFile(paths.CredentialStorePath)
 	if err != nil {
-		return fmt.Errorf("open credential store from %s: %w", c.CredentialStorePath, err)
+		return fmt.Errorf("open credential store from %s: %w", paths.CredentialStorePath, err)
 	}
 
-	state, err := storage.NewState(c.StatePath)
+	sqlPath := storage.StateSQLitePath(paths.StatePath)
+	sqlDB, err := storage.Open(sqlPath)
 	if err != nil {
-		return fmt.Errorf("open state from %s: %w", c.StatePath, err)
+		return fmt.Errorf("open sqlite state from %s: %w", sqlPath, err)
 	}
 
-	g.Add(state.GarbageCollector(1 * time.Hour))
-	g.Add(state.Compactor(12 * time.Hour))
+	oauth2Store, err := storage.NewOAuth2Storage(ctx, sqlDB)
+	if err != nil {
+		return fmt.Errorf("create oauth2 storage: %w", err)
+	}
+	sessionKV, err := storage.NewSessionKV(sqlDB)
+	if err != nil {
+		return fmt.Errorf("create session store: %w", err)
+	}
+	keysetStore, err := storage.NewKeysetStore(sqlDB)
+	if err != nil {
+		return fmt.Errorf("create keyset store: %w", err)
+	}
+	enrollmentStore := storage.NewEnrollmentStore(sqlDB)
+	dynamicClientStore := storage.NewDynamicClientStore(sqlDB)
 
-	// Create multi-clients that combines both
+	g.Add(storage.OAuth2GarbageCollector(oauth2Store, 1*time.Hour))
+	g.Add(storage.SessionGarbageCollector(sessionKV, 1*time.Hour))
+	g.Add(storage.EnrollmentGarbageCollector(enrollmentStore, 1*time.Hour))
+	g.Add(storage.DynamicClientGarbageCollector(dynamicClientStore, 1*time.Hour))
+	g.Add(func() error {
+		<-ctx.Done()
+		return nil
+	}, func(error) {
+		if err := sqlDB.Close(); err != nil {
+			slog.Error("close sqlite state", slog.String("error", err.Error()))
+		}
+	})
+
 	multiClients := clients.NewMultiClients(&clients.StaticClients{
 		Clients: config.Clients},
-		&clients.DynamicClients{DB: state.DynamicClientStore()},
+		&clients.DynamicClients{DB: dynamicClientStore},
 	)
 
-	idph, err := NewIDP(ctx, &g, config, credStore, state, config.ParsedIssuer, multiClients)
+	idph, err := NewIDP(ctx, &g, config, credStore, oauth2Store, sessionKV, keysetStore, enrollmentStore, config.ParsedIssuer, multiClients)
 	if err != nil {
 		return fmt.Errorf("start server: %v", err)
 	}
 
-	// Start admin API server if socket path is provided
-	if adminSocket != "" {
-		adminServer := adminapi.NewServer(state, config, credStore, adminSocket)
-		if err := adminServer.Start(ctx, &g); err != nil {
-			return fmt.Errorf("start admin API server: %w", err)
-		}
-	}
-
 	mux := http.NewServeMux()
 
-	log.Printf("mountng at hostname %s", config.ParsedIssuer.Hostname())
+	log.Printf("mounting at hostname %s", config.ParsedIssuer.Hostname())
 
 	mux.Handle(config.ParsedIssuer.Hostname()+"/", idph)
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,15 +165,34 @@ func (c *ServeCmd) Run(ctx context.Context, config *config.Config, adminSocket a
 }
 
 // NewIDP creates a new IDP server for the given params.
-func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *jsonfile.JSONFile[storage.CredentialStore], state *storage.State, issuerURL *url.URL, clients *clients.MultiClients) (http.Handler, error) {
-	oidcHandles, err := initKeysets(ctx, state.KeysetStore())
+func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *storage.CredentialFile, oauth2 *oauth2as.Storage, sessionKV session.KV, keysetStore keyset.AdminStore, enrollments *storage.EnrollmentStore, issuerURL *url.URL, clients *clients.MultiClients) (http.Handler, error) {
+	oidcHandles, sessionMAC, err := initKeysets(ctx, keysetStore)
 	if err != nil {
 		return nil, fmt.Errorf("initializing keysets: %w", err)
 	}
 
-	sesskv := state.SessionKV()
+	sessionOpts := session.KVManagerOpts[appsession.Data]{
+		IdleTimeout:            cfg.SessionDuration.Duration(),
+		SessionIDAuthenticator: sessionMAC,
+	}
+	dbscEnabled := false
+	if dbscRefresh := cfg.Serving.DBSCRefreshInterval.Duration(); dbscRefresh > 0 {
+		if issuerURL.Scheme != "https" {
+			slog.WarnContext(ctx, "DBSC disabled: issuer must use HTTPS", slog.String("issuer", issuerURL.String()))
+		} else {
+			dbscEnabled = true
+			sessionOpts.DBSCRefreshInterval = dbscRefresh
+			sessionOpts.DBSCRegistrationPath = dbscRegistrationPath
+			sessionOpts.DBSCRefreshPath = dbscRefreshPath
+			sessionOpts.DBSCOrigin = issuerURL.Scheme + "://" + issuerURL.Host
+			slog.InfoContext(ctx, "DBSC enabled",
+				slog.Duration("refresh_interval", dbscRefresh),
+				slog.String("origin", sessionOpts.DBSCOrigin),
+			)
+		}
+	}
 
-	sessionManager, err := session.NewKVManager(sesskv, nil)
+	sessionManager, err := session.NewKVManager[appsession.Data](sessionKV, &sessionOpts)
 	if err != nil {
 		return nil, fmt.Errorf("creating session manager: %w", err)
 	}
@@ -170,10 +210,14 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *js
 	}
 
 	websvr, err := web.NewServer(&web.Config{
-		BaseURL:        issuerURL,
-		SessionManager: sessionManager,
-		Static:         webcommon.Static, // TODO - lstoll/web should not panic when not set
-		CSPOpts:        cspOpts,
+		BaseURL: issuerURL,
+		AdditionalBrowserMiddleware: []func(http.Handler) http.Handler{
+			func(next http.Handler) http.Handler {
+				return sessionManager.Wrap(appsession.Bind(sessionManager)(next))
+			},
+		},
+		Static:  webcommon.Static, // TODO - lstoll/web should not panic when not set
+		CSPOpts: cspOpts,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating web server: %w", err)
@@ -212,7 +256,7 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *js
 	}
 
 	// start configuration of webauthn manager
-	mgr := adminui.NewWebAuthnManager(cfg, credStore, state, wn)
+	mgr := adminui.NewWebAuthnManager(cfg, credStore, enrollments, wn)
 
 	mgr.AddHandlers(websvr)
 
@@ -224,7 +268,6 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *js
 	auth := &auth.Authenticator{
 		Webauthn:  wn,
 		CredStore: credStore,
-		State:     state,
 		Config:    cfg,
 	}
 	auth.AddHandlers(websvr)
@@ -255,7 +298,7 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *js
 
 	oauth2asConfig := oauth2as.Config{
 		Issuer:   issuerURL.String(),
-		Storage:  state.OAuth2State(),
+		Storage:  oauth2,
 		Clients:  clients,
 		Signer:   oidcHandles,
 		Verifier: oidcHandles,
@@ -278,9 +321,10 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *js
 	if err != nil {
 		return nil, fmt.Errorf("failed to create oauth2as server: %w", err)
 	}
+	auth.OAuth2 = oauth2asServer
 
 	pmd := discovery.DefaultCoreMetadata(issuerURL.String())
-	pmd.IDTokenSigningAlgValuesSupported = oidcHandles.SupportedAlgorithms()
+	pmd.IDTokenSigningAlgValuesSupported = []string{"ES256"}
 	pmd.AuthorizationEndpoint = issuerURL.String() + "/authorization"
 	pmd.TokenEndpoint = issuerURL.String() + "/token"
 	pmd.UserinfoEndpoint = issuerURL.String() + "/userinfo"
@@ -312,5 +356,19 @@ func NewIDP(ctx context.Context, g *run.Group, cfg *config.Config, credStore *js
 		http.Redirect(w, r, "/authorization?"+r.URL.RawQuery, http.StatusSeeOther)
 	})
 
+	if dbscEnabled {
+		addDBSCRoutes(websvr)
+	}
+
 	return websvr, nil
+}
+
+// addDBSCRoutes registers browser routes for DBSC so requests reach the session
+// middleware. The middleware handles proofs before these handlers run.
+func addDBSCRoutes(websvr *web.Server) {
+	unreachable := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	})
+	websvr.Handle("POST "+dbscRegistrationPath, unreachable, auth.SkipAuthn)
+	websvr.Handle("POST "+dbscRefreshPath, unreachable, auth.SkipAuthn)
 }

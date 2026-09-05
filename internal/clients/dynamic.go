@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"lds.li/oauth2ext/jwt"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/oauth2ext/oidcclientreg"
 	"lds.li/passidp/internal/auth"
@@ -88,12 +89,9 @@ func (d *DynamicClients) GetClientMetadata(ctx context.Context, clientID string)
 	if err != nil {
 		return nil, fmt.Errorf("client %s not found: %w", clientID, err)
 	}
-	if client == nil {
-		return nil, fmt.Errorf("client %s not found", clientID)
-	}
 
 	var registration oidcclientreg.ClientRegistrationRequest
-	if err := json.Unmarshal([]byte(client.RegistrationBlob), &registration); err != nil {
+	if err := json.Unmarshal(client.RegistrationBlob, &registration); err != nil {
 		return nil, fmt.Errorf("failed to parse client registration for %s: %w", clientID, err)
 	}
 
@@ -117,7 +115,7 @@ func (d *DynamicClients) ClientOpts(ctx context.Context, clientID string) ([]oau
 	}
 
 	client, err := d.DB.GetDynamicClient(ctx, clientID)
-	if err != nil || client == nil {
+	if err != nil {
 		return nil, nil
 	}
 
@@ -125,7 +123,7 @@ func (d *DynamicClients) ClientOpts(ctx context.Context, clientID string) ([]oau
 
 	// Parse the registration blob to get client details
 	var registration oidcclientreg.ClientRegistrationRequest
-	if err := json.Unmarshal([]byte(client.RegistrationBlob), &registration); err != nil {
+	if err := json.Unmarshal(client.RegistrationBlob, &registration); err != nil {
 		return nil, fmt.Errorf("failed to parse client registration: %w", err)
 	}
 
@@ -135,21 +133,17 @@ func (d *DynamicClients) ClientOpts(ctx context.Context, clientID string) ([]oau
 		opts = append(opts, oauth2as.ClientOptSkipPKCE())
 	}
 
-	// Set signing algorithm based on client preference or default to RS256
-	var signingAlg string
+	var signingAlg jwt.Algorithm
 	switch registration.IDTokenSignedResponseAlg {
+	case "", "ES256":
+		signingAlg = jwt.ES256
 	case "RS256":
-		signingAlg = "RS256"
-	case "ES256":
-		signingAlg = "ES256"
+		signingAlg = jwt.RS256
 	default:
-		// If the client requests no or an an unsupported algorithm, default
-		// to RS256 This follows OIDC spec where the server can override
-		// client preferences
-		signingAlg = "RS256"
+		return nil, fmt.Errorf("unsupported ID token signing algorithm %q", registration.IDTokenSignedResponseAlg)
 	}
 
-	opts = append(opts, oauth2as.ClientOptSigningAlg(signingAlg))
+	opts = append(opts, oauth2as.ClientOptIDTokenSigningAlgorithm(signingAlg))
 
 	return opts, nil
 }
@@ -201,7 +195,7 @@ func (d *DynamicClients) ClientSecrets(ctx context.Context, clientID string) ([]
 	}
 
 	client, err := d.DB.GetDynamicClient(ctx, clientID)
-	if err != nil || client == nil {
+	if err != nil {
 		return nil, fmt.Errorf("client %s not found", clientID)
 	}
 	return []string{client.ClientSecret}, nil
@@ -214,13 +208,13 @@ func (d *DynamicClients) RedirectURIs(ctx context.Context, clientID string) ([]s
 	}
 
 	client, err := d.DB.GetDynamicClient(ctx, clientID)
-	if err != nil || client == nil {
+	if err != nil {
 		return nil, fmt.Errorf("client %s not found", clientID)
 	}
 
 	// Parse the registration blob to get redirect URIs
 	var registration oidcclientreg.ClientRegistrationRequest
-	if err := json.Unmarshal([]byte(client.RegistrationBlob), &registration); err != nil {
+	if err := json.Unmarshal(client.RegistrationBlob, &registration); err != nil {
 		return nil, fmt.Errorf("failed to parse client registration: %w", err)
 	}
 
@@ -380,13 +374,10 @@ func (d *DynamicClients) validateClientRegistration(req *oidcclientreg.ClientReg
 
 	// Validate signing algorithm if specified
 	if req.IDTokenSignedResponseAlg != "" {
-		supportedAlgs := map[string]bool{
-			"RS256": true,
-			"ES256": true,
-		}
+		supportedAlgs := map[string]bool{"ES256": true, "RS256": true}
 
 		if !supportedAlgs[req.IDTokenSignedResponseAlg] {
-			return fmt.Errorf("unsupported id_token_signed_response_alg: %s (supported: RS256, ES256)", req.IDTokenSignedResponseAlg)
+			return fmt.Errorf("unsupported id_token_signed_response_alg: %s (supported: ES256, RS256)", req.IDTokenSignedResponseAlg)
 		}
 	}
 

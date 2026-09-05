@@ -25,16 +25,13 @@ On the server host:
 ```bash
 go run ./cmd/passidp \
   --config=etc/dev-config.hujson \
-  --admin-socket-path=data/admin.sock \
+  --credential-store-path=data/credentials.json \
+  --state-path=data/state.sqlite \
   serve \
   --cert-file=dev-cert.pem \
   --key-file=dev-key.pem \
-  --listen-addr=localhost:8085 \
-  --credential-store-path=data/credentials.json \
-  --state-path=data/state.bolt \
+  --listen-addr=localhost:8085
 ```
-
-**Note:** The `--admin-socket-path` is optional but required for credential management commands. The socket directory must exist and be writable by the server process.
 
 ### 4. Test the Auth Flow
 
@@ -51,7 +48,10 @@ go run lds.li/oauth2ext/cmd/oidccli@latest \
 
 ## Credential Management
 
-All credential management commands must be run **on the server host** and communicate with the server via the Unix socket API. The server must be running with `--admin-socket-path` configured.
+Credential commands use the same store paths as the server. Path flags are global:
+
+- `--credential-store-path` — JSON file with registered passkeys
+- `--state-path` — SQLite database for enrollments and server state
 
 ### Adding a Credential to a User
 
@@ -59,12 +59,10 @@ This is a two-step process to ensure security:
 
 #### Step 1: Create Enrollment
 
-On the server host:
-
 ```bash
 go run ./cmd/passidp \
   --config=etc/dev-config.hujson \
-  --admin-socket-path=data/admin.sock \
+  --state-path=data/state.sqlite \
   add-credential \
   --user-id=da5b51ac-0efd-4631-8790-9f02d516527c
 ```
@@ -85,12 +83,11 @@ Enroll at: https://localhost:8085/registration?enrollment_token=987fcdeb-51a2-43
 
 #### Step 3: Confirm Enrollment
 
-On the server host, use the enrollment ID and confirmation key from Step 2:
-
 ```bash
 go run ./cmd/passidp \
   --config=etc/dev-config.hujson \
-  --admin-socket-path=data/admin.sock \
+  --credential-store-path=data/credentials.json \
+  --state-path=data/state.sqlite \
   confirm-credential \
   --user-id=da5b51ac-0efd-4631-8790-9f02d516527c \
   --enrollment-id=123e4567-e89b-12d3-a456-426614174000 \
@@ -101,12 +98,10 @@ This activates the credential and makes it available for authentication.
 
 ### List Credentials
 
-On the server host:
-
 ```bash
 go run ./cmd/passidp \
   --config=etc/dev-config.hujson \
-  --admin-socket-path=data/admin.sock \
+  --credential-store-path=data/credentials.json \
   list-credentials
 ```
 
@@ -118,11 +113,10 @@ ID                                      Name            User ID                 
 
 ### Delete a Credential
 
-On the server host:
-
 ```bash
-passidp \
-  --config=etc/config.hujson \
+go run ./cmd/passidp \
+  --config=etc/dev-config.hujson \
+  --credential-store-path=data/credentials.json \
   delete-credential \
   --credential-id=123e4567-e89b-12d3-a456-426614174000
 ```
