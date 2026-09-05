@@ -5,7 +5,6 @@ go 1.27
 toolchain go1.27rc3
 
 require (
-	crawshaw.dev/jsonfile v0.0.0-20240206193014-699d1dad804e
 	github.com/alecthomas/kong v1.14.0
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
 	github.com/chromedp/chromedp v0.14.2

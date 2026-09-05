@@ -48,16 +48,11 @@ go run lds.li/oauth2ext/cmd/oidccli@latest \
 
 ## Credential Management
 
-Credential commands use the same store paths as the server. Path flags are global:
-
-- `--credential-store-path` — JSON file with registered passkeys
-- `--state-path` — SQLite database for enrollments and server state
+`add-credential` writes a pending enrollment into the SQLite state database (`--state-path`). The running server stores the passkey in `credentials.json` when registration finishes.
 
 ### Adding a Credential to a User
 
-This is a two-step process to ensure security:
-
-#### Step 1: Create Enrollment
+Create a short-lived enrollment URL (15 minutes by default), then complete WebAuthn registration in the browser. The passkey is stored as soon as registration succeeds.
 
 ```bash
 go run ./cmd/passidp \
@@ -67,59 +62,17 @@ go run ./cmd/passidp \
   --user-id=da5b51ac-0efd-4631-8790-9f02d516527c
 ```
 
+Pass `--validity=1h` to keep the URL open longer.
+
 This will output:
 ```
 Enrollment ID: 123e4567-e89b-12d3-a456-426614174000
 Enrollment Key: 987fcdeb-51a2-43f1-9b8c-123456789abc
+Valid until: 2025-01-15T10:45:00Z
 Enroll at: https://localhost:8085/registration?enrollment_token=987fcdeb-51a2-43f1-9b8c-123456789abc&user_id=da5b51ac-0efd-4631-8790-9f02d516527c
 ```
 
-#### Step 2: User Completes Registration
-
-1. Share the enrollment URL with the user
-2. User opens the URL in a browser
-3. User follows the WebAuthn registration flow to set up a passkey
-4. After successful registration, the user receives a confirmation key
-
-#### Step 3: Confirm Enrollment
-
-```bash
-go run ./cmd/passidp \
-  --config=etc/dev-config.hujson \
-  --credential-store-path=data/credentials.json \
-  --state-path=data/state.sqlite \
-  confirm-credential \
-  --user-id=da5b51ac-0efd-4631-8790-9f02d516527c \
-  --enrollment-id=123e4567-e89b-12d3-a456-426614174000 \
-  --confirmation-key=987fcdeb-51a2-43f1-9b8c-123456789abc
-```
-
-This activates the credential and makes it available for authentication.
-
-### List Credentials
-
-```bash
-go run ./cmd/passidp \
-  --config=etc/dev-config.hujson \
-  --credential-store-path=data/credentials.json \
-  list-credentials
-```
-
-Output:
-```
-ID                                      Name            User ID                               User Name    User Email              Created At
-123e4567-e89b-12d3-a456-426614174000   iPhone          da5b51ac-0efd-4631-8790-9f02d516527c  Dev User     dev-user@example.com   2025-01-15T10:30:00Z
-```
-
-### Delete a Credential
-
-```bash
-go run ./cmd/passidp \
-  --config=etc/dev-config.hujson \
-  --credential-store-path=data/credentials.json \
-  delete-credential \
-  --credential-id=123e4567-e89b-12d3-a456-426614174000
-```
+Open the enrollment URL, name the key, and register a passkey. The server must be running so it can write the new credential.
 
 ## Development
 

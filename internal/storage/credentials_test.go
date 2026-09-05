@@ -1,8 +1,10 @@
 package storage_test
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,6 +26,15 @@ func TestNewCredentialFileLazyCreate(t *testing.T) {
 		t.Fatalf("expected no file before first write, stat err=%v", err)
 	}
 
+	if err := store.Write(func(*storage.CredentialStore) error {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected no file after no-op write, stat err=%v", err)
+	}
+
 	if err := store.Write(func(cs *storage.CredentialStore) error {
 		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "test"})
 		return nil
@@ -36,30 +47,56 @@ func TestNewCredentialFileLazyCreate(t *testing.T) {
 	}
 }
 
-func TestCredentialFileReloadsExternalChanges(t *testing.T) {
+func TestCredentialFilePrettyPrinted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	store, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "test"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte("\n  ")) {
+		t.Fatalf("expected indented JSON, got:\n%s", raw)
+	}
+	if raw[len(raw)-1] != '\n' {
+		t.Fatal("expected trailing newline")
+	}
+}
+
+func TestCredentialFileWriteRollback(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "credentials.json")
 	store, err := storage.NewCredentialFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	other, err := storage.NewCredentialFile(path)
-	if err != nil {
-		t.Fatal(err)
+	err = store.Write(func(cs *storage.CredentialStore) error {
+		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "nope"})
+		return errors.New("boom")
+	})
+	if err == nil {
+		t.Fatal("expected write error")
 	}
-	if err := other.Write(func(cs *storage.CredentialStore) error {
-		cs.Credentials = append(cs.Credentials, &storage.Credential{Name: "external"})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected no file after failed write, stat err=%v", err)
 	}
 
 	var count int
 	store.Read(func(cs *storage.CredentialStore) {
 		count = len(cs.Credentials)
 	})
-	if count != 1 {
-		t.Fatalf("expected reloaded credential count 1, got %d", count)
+	if count != 0 {
+		t.Fatalf("expected empty store after failed write, got %d credentials", count)
 	}
 }
 
@@ -148,9 +185,10 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 		mustLookup([]byte(accountID.String()))
 		mustLookup([]byte("custom-subject"))
 
-		padded := base64.StdEncoding.EncodeToString(handle[:])
-		if !slices.Contains(pu.HandleAliases, padded) {
-			t.Fatalf("handle aliases = %q, want padded std base64 %q", pu.HandleAliases, padded)
+		if !slices.ContainsFunc(pu.HandleAliases, func(alias []byte) bool {
+			return bytes.Equal(alias, handle[:])
+		}) {
+			t.Fatalf("handle aliases = %q, want raw handle %q", pu.HandleAliases, handle[:])
 		}
 	})
 
@@ -172,7 +210,9 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 	}
 	var file struct {
 		Credentials json.RawMessage `json:"credentials"`
-		Users       json.RawMessage `json:"users"`
+		Users       []struct {
+			HandleAliases []string `json:"handleAliases"`
+		} `json:"users"`
 	}
 	if err := json.Unmarshal(raw, &file); err != nil {
 		t.Fatal(err)
@@ -180,7 +220,73 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 	if len(file.Credentials) == 0 || string(file.Credentials) == "null" {
 		t.Fatalf("credentials key missing from file: %s", raw)
 	}
-	if len(file.Users) == 0 || string(file.Users) == "null" {
+	if len(file.Users) == 0 {
 		t.Fatalf("users key missing from file: %s", raw)
 	}
+	padded := base64.StdEncoding.EncodeToString(handle[:])
+	if !slices.Contains(file.Users[0].HandleAliases, padded) {
+		t.Fatalf("on-disk handleAliases = %q, want padded std base64 %q", file.Users[0].HandleAliases, padded)
+	}
+}
+
+func TestUserCredentialsAndDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	store, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accountID := uuid.New()
+	otherID := uuid.New()
+	legacyID := uuid.New()
+	passkeyID := uuid.New()
+	otherLegacyID := uuid.New()
+	otherPasskeyID := uuid.New()
+
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		cs.Credentials = append(cs.Credentials,
+			&storage.Credential{ID: legacyID, UserID: accountID, Name: "legacy"},
+			&storage.Credential{ID: otherLegacyID, UserID: otherID, Name: "other-legacy"},
+		)
+		cs.AddPasskey(accountID, nil, &storage.Passkey{ID: passkeyID, Name: "passkey"})
+		cs.AddPasskey(otherID, nil, &storage.Passkey{ID: otherPasskeyID, Name: "other-passkey"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	store.Read(func(cs *storage.CredentialStore) {
+		got := cs.UserCredentials(accountID)
+		if len(got) != 2 {
+			t.Fatalf("UserCredentials = %d, want 2", len(got))
+		}
+		names := []string{got[0].Name, got[1].Name}
+		if !slices.Contains(names, "legacy") || !slices.Contains(names, "passkey") {
+			t.Fatalf("UserCredentials names = %q", names)
+		}
+	})
+
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		if cs.DeleteUserCredential(accountID, otherPasskeyID) {
+			t.Fatal("deleted another user's passkey")
+		}
+		if !cs.DeleteUserCredential(accountID, legacyID) {
+			t.Fatal("expected to delete own legacy credential")
+		}
+		if !cs.DeleteUserCredential(accountID, passkeyID) {
+			t.Fatal("expected to delete own passkey")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	store.Read(func(cs *storage.CredentialStore) {
+		if n := len(cs.UserCredentials(accountID)); n != 0 {
+			t.Fatalf("expected no credentials after delete, got %d", n)
+		}
+		if n := len(cs.UserCredentials(otherID)); n != 2 {
+			t.Fatalf("other user's credentials mutated, got %d", n)
+		}
+	})
 }

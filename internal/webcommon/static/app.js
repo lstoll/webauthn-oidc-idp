@@ -297,15 +297,6 @@ class WebAuthnUI {
                 this.hideSuccess();
             });
         }
-
-        // Confirmation box close button
-        const confDeleteButton = document.querySelector('#confirmation-box .delete');
-        if (confDeleteButton) {
-            confDeleteButton.addEventListener('click', () => {
-                const confBox = document.getElementById('confirmation-box');
-                if (confBox) confBox.style.display = 'none';
-            });
-        }
     }
 
     /**
@@ -333,51 +324,25 @@ class WebAuthnUI {
             const responseData = await result.json();
 
             if (responseData.success) {
-                // Build success message
                 let successMsg = responseData.message || "Passkey registered successfully!";
 
-                // If there's a confirmation key, show it in the dedicated box
-                if (responseData.confirmation_key) {
-                    const confBox = document.getElementById('confirmation-box');
-                    const confKeyVal = document.getElementById('confirmation-key-value');
-                    const enrollIdVal = document.getElementById('enrollment-id-value');
-
-                    if (confBox && confKeyVal) {
-                        confKeyVal.textContent = responseData.confirmation_key;
-                        if (enrollIdVal) enrollIdVal.textContent = responseData.enrollment_id || 'N/A';
-                        confBox.style.display = 'block';
-
-                        // Hide the registration form since registration is complete
-                        const registrationForm = document.getElementById('registration-form');
-                        if (registrationForm) {
-                            registrationForm.style.display = 'none';
-                        }
-
-                        // Update the card title and subtitle to reflect completion
-                        const titleElement = document.querySelector('.title');
-                        const subtitleElement = document.querySelector('.subtitle');
-                        if (titleElement) {
-                            titleElement.textContent = 'Passkey Registered';
-                        }
-                        if (subtitleElement) {
-                            subtitleElement.textContent = 'Registration pending administrator confirmation';
-                        }
-                    }
+                const registrationForm = document.getElementById('registration-form');
+                if (registrationForm) {
+                    registrationForm.style.display = 'none';
                 }
 
-                // Store confirmation details in data attributes for easy extraction
-                if (responseData.confirmation_key) {
-                    document.body.dataset.confirmationKey = responseData.confirmation_key;
+                const titleElement = document.querySelector('.title');
+                const subtitleElement = document.querySelector('.subtitle');
+                if (titleElement) {
+                    titleElement.textContent = 'Passkey Registered';
                 }
-                if (responseData.enrollment_id) {
-                    document.body.dataset.enrollmentId = responseData.enrollment_id;
+                if (subtitleElement) {
+                    subtitleElement.textContent = 'This passkey can now be used to sign in';
                 }
 
-                // Show success message, auto-hide it as requested
                 this.showSuccess(successMsg, true);
 
-                // Don't redirect automatically when confirmation is needed
-                if (!responseData.confirmation_key && responseData.returnTo) {
+                if (responseData.returnTo) {
                     setTimeout(() => {
                         window.location.href = responseData.returnTo;
                     }, 2000);
@@ -711,13 +676,167 @@ class GrantManagerUI {
     }
 }
 
+/**
+ * Credential Management UI - list/delete passkeys on the home page
+ */
+class CredentialManagerUI {
+    constructor() {
+        if (!document.getElementById('credentials-list') && !document.getElementById('no-credentials')) {
+            return;
+        }
+        this.credentials = [];
+        this.bindEvents();
+        this.loadCredentials();
+    }
+
+    bindEvents() {
+        const errorDeleteButton = document.querySelector('#credentials-error .delete');
+        if (errorDeleteButton) {
+            errorDeleteButton.addEventListener('click', () => {
+                const errorEl = document.getElementById('credentials-error');
+                if (errorEl) errorEl.style.display = 'none';
+            });
+        }
+
+        const successDeleteButton = document.querySelector('#credentials-success .delete');
+        if (successDeleteButton) {
+            successDeleteButton.addEventListener('click', () => {
+                const successEl = document.getElementById('credentials-success');
+                if (successEl) successEl.style.display = 'none';
+            });
+        }
+    }
+
+    async loadCredentials() {
+        const loadingEl = document.getElementById('credentials-loading');
+        try {
+            const response = await fetch('/api/credentials');
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    throw new Error('Not authenticated. Please log in.');
+                }
+                const errorText = await response.text();
+                throw new Error(`Failed to load passkeys: ${response.status} ${errorText}`);
+            }
+            const data = await response.json();
+            this.credentials = data.credentials || [];
+            this.renderCredentials();
+        } catch (error) {
+            console.error('Error loading credentials:', error);
+            if (loadingEl) {
+                loadingEl.innerHTML = `<p class="has-text-danger">Error: ${error.message}</p>`;
+            } else {
+                this.showError('Failed to load passkeys: ' + error.message);
+            }
+        } finally {
+            if (loadingEl) {
+                loadingEl.style.display = 'none';
+            }
+        }
+    }
+
+    renderCredentials() {
+        const tbody = document.getElementById('credentials-table-body');
+        const listEl = document.getElementById('credentials-list');
+        const noCredsEl = document.getElementById('no-credentials');
+
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+
+        if (this.credentials.length === 0) {
+            if (listEl) listEl.style.display = 'none';
+            if (noCredsEl) noCredsEl.style.display = 'block';
+            return;
+        }
+
+        if (listEl) listEl.style.display = 'block';
+        if (noCredsEl) noCredsEl.style.display = 'none';
+
+        this.credentials.forEach(cred => {
+            const row = document.createElement('tr');
+            const created = cred.created_at ? new Date(cred.created_at).toLocaleString() : '';
+            const name = cred.name && cred.name.trim() ? cred.name : 'Unnamed passkey';
+
+            row.innerHTML = `
+                <td class="pl-5">${this.escapeHtml(name)}</td>
+                <td>${this.escapeHtml(created)}</td>
+                <td class="pr-5">
+                    <button class="button is-danger is-small delete-credential" data-id="${cred.id}">
+                        <span class="icon">
+                            <i class="fas fa-trash"></i>
+                        </span>
+                        <span>Delete</span>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        document.querySelectorAll('.delete-credential').forEach(btn => {
+            btn.addEventListener('click', () => this.deleteCredential(btn.dataset.id));
+        });
+    }
+
+    async deleteCredential(credentialId) {
+        if (!confirm('Delete this passkey? If this is your last one, you may not be able to sign in.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/credentials/${credentialId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete passkey');
+            }
+
+            this.showSuccess('Passkey deleted');
+            await this.loadCredentials();
+        } catch (error) {
+            console.error('Error deleting credential:', error);
+            this.showError(`Failed to delete passkey: ${error.message}`);
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    showError(message) {
+        const errorEl = document.getElementById('credentials-error');
+        const errorTextEl = document.querySelector('#credentials-error .error-text');
+        if (errorEl && errorTextEl) {
+            errorTextEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => errorEl.style.display = 'none', 5000);
+        }
+    }
+
+    showSuccess(message, autoHide = true) {
+        const successEl = document.getElementById('credentials-success');
+        const successTextEl = document.querySelector('#credentials-success .success-text');
+        if (successEl && successTextEl) {
+            successTextEl.textContent = message;
+            successEl.style.display = 'block';
+            if (autoHide) {
+                setTimeout(() => successEl.style.display = 'none', 5000);
+            }
+        }
+    }
+}
+
 // Initialize WebAuthn UI when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     new WebAuthnUI();
     new GrantManagerUI();
+    new CredentialManagerUI();
 });
 
 // Export for potential module usage
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { WebAuthn, WebAuthnUI, GrantManagerUI };
+    module.exports = { WebAuthn, WebAuthnUI, GrantManagerUI, CredentialManagerUI };
 }

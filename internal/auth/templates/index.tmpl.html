@@ -30,6 +30,60 @@
                         <header class="card-header">
                             <p class="card-header-title">
                                 <span class="icon mr-2">
+                                    <i class="fas fa-key"></i>
+                                </span>
+                                Passkeys
+                            </p>
+                            <a class="button is-small is-primary m-2" href="/registration">
+                                <span class="icon is-small">
+                                    <i class="fas fa-plus"></i>
+                                </span>
+                                <span>Add passkey</span>
+                            </a>
+                        </header>
+                        <div class="card-content p-0">
+                            <div id="credentials-error" class="notification is-danger m-4" style="display: none;">
+                                <button class="delete"></button>
+                                <span class="error-text"></span>
+                            </div>
+
+                            <div id="credentials-success" class="notification is-success m-4" style="display: none;">
+                                <button class="delete"></button>
+                                <span class="success-text"></span>
+                            </div>
+
+                            <div id="credentials-loading" class="has-text-centered p-5">
+                                <p>Loading passkeys...</p>
+                            </div>
+
+                            <div id="credentials-list" style="display: none;">
+                                <table class="table is-fullwidth is-hoverable mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th class="pl-5">Name</th>
+                                            <th>Created</th>
+                                            <th class="pr-5">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="credentials-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div id="no-credentials" class="p-5" style="display: none;">
+                                <p class="has-text-grey">No passkeys registered.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="columns is-centered mt-5">
+                <div class="column is-three-quarters">
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon mr-2">
                                     <i class="fas fa-history"></i>
                                 </span>
                                 Active Sessions

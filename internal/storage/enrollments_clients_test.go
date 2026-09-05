@@ -5,7 +5,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/webauthn"
 	"lds.li/passidp/internal/storage"
 )
 
@@ -13,9 +12,15 @@ func TestEnrollmentStore(t *testing.T) {
 	store := storage.NewEnrollmentStore(storage.OpenTest(t))
 	userID := uuid.New()
 
-	enrollment, err := store.CreatePendingEnrollment(userID)
+	enrollment, err := store.CreatePendingEnrollment(userID, storage.DefaultEnrollmentValidity)
 	if err != nil {
 		t.Fatalf("create enrollment: %v", err)
+	}
+	if enrollment.EnrollmentKey == "" {
+		t.Fatal("expected enrollment key")
+	}
+	if enrollment.ExpiresAt.Sub(enrollment.CreatedAt) != storage.DefaultEnrollmentValidity {
+		t.Fatalf("validity = %v, want %v", enrollment.ExpiresAt.Sub(enrollment.CreatedAt), storage.DefaultEnrollmentValidity)
 	}
 
 	byKey, err := store.GetPendingEnrollmentByKey(enrollment.EnrollmentKey)
@@ -42,37 +47,37 @@ func TestEnrollmentStore(t *testing.T) {
 		t.Fatalf("expected 1 enrollment, got %d", len(list))
 	}
 
-	if err := store.UpdatePendingEnrollment(enrollment.ID, []byte("cred"), &webauthn.Credential{}, "key", "confirm"); err != nil {
-		t.Fatalf("update enrollment: %v", err)
-	}
-
-	confirmed, err := store.ConfirmPendingEnrollment(enrollment.ID, "confirm")
+	consumed, err := store.ConsumePendingEnrollment(enrollment.ID)
 	if err != nil {
-		t.Fatalf("confirm enrollment: %v", err)
+		t.Fatalf("consume enrollment: %v", err)
 	}
-	if confirmed.Name != "key" {
-		t.Fatalf("expected confirmed name %q, got %q", "key", confirmed.Name)
+	if consumed.ID != enrollment.ID {
+		t.Fatalf("expected consumed id %v, got %v", enrollment.ID, consumed.ID)
 	}
 
 	_, err = store.GetPendingEnrollmentByID(enrollment.ID)
 	if err == nil {
-		t.Fatal("expected confirmed enrollment to be deleted")
+		t.Fatal("expected consumed enrollment to be deleted")
 	}
 }
 
-func TestEnrollmentStoreGC(t *testing.T) {
+func TestEnrollmentStoreExpired(t *testing.T) {
 	sqlDB := storage.OpenTest(t)
 	store := storage.NewEnrollmentStore(sqlDB)
 	userID := uuid.New()
 
-	enrollment, err := store.CreatePendingEnrollment(userID)
+	enrollment, err := store.CreatePendingEnrollment(userID, storage.DefaultEnrollmentValidity)
 	if err != nil {
 		t.Fatalf("create enrollment: %v", err)
 	}
 
-	_, err = sqlDB.Exec(`UPDATE pending_enrollments SET created_at = ? WHERE id = ?`, time.Now().Add(-48*time.Hour), enrollment.ID.String())
+	_, err = sqlDB.Exec(`UPDATE pending_enrollments SET expires_at = ? WHERE id = ?`, time.Now().Add(-time.Second), enrollment.ID)
 	if err != nil {
 		t.Fatalf("backdate enrollment: %v", err)
+	}
+
+	if _, err := store.GetPendingEnrollmentByID(enrollment.ID); err == nil {
+		t.Fatal("expected expired enrollment to be rejected")
 	}
 
 	deleted, err := store.GarbageCollectPendingEnrollments()
