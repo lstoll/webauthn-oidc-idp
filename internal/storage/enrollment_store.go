@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 )
 
 const PendingEnrollmentMaxAge = 24 * time.Hour

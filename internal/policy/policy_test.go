@@ -2,8 +2,8 @@ package policy
 
 import (
 	"testing"
+	"uuid"
 
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/config"
 )
 

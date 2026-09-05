@@ -3,8 +3,8 @@ package admin
 import (
 	"fmt"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
 )
@@ -45,6 +45,7 @@ type ConfirmedCredential struct {
 
 // ConfirmEnrollment finalizes a pending enrollment and writes the credential.
 func ConfirmEnrollment(
+	cfg *config.Config,
 	enrollments *storage.EnrollmentStore,
 	credStore *storage.CredentialFile,
 	userID, enrollmentID uuid.UUID,
@@ -63,15 +64,24 @@ func ConfirmEnrollment(
 	if err != nil {
 		return nil, err
 	}
+	if credentialData == nil {
+		return nil, fmt.Errorf("enrollment not completed")
+	}
 
 	if err := credStore.Write(func(cs *storage.CredentialStore) error {
-		cs.Credentials = append(cs.Credentials, &storage.Credential{
-			ID:             uuid.New(),
-			CredentialID:   enrollment.CredentialID,
-			CredentialData: credentialData,
-			Name:           enrollment.Name,
-			UserID:         userID,
-			CreatedAt:      time.Now(),
+		record, err := storage.EncodePasskeyRecord(credentialData)
+		if err != nil {
+			return fmt.Errorf("encode passkey record: %w", err)
+		}
+		user, err := cfg.Users.GetUser(userID)
+		if err != nil {
+			return err
+		}
+		cs.AddPasskey(userID, user.PasskeyHandleAliases(), &storage.Passkey{
+			ID:        uuid.New(),
+			Record:    record,
+			Name:      enrollment.Name,
+			CreatedAt: time.Now(),
 		})
 		return nil
 	}); err != nil {

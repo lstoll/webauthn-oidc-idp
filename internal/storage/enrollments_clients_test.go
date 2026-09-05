@@ -3,9 +3,9 @@ package storage_test
 import (
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/storage"
 )
 

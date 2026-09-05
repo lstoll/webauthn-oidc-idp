@@ -96,6 +96,10 @@ func (c *ServeCmd) Run(ctx context.Context, config *config.Config, paths admincl
 		&clients.DynamicClients{DB: dynamicClientStore},
 	)
 
+	if err := credStore.ApplyConfig(config.Users); err != nil {
+		return fmt.Errorf("apply passkey user config: %w", err)
+	}
+
 	idph, err := NewIDP(ctx, &g, config, credStore, oauth2Store, sessionKV, keysetStore, enrollmentStore, config.ParsedIssuer, multiClients)
 	if err != nil {
 		return fmt.Errorf("start server: %v", err)

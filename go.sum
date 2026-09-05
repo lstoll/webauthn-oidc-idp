@@ -137,10 +137,6 @@ lds.li/keyset v0.0.0-20260814215456-f6e0540f1600 h1:8+akd2u/IWRVQsytdUjBOLJGONuR
 lds.li/keyset v0.0.0-20260814215456-f6e0540f1600/go.mod h1:swebJ6oztpgX8BjJtzm8wDZn5Kp1DXlOnzg9/D0Gr58=
 lds.li/oauth2ext v0.3.2-0.20260815192241-46bedb0ccff0 h1:5x+PLnG3PNN4hI9DMdE6EcjJnDkeixAP+VitTTigRII=
 lds.li/oauth2ext v0.3.2-0.20260815192241-46bedb0ccff0/go.mod h1:5eBabMpchOL7OYEXAEr+q+veaSv04JWwt/DKKrefAy4=
-lds.li/session v0.0.0-20260815144223-a96afda9a547 h1:UDOj/24w8S2jaCMjJadELo8aWP1ozhpn7mQeb56MtbY=
-lds.li/session v0.0.0-20260815144223-a96afda9a547/go.mod h1:2EgWZUepxO+SbASDevBYIR+0efOHH6KYXvMAsFDB7os=
-lds.li/session v0.0.0-20260815212157-a6c238e399d2 h1:iPCrvqsMc6deQ0cT9q8qVzTuf2t3ss/x+BtI6xeuqUQ=
-lds.li/session v0.0.0-20260815212157-a6c238e399d2/go.mod h1:2EgWZUepxO+SbASDevBYIR+0efOHH6KYXvMAsFDB7os=
 lds.li/session v0.0.0-20260815215255-3609b70e900f h1:In1y6tZWV3LQm1t/+ZgrYHhXLLIiXaf7u1OUbPOs940=
 lds.li/session v0.0.0-20260815215255-3609b70e900f/go.mod h1:2EgWZUepxO+SbASDevBYIR+0efOHH6KYXvMAsFDB7os=
 lds.li/web v0.0.0-20260711155052-b5bda5b245fc h1:6BlX88yOPPqqfRVhrcuzHnmaCgFBygEaU/fJACcGSkI=

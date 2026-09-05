@@ -1,9 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // note : `uuidgen | tr '[:upper:]' '[:lower:]'` can be used on macOS to generate a UUID.
@@ -34,6 +34,25 @@ type User struct {
 	// BE SET OUTSIDE THE E2E TESTS. It will be replaced with a better model in
 	// the near future.
 	EnrollmentKey string `json:"-"`
+}
+
+// PasskeyHandleAliases returns historical WebAuthn user.id values that may
+// still be stored on authenticators for this account.
+func (u *User) PasskeyHandleAliases() [][]byte {
+	if u == nil {
+		return nil
+	}
+	aliases := make([][]byte, 0, 3)
+	if u.WebauthnHandle != uuid.Nil() {
+		aliases = append(aliases, bytes.Clone(u.WebauthnHandle[:]))
+	}
+	if u.ID != uuid.Nil() {
+		aliases = append(aliases, []byte(u.ID.String()))
+	}
+	if subject, ok := u.Metadata["overrideSubject"].(string); ok && subject != "" {
+		aliases = append(aliases, []byte(subject))
+	}
+	return aliases
 }
 
 // TODO(lstoll) - make a value ref in future when enrollment doesnt need to

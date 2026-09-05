@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"uuid"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"lds.li/passidp/internal/appsession"
 	"lds.li/passidp/internal/auth"
 	"lds.li/passidp/internal/config"
@@ -154,7 +154,20 @@ func (w *WebAuthnManager) beginRegistration(ctx context.Context, rw web.Response
 	}
 	conveyancePref := protocol.ConveyancePreference(protocol.PreferDirectAttestation)
 
-	options, sessionData, err := w.webauthn.BeginRegistration(auth.NewWebAuthnUser(user), webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
+	var (
+		passkeyUserID string
+		existing      []webauthn.Credential
+	)
+	if err := w.credStore.Write(func(cs *storage.CredentialStore) error {
+		pu := cs.EnsurePasskeyUser(user.ID, user.PasskeyHandleAliases())
+		passkeyUserID = pu.PasskeyUserID
+		existing = cs.WebAuthnCredentials(user.ID)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("ensure passkey user: %w", err)
+	}
+
+	options, sessionData, err := w.webauthn.BeginRegistration(auth.NewWebAuthnUser(user, passkeyUserID, existing), webauthn.WithAuthenticatorSelection(authSelect), webauthn.WithConveyancePreference(conveyancePref))
 	if err != nil {
 		return fmt.Errorf("beginning registration: %w", err)
 	}
@@ -204,7 +217,19 @@ func (w *WebAuthnManager) finishRegistration(ctx context.Context, rw web.Respons
 		return fmt.Errorf("parsing credential creation response: %w", err)
 	}
 
-	credential, err := w.webauthn.CreateCredential(auth.NewWebAuthnUser(user), sessionData, parsedResponse)
+	var (
+		passkeyUserID string
+		existing      []webauthn.Credential
+	)
+	w.credStore.Read(func(cs *storage.CredentialStore) {
+		passkeyUserID, _ = cs.PasskeyUserID(user.ID)
+		existing = cs.WebAuthnCredentials(user.ID)
+	})
+	if passkeyUserID == "" {
+		return fmt.Errorf("passkey user id missing for %s", user.ID)
+	}
+
+	credential, err := w.webauthn.CreateCredential(auth.NewWebAuthnUser(user, passkeyUserID, existing), sessionData, parsedResponse)
 	if err != nil {
 		return fmt.Errorf("creating credential: %w", err)
 	}

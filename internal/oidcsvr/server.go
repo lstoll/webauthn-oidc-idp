@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"lds.li/oauth2ext/oauth2as"
 	"lds.li/oauth2ext/oauth2as/discovery"
 	"lds.li/oauth2ext/oauth2as/oauth2proto"
