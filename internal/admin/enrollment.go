@@ -5,7 +5,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/webauthn"
 	"lds.li/passidp/internal/config"
 	"lds.li/passidp/internal/storage"
 )
@@ -46,8 +45,7 @@ func CompleteEnrollment(
 	enrollments *storage.EnrollmentStore,
 	credStore *storage.CredentialFile,
 	userID, enrollmentID uuid.UUID,
-	credential *webauthn.Credential,
-	name string,
+	record, name string,
 ) error {
 	enrollment, err := enrollments.ConsumePendingEnrollment(enrollmentID)
 	if err != nil {
@@ -56,14 +54,13 @@ func CompleteEnrollment(
 	if enrollment.UserID != userID {
 		return fmt.Errorf("enrollment user_id mismatch")
 	}
-	return StorePasskey(cfg, credStore, userID, credential, name)
+	return StorePasskey(cfg, credStore, userID, record, name)
 }
 
 // StorePasskey writes a C2SP passkey for the account.
-func StorePasskey(cfg *config.Config, credStore *storage.CredentialFile, userID uuid.UUID, credential *webauthn.Credential, name string) error {
-	record, err := storage.EncodePasskeyRecord(credential)
-	if err != nil {
-		return fmt.Errorf("encode passkey record: %w", err)
+func StorePasskey(cfg *config.Config, credStore *storage.CredentialFile, userID uuid.UUID, record, name string) error {
+	if record == "" {
+		return fmt.Errorf("missing passkey record")
 	}
 	user, err := cfg.Users.GetUser(userID)
 	if err != nil {

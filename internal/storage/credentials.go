@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/json"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
@@ -15,14 +16,14 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/go-webauthn/webauthn/webauthn"
 	"lds.li/passidp/internal/config"
 )
 
 // CredentialStore is the on-disk passkey store.
 //
 // New enrollments are stored under Users as C2SP passkey records. Credentials
-// is the legacy flat list and is left untouched.
+// is the legacy go-webauthn list; convertible blobs are imported into Users
+// by ApplyConfig.
 type CredentialStore struct {
 	Users       []*PasskeyUser `json:"users,omitzero"`
 	Credentials []*Credential  `json:"credentials,omitzero"`
@@ -31,7 +32,7 @@ type CredentialStore struct {
 // PasskeyUser groups passkeys for one account.
 type PasskeyUser struct {
 	AccountID     uuid.UUID  `json:"accountId,omitzero"`
-	PasskeyUserID string     `json:"passkeyUserId,omitzero"`
+	PasskeyUserID string     `json:"passkeyUserId,omitzero"` // opaque WebAuthn user.id (printable); legacy raw handles live in HandleAliases
 	HandleAliases [][]byte   `json:"handleAliases,omitzero"` // json/v2 encodes []byte as RFC 4648 §4 padded standard base64
 	Passkeys      []*Passkey `json:"passkeys,omitzero"`
 }
@@ -44,14 +45,16 @@ type Passkey struct {
 	CreatedAt time.Time `json:"createdAt,omitzero"`
 }
 
-// Credential is a legacy go-webauthn credential.
+// Credential is a legacy go-webauthn credential blob. Convertible blobs are
+// imported as C2SP records under Users; remaining entries are listed and
+// deleted but are not used for login.
 type Credential struct {
-	ID             uuid.UUID            `json:"id,omitzero"`
-	CredentialID   []byte               `json:"credential_id,omitzero"`
-	UserID         uuid.UUID            `json:"user_id,omitzero"`
-	Name           string               `json:"name,omitzero"`
-	CredentialData *webauthn.Credential `json:"credential_data,omitzero"`
-	CreatedAt      time.Time            `json:"created_at,omitzero"`
+	ID             uuid.UUID       `json:"id,omitzero"`
+	CredentialID   []byte          `json:"credential_id,omitzero"`
+	UserID         uuid.UUID       `json:"user_id,omitzero"`
+	Name           string          `json:"name,omitzero"`
+	CredentialData json.RawMessage `json:"credential_data,omitzero"`
+	CreatedAt      time.Time       `json:"created_at,omitzero"`
 }
 
 // CredentialFile persists credentials to a JSON file. The file is created
@@ -83,13 +86,16 @@ func NewCredentialFile(path string) (*CredentialFile, error) {
 	return &CredentialFile{path: path, data: data, raw: raw}, nil
 }
 
-// ApplyConfig ensures a passkey user record exists for each config user and
-// records historical WebAuthn handles as aliases.
-func (c *CredentialFile) ApplyConfig(users config.Users) error {
+// ApplyConfig ensures a passkey user record exists for each config user,
+// records historical WebAuthn handles as aliases, and imports convertible
+// go-webauthn credential blobs as C2SP records. rpID is the WebAuthn RP ID
+// (typically the issuer hostname), used when synthesizing authenticator data.
+func (c *CredentialFile) ApplyConfig(users config.Users, rpID string) error {
 	return c.Write(func(cs *CredentialStore) error {
 		for _, user := range users {
 			cs.EnsurePasskeyUser(user.ID, user.PasskeyHandleAliases())
 		}
+		cs.ImportLegacyCredentials(rpID)
 		return nil
 	})
 }
@@ -280,25 +286,18 @@ func (cs *CredentialStore) DeleteUserCredential(accountID, credentialID uuid.UUI
 	return false
 }
 
-// WebAuthnCredentials returns go-webauthn credentials for login/registration,
-// including legacy blobs and decoded C2SP records.
-func (cs *CredentialStore) WebAuthnCredentials(accountID uuid.UUID) []webauthn.Credential {
-	var creds []webauthn.Credential
-	for _, cred := range cs.Credentials {
-		if cred.UserID == accountID && cred.CredentialData != nil {
-			creds = append(creds, *cred.CredentialData)
-		}
+// PasskeyRecords returns the account's C2SP passkey records for login and
+// registration excludeCredentials.
+func (cs *CredentialStore) PasskeyRecords(accountID uuid.UUID) []string {
+	user := cs.passkeyUser(accountID)
+	if user == nil {
+		return nil
 	}
-	if user := cs.passkeyUser(accountID); user != nil {
-		for _, passkey := range user.Passkeys {
-			cred, err := CredentialFromPasskeyRecord(passkey.Record)
-			if err != nil {
-				continue
-			}
-			creds = append(creds, *cred)
-		}
+	records := make([]string, 0, len(user.Passkeys))
+	for _, passkey := range user.Passkeys {
+		records = append(records, passkey.Record)
 	}
-	return creds
+	return records
 }
 
 func (pu *PasskeyUser) addAliases(handles [][]byte) {

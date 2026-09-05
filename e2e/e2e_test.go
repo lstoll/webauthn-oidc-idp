@@ -397,6 +397,12 @@ func TestE2E(t *testing.T) {
 	testOk = t.Run("Add Credential", func(t *testing.T) {
 		before := passkeyNames(t, credstorePath)
 
+		// excludeCredentials now correctly refuses a second resident key on
+		// the same authenticator; clear it first to simulate a second device.
+		if err := chromedp.Run(ctx, cdpwebauthn.ClearCredentials(virtAuthenticatorID)); err != nil {
+			t.Fatal(err)
+		}
+
 		runErrC := make(chan error, 1)
 		doneC := make(chan struct{}, 1)
 		go func() {

@@ -37,7 +37,8 @@ type User struct {
 }
 
 // PasskeyHandleAliases returns historical WebAuthn user.id values that may
-// still be stored on authenticators for this account.
+// still be stored on authenticators for this account. Callers treat these as
+// opaque byte strings (string(alias) at the passkey API boundary).
 func (u *User) PasskeyHandleAliases() [][]byte {
 	if u == nil {
 		return nil

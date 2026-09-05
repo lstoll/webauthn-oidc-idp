@@ -152,7 +152,7 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 		WebauthnHandle: handle,
 		Metadata:       map[string]any{"overrideSubject": "custom-subject"},
 	}}
-	if err := store.ApplyConfig(users); err != nil {
+	if err := store.ApplyConfig(users, "localhost"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,7 +169,7 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 			t.Fatal("missing passkey user id")
 		}
 		if len(pu.Passkeys) != 0 {
-			t.Fatalf("should not convert legacy credentials to passkeys, got %d", len(pu.Passkeys))
+			t.Fatalf("empty credential_data should not convert to passkeys, got %d", len(pu.Passkeys))
 		}
 		passkeyUserID = pu.PasskeyUserID
 
@@ -192,7 +192,7 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 		}
 	})
 
-	if err := store.ApplyConfig(users); err != nil {
+	if err := store.ApplyConfig(users, "localhost"); err != nil {
 		t.Fatal(err)
 	}
 	store.Read(func(cs *storage.CredentialStore) {
@@ -227,6 +227,46 @@ func TestApplyConfigLeavesLegacyCredentials(t *testing.T) {
 	if !slices.Contains(file.Users[0].HandleAliases, padded) {
 		t.Fatalf("on-disk handleAliases = %q, want padded std base64 %q", file.Users[0].HandleAliases, padded)
 	}
+}
+
+func TestLegacyHandleAliasJSONRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	store, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accountID := uuid.MustParse("4854735c-5a01-4a2d-b7a0-330a5b5928a9")
+	handle := uuid.MustParse("70e0b33f-9ae9-4127-824b-7ad384c0de29")
+	if err := store.Write(func(cs *storage.CredentialStore) error {
+		cs.EnsurePasskeyUser(accountID, [][]byte{handle[:]})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mustLookup := func(cs *storage.CredentialStore, id []byte) {
+		t.Helper()
+		got, ok := cs.LookupAccountByHandle(id)
+		if !ok || got != accountID {
+			t.Fatalf("lookup %q: got %s ok=%v", id, got, ok)
+		}
+	}
+	store.Read(func(cs *storage.CredentialStore) {
+		mustLookup(cs, handle[:])
+		mustLookup(cs, []byte(cs.Users[0].PasskeyUserID))
+	})
+
+	reopened, err := storage.NewCredentialFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.Read(func(cs *storage.CredentialStore) {
+		mustLookup(cs, handle[:])
+		if bytes.Equal([]byte(cs.Users[0].PasskeyUserID), handle[:]) {
+			t.Fatal("passkeyUserId should stay printable; raw uuid bytes belong in handleAliases")
+		}
+	})
 }
 
 func TestUserCredentialsAndDelete(t *testing.T) {

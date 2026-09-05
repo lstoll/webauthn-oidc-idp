@@ -29,6 +29,5 @@ func init() {
 
 type loginData struct {
 	webcommon.LayoutData
-	FlowID            string
-	WebauthnChallenge string
+	FlowID string
 }
